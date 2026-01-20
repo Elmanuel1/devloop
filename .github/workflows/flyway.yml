@@ -1,0 +1,72 @@
+name: Flyway Migrations
+
+on:
+  pull_request:
+    paths:
+      - 'flyway/**'
+      - '.github/workflows/flyway.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Flyway action to run'
+        type: choice
+        required: true
+        options:
+          - validate
+          - apply
+          - repair
+      environment:
+        description: 'Target environment'
+        type: choice
+        required: true
+        options:
+          - stage
+          - prod
+
+jobs:
+  # PR validation - test migrations against ephemeral DB
+  pr-validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_DB: tosspaper
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Flyway Migrate
+        uses: docker://flyway/flyway:10
+        with:
+          args: >-
+            -url=jdbc:postgresql://postgres:5432/tosspaper
+            -user=postgres
+            -password=postgres
+            -locations=filesystem:./flyway
+            migrate
+
+  # Manual dispatch - run action against stage/prod
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Flyway ${{ inputs.action }}
+        uses: docker://flyway/flyway:10
+        with:
+          args: >-
+            -url=jdbc:postgresql://${{ secrets.MAIN_DB_HOST }}/${{ secrets.MAIN_DB_DATABASE }}
+            -user=${{ secrets.MAIN_DB_USERNAME }}
+            -password=${{ secrets.MAIN_DB_SECRET }}
+            -locations=filesystem:./flyway
+            ${{ inputs.action == 'apply' && 'migrate' || inputs.action }}
