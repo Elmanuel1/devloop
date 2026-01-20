@@ -1,0 +1,188 @@
+plugins {
+    id 'java-library'
+    id 'org.jsonschema2pojo' version '1.2.1'
+    id 'nu.studer.jooq'
+    id 'org.flywaydb.flyway'
+}
+
+// Configure jsonschema2pojo to generate POJOs from schema files
+jsonSchema2Pojo {
+    source = files(
+        "${rootDir}/schema-prompts/schemas/extraction.json",
+        "${rootDir}/schema-prompts/schemas/comparison.json"
+    )
+    targetDirectory = layout.buildDirectory.dir("generated-sources/extraction").get().asFile
+    targetPackage = 'com.tosspaper.models.extraction.dto'
+    sourceType = 'jsonschema'
+    annotationStyle = 'jackson2'
+    includeConstructors = true
+    includeHashcodeAndEquals = true
+    includeToString = true
+    generateBuilders = true
+    useLongIntegers = true
+    includeAdditionalProperties = false
+    serializable = false
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += [
+                layout.buildDirectory.dir("generated-sources/extraction").get().asFile,
+                layout.buildDirectory.dir("jooq").get().asFile
+            ]
+        }
+    }
+}
+
+// Ensure JSON Schema POJOs are generated before compileJava
+tasks.named('compileJava').configure {
+    dependsOn tasks.named('generateJsonSchema2Pojo')
+}
+
+// JOOQ Configuration
+jooq {
+    version = "3.19.26"
+
+    configurations {
+        main {
+            generationTool {
+                jdbc {
+                    driver = 'org.postgresql.Driver'
+                    user = flyway.user
+                    password = flyway.password
+                    properties {
+                        property {
+                            key = 'ssl'
+                            value = 'false'
+                        }
+                    }
+                }
+                generator {
+                    name = 'org.jooq.codegen.DefaultGenerator'
+                    database {
+                        name = 'org.jooq.meta.postgres.PostgresDatabase'
+                        inputSchema = 'public'
+                        forcedTypes {
+                            forcedType {
+                                name = 'VARCHAR'
+                                expression = 'search_vector'
+                                types = 'tsvector'
+                                binding = 'com.tosspaper.models.jooq.binding.TsvectorBinding'
+                            }
+                        }
+                    }
+                    generate {
+                        daos = true
+                        springAnnotations = true
+                        constructorPropertiesAnnotation = true
+                        constructorPropertiesAnnotationOnPojos = true
+                        constructorPropertiesAnnotationOnRecords = true
+                        routines = false
+                    }
+                    target {
+                        packageName = 'com.tosspaper.models.jooq'
+                        directory = layout.buildDirectory.dir("jooq").get().asFile
+                    }
+                    strategy.name = 'org.jooq.codegen.DefaultGeneratorStrategy'
+                }
+            }
+        }
+    }
+}
+
+// Task to set up test container for JOOQ generation
+task postgresContainer {
+    notCompatibleWithConfigurationCache("Uses TestContainers and dynamic Flyway configuration")
+
+    doFirst {
+        def dbTestContainer = new org.testcontainers.containers.PostgreSQLContainer("pgvector/pgvector:pg16")
+            .withDatabaseName("postgres")
+            .withUsername("postgres")
+            .withPassword("postgres")
+            .withCommand("postgres", "-c", "shared_preload_libraries=vector")
+
+        dbTestContainer.start()
+
+        ext.dbTestContainerInstance = dbTestContainer
+        ext.oldFlywayUrl = flyway.url
+
+        jooq {
+            configurations {
+                main {
+                    generationTool {
+                        jdbc {
+                            username = dbTestContainer.username
+                            password = dbTestContainer.password
+                            url = dbTestContainer.jdbcUrl
+                        }
+                    }
+                }
+            }
+        }
+
+        flyway {
+            url = dbTestContainer.jdbcUrl
+            user = dbTestContainer.username
+            password = dbTestContainer.password
+            locations = ["filesystem:${project.rootDir}/flyway"]
+        }
+    }
+    finalizedBy flywayMigrate
+}
+
+// Mark flywayMigrate as not compatible with configuration cache
+tasks.named('flywayMigrate').configure {
+    notCompatibleWithConfigurationCache("Uses dynamic Flyway configuration from postgresContainer task")
+}
+
+tasks.named('generateJooq').configure {
+    dependsOn postgresContainer
+    notCompatibleWithConfigurationCache("Uses TestContainers and dynamic configuration")
+
+    doLast {
+        postgresContainer.ext.properties.instance?.stop()
+        flyway {
+            url = postgresContainer.ext.properties.oldFlywayUrl
+        }
+    }
+}
+
+
+dependencies {
+    // Jackson for JSON schema POJOs
+    api 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    api 'com.fasterxml.jackson.core:jackson-annotations:2.15.2'
+
+    // Spring Context for @Component annotation
+    api 'org.springframework:spring-context:6.1.3'
+
+    // SLF4J for logging
+    api 'org.slf4j:slf4j-api:2.0.9'
+
+    // JOOQ
+    api libs.jooq
+    jooqGenerator libs.postgresql
+    jooqGenerator libs.jooq.meta
+    jooqGenerator libs.jooq.codegen
+
+    // Flyway
+    implementation libs.flyway.core
+    implementation libs.flyway.database.postgresql
+
+    // Testcontainers for JOOQ generation
+    jooqGenerator libs.testcontainers.postgresql
+
+    // Lombok
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    // AWS SDK for RDS IAM authentication
+    implementation libs.aws.rds
+
+    // Spring Boot for ConfigurationProperties
+    implementation "org.springframework.boot:spring-boot-autoconfigure:3.5.5"
+
+    // HikariCP datasource
+    implementation "com.zaxxer:HikariCP:5.1.0"
+}
