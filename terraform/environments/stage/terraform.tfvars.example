@@ -1,0 +1,24 @@
+# =============================================================================
+# Stage Environment - Example Variables
+# =============================================================================
+# Copy database.tfvars and app.tfvars, fill in values from prior module outputs
+
+# --- database.tfvars ---
+environment          = "stage"
+aws_region           = "us-west-2"
+account_id           = "222222222222"  # stage account ID
+vpc_id               = "vpc-xxxxxxxxx"  # from network output
+database_subnet_ids  = ["subnet-xxx", "subnet-yyy"]  # from network output
+private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+db_name              = "tosspaper"
+db_username          = "postgres"
+
+# --- app.tfvars ---
+# environment          = "stage"
+# aws_region           = "us-west-2"
+# account_id           = "222222222222"
+# vpc_id               = "vpc-xxxxxxxxx"
+# private_subnet_ids   = ["subnet-xxx", "subnet-yyy"]
+# db_secret_arn        = "arn:aws:secretsmanager:..."  # from database output
+# db_security_group_id = "sg-xxxxxxxxx"  # from database output
+# ssh_key_name         = ""

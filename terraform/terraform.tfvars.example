@@ -1,0 +1,63 @@
+# =============================================================================
+# Terraform Variables Example
+# =============================================================================
+# Copy this file and customize for your environment
+# DO NOT commit actual values to version control
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Organization Module (terraform/organization/)
+# -----------------------------------------------------------------------------
+# organization_root_id = "r-xxxx"           # AWS Organization root ID
+# github_org           = "your-github-org"  # GitHub organization name
+# github_repository    = "tosspaper-email-engine"
+# account_email_domain = "constructdrive.com"
+# allowed_regions      = ["us-east-1", "us-west-2"]
+
+# -----------------------------------------------------------------------------
+# Network Module (terraform/network/)
+# -----------------------------------------------------------------------------
+# After organization module is applied, get these from outputs:
+# network_account_id  = "123456789012"  # From: terraform output network_account_id
+# stage_account_id    = "123456789013"  # From: terraform output stage_account_id
+# prod_account_id     = "123456789014"  # From: terraform output prod_account_id
+# security_account_id = "123456789015"  # From: terraform output security_account_id
+
+# VPC settings (defaults are fine for most cases)
+# vpc_cidr              = "10.0.0.0/16"
+# public_subnet_cidrs   = ["10.0.1.0/24", "10.0.2.0/24"]
+# private_subnet_cidrs  = ["10.0.10.0/24", "10.0.11.0/24"]
+# database_subnet_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]
+
+# -----------------------------------------------------------------------------
+# Security Module (terraform/security/)
+# -----------------------------------------------------------------------------
+# security_account_id   = "123456789015"
+# management_account_id = "905418019159"  # ConstructDrive
+# network_account_id    = "123456789012"
+# stage_account_id      = "123456789013"
+# prod_account_id       = "123456789014"
+# log_retention_days    = 365
+# flow_logs_retention_days = 90
+
+# -----------------------------------------------------------------------------
+# Database Module (terraform/database/)
+# -----------------------------------------------------------------------------
+# environment         = "stage"  # or "prod"
+# account_id          = "123456789013"  # stage or prod account ID
+# vpc_id              = "vpc-xxx"  # From network module output
+# database_subnet_ids = ["subnet-xxx", "subnet-yyy"]  # From network module output
+# private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]  # For security group rules
+# db_name             = "tosspaper"
+# db_username         = "postgres"
+
+# -----------------------------------------------------------------------------
+# App Module (terraform/app/)
+# -----------------------------------------------------------------------------
+# environment          = "stage"  # or "prod"
+# account_id           = "123456789013"  # stage or prod account ID
+# vpc_id               = "vpc-xxx"  # From network module output
+# private_subnet_ids   = ["subnet-xxx", "subnet-yyy"]  # From network module output
+# db_secret_arn        = "arn:aws:secretsmanager:..."  # From database module output
+# db_security_group_id = "sg-xxx"  # From database module output
+# ssh_key_name         = ""  # Optional, for debugging access

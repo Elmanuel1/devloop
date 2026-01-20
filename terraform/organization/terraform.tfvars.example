@@ -1,0 +1,14 @@
+# =============================================================================
+# Organization Module - Example Variables
+# =============================================================================
+# Copy to terraform.tfvars and fill in values
+
+aws_region           = "us-west-2"
+organization_root_id = "r-xxxx"  # aws organizations list-roots --query 'Roots[0].Id'
+github_org           = "your-github-org"
+github_repository    = "infra"
+account_email_domain = "yourdomain.com"
+allowed_regions      = ["us-west-2"]
+
+# Optional: AWS profile to use (if not set, uses AWS_PROFILE env var or default profile)
+# aws_profile          = "tosspaper"

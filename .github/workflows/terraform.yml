@@ -1,0 +1,202 @@
+# =============================================================================
+# Terraform CI/CD Workflow
+# =============================================================================
+#
+# HOW TO USE THIS WORKFLOW
+# ------------------------
+#
+# 1. AUTOMATIC (Pull Requests)
+#    - PRs that touch terraform/** trigger automatic `terraform plan`
+#    - Review the plan output in the Actions tab before merging
+#
+# 2. MANUAL (Apply Changes)
+#    Go to: Actions → Terraform → Run workflow
+#
+#    Select your options:
+#    ┌─────────────┬─────────────────────────────────────────────────────────┐
+#    │ action      │ plan = preview changes, apply = make changes            │
+#    │ module      │ organization, network, security, database, or app       │
+#    │ environment │ stage (default) or prod - only used for database/app    │
+#    └─────────────┴─────────────────────────────────────────────────────────┘
+#
+# MODULE DEPLOYMENT ORDER (first time)
+# ------------------------------------
+#    1. organization  - AWS accounts, IAM roles, SCPs
+#    2. network       - VPC, subnets, transit gateway
+#    3. security      - security groups, KMS keys
+#    4. database      - RDS instances (run for stage, then prod)
+#    5. app           - EC2, load balancers (run for stage, then prod)
+#
+# EXAMPLES
+# --------
+#    Preview network changes:     action=plan,  module=network
+#    Apply network changes:       action=apply, module=network
+#    Preview stage database:      action=plan,  module=database, environment=stage
+#    Apply prod database:         action=apply, module=database, environment=prod
+#
+# =============================================================================
+
+name: Terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action'
+        type: choice
+        required: true
+        options:
+          - plan
+          - apply
+      module:
+        description: 'Terraform module'
+        type: choice
+        required: true
+        options:
+          - organization
+          - network
+          - security
+          - database
+          - app
+      environment:
+        description: 'Only applicable to database and app modules'
+        type: choice
+        required: false
+        default: 'stage'
+        options:
+          - stage
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.10.0"
+  AWS_REGION: "us-west-2"
+
+jobs:
+  # PR validation - run terraform plan on changed modules
+  pr-validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-${{ matrix.module }}
+      cancel-in-progress: false
+    strategy:
+      matrix:
+        module: [organization, network, security]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::905418019159:role/GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform plan -var-file="terraform.tfvars"
+  # PR validation for environment-specific modules
+  pr-validate-env:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-${{ matrix.module }}-${{ matrix.environment }}
+      cancel-in-progress: false
+    strategy:
+      matrix:
+        module: [database, app]
+        environment: [stage]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::905418019159:role/GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform init -backend-config="key=${{ matrix.module }}-${{ matrix.environment }}.tfstate"
+
+      - name: Terraform Validate
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: terraform/${{ matrix.module }}
+        run: terraform plan -var-file="${{ matrix.environment }}.tfvars"
+  # Manual dispatch - run terraform action on specific module
+  manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-${{ inputs.module }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    environment: ${{ inputs.action == 'apply' && inputs.environment || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::905418019159:role/GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/${{ inputs.module }}
+        run: |
+          # Modules with environment-specific state files
+          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" ]]; then
+            terraform init -backend-config="key=${{ inputs.module }}-${{ inputs.environment }}.tfstate"
+          else
+            terraform init
+          fi
+
+      - name: Terraform ${{ inputs.action }}
+        working-directory: terraform/${{ inputs.module }}
+        run: |
+          # database/app use {env}.tfvars, others use terraform.tfvars
+          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" ]]; then
+            VAR_FILE="${{ inputs.environment }}.tfvars"
+          else
+            VAR_FILE="terraform.tfvars"
+          fi
+
+          if [[ "${{ inputs.action }}" == "apply" ]]; then
+            terraform apply -var-file="$VAR_FILE" -auto-approve
+          else
+            terraform plan -var-file="$VAR_FILE"
+          fi

@@ -1,0 +1,15 @@
+# =============================================================================
+# Network Module - Example Variables
+# =============================================================================
+# Copy to terraform.tfvars and fill in account IDs from organization output
+
+aws_region          = "us-west-2"
+network_account_id  = "111111111111"
+stage_account_id    = "222222222222"
+prod_account_id     = "333333333333"
+security_account_id = "444444444444"
+
+vpc_cidr              = "10.0.0.0/16"
+public_subnet_cidrs   = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs  = ["10.0.10.0/24", "10.0.11.0/24"]
+database_subnet_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]
