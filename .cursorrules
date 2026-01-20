@@ -1,0 +1,661 @@
+# Java Coding Standards and Best Practices
+
+## Code Style and Patterns
+
+### Early Exits (Guard Clauses)
+- **ALWAYS use early exits** to reduce nesting and improve readability
+- Return early for validation failures, null checks, and error conditions
+- Prefer guard clauses over nested if-else blocks
+
+```java
+// ✅ GOOD: Early exit pattern
+private void processEntity(Entity entity) {
+    if (entity == null) {
+        log.warn("Entity is null, skipping processing");
+        return;
+    }
+    
+    if (entity.getStatus() == Status.INVALID) {
+        log.warn("Entity status is invalid: {}", entity.getId());
+        return;
+    }
+    
+    // Main processing logic here (no nesting)
+    doWork(entity);
+}
+
+// ❌ BAD: Nested if-else
+private void processEntity(Entity entity) {
+    if (entity != null) {
+        if (entity.getStatus() != Status.INVALID) {
+            doWork(entity);
+        }
+    }
+}
+```
+
+### Validation Patterns
+- **Only validate external user inputs** (API requests, user-provided data)
+- **Do NOT validate internal data** (database records, integration responses)
+- **Prefer Jakarta Bean Validation** (`@NotNull`, `@NotBlank`, `@NotEmpty`, `@Valid`, etc.) over manual validation
+- **Check if Jakarta validation is already in use** before adding manual validation
+- Use manual validation only for complex business rules that Jakarta annotations can't handle
+- Use early returns for validation failures (only when manual validation is needed)
+- Validate in order: null checks → empty checks → business rule checks
+- Log warnings for skipped validations (e.g., missing optional dependencies)
+
+```java
+// ✅ GOOD: Use Jakarta validation annotations (preferred)
+public class CreateUserRequest {
+    @NotBlank(message = "Email cannot be blank")
+    @Email(message = "Invalid email format")
+    private String email;
+    
+    @NotBlank(message = "Name cannot be blank")
+    private String name;
+    
+    // Getters and setters...
+}
+
+@PostMapping("/users")
+public ResponseEntity<User> createUser(@Valid @RequestBody CreateUserRequest request) {
+    // No manual validation needed - Jakarta handles it via @Valid
+    // MethodArgumentNotValidException will be thrown if validation fails
+    return ResponseEntity.ok(userService.create(request));
+}
+
+// ✅ GOOD: Controller - only mapping, no business logic
+@PostMapping("/orders")
+public ResponseEntity<Order> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    // Controller only calls service - no business logic
+    Order order = orderService.create(request);
+    return ResponseEntity.ok(order);
+}
+
+// ✅ GOOD: Service - contains all business logic and validation
+@Service
+public class OrderService {
+    public Order create(CreateOrderRequest request) {
+        // Business logic and validation in service
+        if (request.getItems().size() > MAX_ITEMS) {
+            throw new BadRequestException("Order cannot have more than " + MAX_ITEMS + " items");
+        }
+        
+        // Check business rule: total must be positive
+        BigDecimal total = calculateTotal(request.getItems());
+        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Order total must be greater than zero");
+        }
+        
+        // ... create order logic ...
+        return order;
+    }
+}
+
+// ❌ BAD: Manual validation when Jakarta validation can handle it
+@PostMapping("/users")
+public ResponseEntity<User> createUser(@RequestBody CreateUserRequest request) {
+    // Don't do this - use @Valid and Jakarta annotations instead
+    if (request == null) {
+        throw new BadRequestException("Request body cannot be null");
+    }
+    if (request.getEmail() == null || request.getEmail().isBlank()) {
+        throw new BadRequestException("Email cannot be null or blank");
+    }
+    // ...
+}
+
+// ✅ GOOD: Internal method - trust data from database/integration
+private void processUserData(UserData userData) {
+    // No null check - userData comes from database, should be valid
+    // If validation is needed, it's a business rule, not null check
+    Optional<Configuration> config = configService.getConfiguration(userData.getUserId());
+    
+    if (config.isEmpty()) {
+        log.warn("No configuration found for user {}, skipping processing", userData.getUserId());
+        return; // Early exit - missing optional dependency
+    }
+    
+    Configuration cfg = config.get();
+    
+    if (Boolean.TRUE.equals(cfg.getProcessingDisabled())) {
+        log.warn("Processing is disabled for user {}, skipping", userData.getUserId());
+        return; // Early exit - business rule
+    }
+    
+    // Process user data...
+}
+```
+
+### Error Handling
+- Use specific exception types appropriate to your domain
+- Include error codes and descriptive messages
+- Don't catch exceptions unless you can handle them meaningfully
+- Log errors with context (IDs, names, etc.)
+
+```java
+// ✅ GOOD: Specific exceptions with descriptive messages
+if (resource == null) {
+    throw new NotFoundException("Resource not found: " + resourceId);
+}
+
+if (user.getRole() != Role.ADMIN) {
+    throw new ForbiddenException("User " + user.getId() + " does not have admin privileges");
+}
+
+// ✅ GOOD: Meaningful exception handling
+try {
+    processPayment(amount);
+} catch (PaymentException e) {
+    log.error("Payment processing failed for user {}: {}", userId, e.getMessage(), e);
+    // Handle payment failure appropriately
+    notifyUser(userId, "Payment failed: " + e.getMessage());
+    throw; // Re-throw if you can't fully handle it
+}
+```
+
+### Logging Patterns
+- Use structured logging with context (IDs, names, counts)
+- Log level guidelines:
+  - `log.debug()`: Detailed diagnostic information
+  - `log.info()`: Important business events, state changes
+  - `log.warn()`: Warning conditions, skipped operations, validation failures
+  - `log.error()`: Error conditions that need attention
+- Include relevant identifiers in log messages (IDs, names, counts)
+
+```java
+// ✅ GOOD: Structured logging with context
+log.info("Processing {} items for user {}", items.size(), userId);
+
+log.warn("Configuration not found for user {}, using defaults", userId);
+
+log.error("Failed to process request for user {}: {}", userId, errorMessage, exception);
+```
+
+### Controller Patterns
+- **Controllers are thin** - only map requests to service calls and service responses to HTTP responses
+- **No business logic** in controllers - all logic belongs in service layer
+- **Only responsibilities**: Parse headers/context, call service methods, map responses to `ResponseEntity`
+- Use Jakarta validation via `@Valid` on `@RequestBody` parameters
+- Use `@PreAuthorize` for authorization checks
+- Keep controllers simple - delegate everything to services
+
+```java
+// ✅ GOOD: Thin controller - only mapping
+@RestController
+@RequiredArgsConstructor
+public class PurchaseOrderController implements PurchaseOrdersApi {
+    
+    private final PurchaseOrderService purchaseOrderService;
+    
+    @PostMapping("/purchase-orders")
+    @PreAuthorize("hasPermission(#xContextId, 'company', 'purchase-orders:create')")
+    public ResponseEntity<Void> createPurchaseOrder(
+            String xContextId, 
+            String projectId, 
+            @Valid @RequestBody PurchaseOrderCreate request) {
+        // Only parse context and call service - no business logic
+        Long companyId = HeaderUtils.parseCompanyId(xContextId);
+        PurchaseOrder created = purchaseOrderService.createPurchaseOrder(companyId, projectId, request);
+        
+        // Map service response to HTTP response
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentContextPath()
+                .path("/v1/purchase-orders/{id}")
+                .buildAndExpand(created.getId())
+                .toUri();
+        
+        return ResponseEntity.created(location).build();
+    }
+    
+    @GetMapping("/purchase-orders/{id}")
+    @PreAuthorize("hasPermission(#xContextId, 'company', 'purchase-orders:view')")
+    public ResponseEntity<PurchaseOrder> getPurchaseOrder(String xContextId, String id) {
+        // Only parse context and call service - no business logic
+        Long companyId = HeaderUtils.parseCompanyId(xContextId);
+        PurchaseOrder order = purchaseOrderService.getPurchaseOrder(companyId, id);
+        
+        // Map service response to HTTP response
+        return ResponseEntity.ok(order);
+    }
+}
+
+// ❌ BAD: Controller with business logic
+@PostMapping("/purchase-orders")
+public ResponseEntity<PurchaseOrder> createPurchaseOrder(@RequestBody PurchaseOrderCreate request) {
+    // Don't do business logic in controller
+    if (request.getItems().size() > MAX_ITEMS) {
+        throw new BadRequestException("Too many items"); // Business logic - belongs in service
+    }
+    
+    // Don't do validation in controller
+    if (request.getTotalPrice().compareTo(BigDecimal.ZERO) <= 0) {
+        throw new BadRequestException("Total must be positive"); // Business logic - belongs in service
+    }
+    
+    // Don't do data transformation in controller
+    PurchaseOrder order = new PurchaseOrder();
+    order.setItems(request.getItems().stream()
+        .map(this::transformItem) // Business logic - belongs in service
+        .toList());
+    
+    return ResponseEntity.ok(order);
+}
+```
+
+### Service Layer Patterns
+- **All business logic belongs in services**, not controllers
+- **Validate business rules only** - controllers handle basic null/empty validation via Jakarta `@Valid`
+- **Trust internal data** (from database, integrations) - don't validate null/empty
+- **Trust controller validation** - if controller uses `@Valid`, service doesn't need to check null/empty
+- Use private helper methods for complex business rule validation
+- Don't throw exceptions for non-critical failures (e.g., notification failures)
+- Return early when conditions aren't met
+
+```java
+// ✅ GOOD: Service method receiving external input - validate business rules only
+// Controller already validated null/empty via Jakarta validation (@Valid)
+public Order createOrder(CreateOrderRequest request) {
+    // No null/empty checks - controller's @Valid handles this
+    // Only validate complex business rules
+    
+    // Business rule: total must be positive
+    BigDecimal total = calculateTotal(request.getItems());
+    if (total.compareTo(BigDecimal.ZERO) <= 0) {
+        throw new BadRequestException("Order total must be greater than zero");
+    }
+    
+    // Business rule: max items limit
+    if (request.getItems().size() > MAX_ITEMS) {
+        throw new BadRequestException("Order cannot have more than " + MAX_ITEMS + " items");
+    }
+    
+    // Process request...
+    Order order = new Order();
+    order.setItems(request.getItems());
+    return orderRepository.save(order);
+}
+
+// ❌ BAD: Service validating what controller should handle
+public Order createOrder(CreateOrderRequest request) {
+    // Don't do this - controller's @Valid already handles null/empty
+    if (request == null) {
+        throw new BadRequestException("Request cannot be null");
+    }
+    
+    if (request.getItems() == null || request.getItems().isEmpty()) {
+        throw new BadRequestException("Order must have at least one item");
+    }
+    
+    // ...
+}
+
+// ✅ GOOD: Service method receiving internal data - trust it
+public void processOrder(Order order) {
+    // No null check - order comes from database, should be valid
+    // If business rule validation needed, check business rules, not null
+    if (order.getStatus() == OrderStatus.CANCELLED) {
+        log.warn("Order {} is cancelled, skipping processing", order.getId());
+        return; // Early exit - business rule
+    }
+    
+    // Process order
+    orderRepository.save(order);
+    
+    // Non-critical side effects (don't fail if these fail)
+    try {
+        notificationService.sendConfirmation(order);
+    } catch (Exception e) {
+        log.error("Failed to send notification for order {}", order.getId(), e);
+        // Don't throw - order processing succeeded
+    }
+}
+```
+
+### Loop Processing Patterns
+- Use early exits in loops with `continue` for skipped items
+- Log skipped items for debugging
+- Try primary lookup first, then fallback strategies
+
+```java
+// ✅ GOOD: Loop processing with early exits
+for (Item item : items) {
+    if (item == null) {
+        log.debug("Skipping null item");
+        continue; // Early exit from loop iteration
+    }
+    
+    if (item.getId() != null) {
+        Item existing = itemMap.get(item.getId());
+        if (existing != null) {
+            updateItem(existing, item);
+            processedCount++;
+            continue; // Early exit - processing successful
+        }
+    }
+    
+    // Fallback logic here...
+    createNewItem(item);
+}
+```
+
+### Code Organization
+- Group related operations together
+- Extract complex logic into private helper methods
+- Use meaningful variable names
+- Keep methods focused on a single responsibility
+- Use `Optional` for nullable return values, but prefer early exits over `Optional.isPresent()` checks
+
+```java
+// ✅ GOOD: Organized method with validation for external input
+@PostMapping("/orders")
+public ResponseEntity<Order> createOrder(@RequestBody CreateOrderRequest request) {
+    // Validate external user input - early exits
+    validateRequest(request);
+    validateItems(request.getItems());
+    
+    // Main logic
+    Order order = new Order();
+    order.setUserId(request.getUserId());
+    order.setItems(mapItems(request.getItems()));
+    
+    Order saved = orderService.save(order);
+    
+    // Side effects (non-blocking)
+    eventPublisher.publishOrderCreatedEvent(saved);
+    
+    return ResponseEntity.ok(saved);
+}
+
+// ✅ GOOD: Use Jakarta validation annotations in DTOs
+public class CreateOrderRequest {
+    @NotNull(message = "User ID cannot be null")
+    private String userId;
+    
+    @NotEmpty(message = "Order must have at least one item")
+    @Valid
+    private List<OrderItem> items;
+    
+    // Getters and setters...
+}
+
+public class OrderItem {
+    @NotNull(message = "Item price cannot be null")
+    @DecimalMin(value = "0.01", message = "Item price must be greater than zero")
+    private BigDecimal price;
+    
+    // Getters and setters...
+}
+
+// ✅ GOOD: Manual validation helper only for complex business rules
+private void validateBusinessRules(CreateOrderRequest request) {
+    // Jakarta handles null/empty checks
+    // Manual validation for complex business logic
+    BigDecimal total = calculateTotal(request.getItems());
+    if (total.compareTo(MAX_ORDER_TOTAL) > 0) {
+        throw new BadRequestException("Order total exceeds maximum allowed");
+    }
+    
+    // Check item availability
+    for (OrderItem item : request.getItems()) {
+        if (!inventoryService.isAvailable(item.getProductId(), item.getQuantity())) {
+            throw new BadRequestException("Insufficient inventory for product: " + item.getProductId());
+        }
+    }
+}
+
+// ✅ GOOD: Internal method - trust data from database
+private void processOrderItems(List<Item> items) {
+    // No null check - items come from database, should be valid
+    // Process business rules, not null checks
+    for (Item item : items) {
+        if (item.getStatus() == ItemStatus.DISABLED) {
+            log.warn("Skipping disabled item: {}", item.getId());
+            continue; // Early exit - business rule
+        }
+        processItem(item);
+    }
+}
+```
+
+### Null and Empty Checks
+- **Only validate null/empty for external user inputs** (API endpoints, user-provided data)
+- **Do NOT validate null/empty for internal data** (database records, integration responses, internal service calls)
+- **Prefer Jakarta validation annotations** (`@NotNull`, `@NotBlank`, `@NotEmpty`) over manual null/empty checks
+- **Check if Jakarta validation is already in use** - if `@Valid` is on `@RequestBody`, don't add manual null checks
+- Internal data should be trusted to be non-null if it comes from your own systems
+- Use early exits for null/empty conditions only when manual validation is needed (complex business rules)
+- Prefer `isEmpty()` over `size() == 0`
+- Use `isBlank()` for string checks (null, empty, or whitespace)
+
+```java
+// ✅ GOOD: Use Jakarta validation (preferred approach)
+public class CreateOrderRequest {
+    @NotBlank(message = "Order name cannot be blank")
+    private String name;
+    
+    @NotEmpty(message = "Order must have at least one item")
+    @Valid
+    private List<OrderItem> items;
+    
+    // Getters and setters...
+}
+
+@PostMapping("/orders")
+public ResponseEntity<Order> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    // Jakarta validation handles null/empty checks automatically
+    // No manual validation needed for basic null/empty checks
+    return ResponseEntity.ok(orderService.create(request));
+}
+
+// ✅ GOOD: Controller - only mapping, no business logic
+@PostMapping("/orders")
+public ResponseEntity<Order> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    // Controller only calls service - no business logic
+    Order order = orderService.create(request);
+    return ResponseEntity.ok(order);
+}
+
+// ✅ GOOD: Service - contains all business logic
+@Service
+public class OrderService {
+    public Order create(CreateOrderRequest request) {
+        // Business logic in service
+        BigDecimal total = calculateTotal(request.getItems());
+        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Order total must be greater than zero");
+        }
+        // ... create order logic ...
+        return order;
+    }
+}
+
+// ✅ GOOD: Internal method - trust data from database
+private void processOrder(Order order) {
+    // No null check needed - order comes from database, should be valid
+    // If it's null, that's a programming error, not a validation issue
+    orderRepository.save(order);
+    notificationService.sendConfirmation(order);
+}
+
+// ✅ GOOD: Internal method with Optional - handle missing data gracefully
+private void processUser(String userId) {
+    Optional<User> userOpt = userRepository.findById(userId);
+    if (userOpt.isEmpty()) {
+        log.warn("User not found: {}", userId);
+        return; // Early exit - missing data, not validation failure
+    }
+    User user = userOpt.get();
+    // Process user...
+}
+
+// ❌ BAD: Unnecessary null check on internal data
+private void processOrder(Order order) {
+    if (order == null) {  // Don't check - order comes from database
+        return;
+    }
+    orderRepository.save(order);
+}
+```
+
+### Stream Processing
+- Use early exits in stream operations when possible
+- Filter before mapping when appropriate
+- Use meaningful variable names in lambdas
+
+```java
+// ✅ GOOD: Stream with early filtering
+List<Order> activeOrders = orders.stream()
+    .filter(order -> order.getStatus() == OrderStatus.ACTIVE)
+    .filter(order -> order.getCreatedAt().isAfter(cutoffDate))
+    .toList();
+
+if (activeOrders.isEmpty()) {
+    log.info("No active orders found after cutoff date");
+    return; // Early exit
+}
+
+// Process active orders...
+```
+
+### Collection Processing
+- Check for empty collections before processing
+- Use early exits when collections are empty
+- Prefer enhanced for-loops when index is not needed
+
+```java
+// ✅ GOOD: Collection processing for external input - validate
+public void processUserItems(List<Item> items) {
+    // Validate external input
+    if (items == null || items.isEmpty()) {
+        throw new BadRequestException("Items list cannot be null or empty");
+    }
+    
+    for (Item item : items) {
+        processItem(item);
+    }
+}
+
+// ✅ GOOD: Collection processing for internal data - trust it
+public void processOrderItems(List<Item> items) {
+    // No null check - items come from database, should be valid
+    // If empty, that's a business state, not a validation issue
+    if (items.isEmpty()) {
+        log.info("Order has no items to process");
+        return; // Early exit - business state
+    }
+    
+    for (Item item : items) {
+        processItem(item);
+    }
+}
+```
+
+### Method Design
+- Keep methods small and focused
+- One method should do one thing
+- Extract complex conditions into well-named boolean methods
+- Use early exits to reduce cognitive complexity
+
+```java
+// ✅ GOOD: Use Jakarta validation (preferred)
+public class UpdateUserRequest {
+    @Email(message = "Invalid email format")
+    private String email;
+    
+    @Size(min = 1, max = 100, message = "Name must be between 1 and 100 characters")
+    private String name;
+    
+    // Getters and setters...
+}
+
+@PutMapping("/users/{id}")
+public ResponseEntity<User> updateUser(@PathVariable String id, @Valid @RequestBody UpdateUserRequest request) {
+    // Controller only calls service - no business logic
+    User user = userService.update(id, request);
+    return ResponseEntity.ok(user);
+}
+
+// ✅ GOOD: Service contains all business logic
+@Service
+public class UserService {
+    public User update(String id, UpdateUserRequest request) {
+        // Business logic in service
+        if (isEmailTakenByAnotherUser(id, request.getEmail())) {
+            throw new BadRequestException("Email is already taken by another user");
+        }
+        // ... update logic ...
+        return user;
+    }
+}
+
+// ❌ BAD: Business logic in controller
+@PutMapping("/users/{id}")
+public ResponseEntity<User> updateUser(@PathVariable String id, @Valid @RequestBody UpdateUserRequest request) {
+    // Don't do business logic in controller
+    if (userService.isEmailTakenByAnotherUser(id, request.getEmail())) {
+        throw new BadRequestException("Email is already taken by another user");
+    }
+    User user = userService.update(id, request);
+    return ResponseEntity.ok(user);
+}
+
+// ✅ GOOD: Method receiving internal data - trust it
+public void processUser(User user) {
+    // No null check - user comes from database, should be valid
+    // Validate business rules, not null
+    if (!isUserActive(user)) {
+        log.warn("User {} is not active, skipping processing", user.getId());
+        return; // Early exit - business rule
+    }
+    
+    userRepository.save(user);
+    publishUserUpdatedEvent(user);
+}
+
+private boolean isValidUserRequest(UpdateUserRequest request) {
+    if (request.getEmail() != null && request.getEmail().isBlank()) {
+        return false;
+    }
+    
+    if (request.getName() != null && request.getName().isBlank()) {
+        return false;
+    }
+    
+    return true;
+}
+```
+
+## General Principles
+
+1. **Early Exits First**: Always prefer early returns/exits over nested conditionals
+2. **Fail Fast**: Validate external inputs early and throw exceptions immediately
+3. **Trust Internal Data**: Don't validate null/empty for data from database, integrations, or internal services
+4. **Thin Controllers**: Controllers only map requests/responses - no business logic
+5. **Service Layer Logic**: All business logic, validation, and processing belongs in service layer
+6. **Log Context**: Always include relevant IDs, names, and counts in log messages
+7. **Don't Swallow Exceptions**: Only catch exceptions if you can handle them meaningfully
+8. **Single Responsibility**: Each method should do one thing well
+9. **Readability Over Cleverness**: Write code that's easy to understand
+10. **Consistent Patterns**: Use the same patterns throughout the codebase
+11. **Test Coverage**: Write tests for all public methods, including edge cases
+12. **Meaningful Names**: Use descriptive variable and method names
+13. **Avoid Deep Nesting**: Use early exits to keep nesting levels low (max 2-3 levels)
+
+## Validation Rules Summary
+
+- **Validate**: External user inputs (API endpoints, user-provided data, request bodies)
+- **Do NOT Validate**: Internal data (database records, integration responses, internal service calls)
+- **Prefer Jakarta Bean Validation**: Use `@NotNull`, `@NotBlank`, `@NotEmpty`, `@Valid`, etc. on DTOs
+- **Check First**: Before adding manual validation, check if Jakarta validation is already in use
+- **Manual Validation**: Only use for complex business rules that Jakarta annotations can't handle
+- **Exception**: Missing optional dependencies or business rule checks are fine for internal data
+
+## Jakarta Validation Checklist
+
+Before adding manual null/empty checks in API endpoints:
+1. ✅ Check if the controller class has `@Validated` annotation
+2. ✅ Check if the method parameter has `@Valid` annotation
+3. ✅ Check if the DTO class has Jakarta validation annotations (`@NotNull`, `@NotBlank`, etc.)
+4. ✅ If all above are true, **don't add manual validation** - Jakarta handles it
+5. ✅ Only add manual validation for complex business rules not expressible via annotations
