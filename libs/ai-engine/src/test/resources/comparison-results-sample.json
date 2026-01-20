@@ -1,0 +1,154 @@
+{
+  "documentId": "mg-1768273419122-e2cfea3c",
+  "poId": "2505007i",
+  "overallStatus": "partial",
+  "confidence": 0.85,
+  "blockingIssues": 0,
+  "results": [
+    {
+      "type": "vendor",
+      "status": "partial",
+      "matchScore": 0.8,
+      "confidence": 0.9,
+      "reasons": [
+        "Name partial match: 'Cursor' likely short form of 'Anysphere Inc.'",
+        "Email domain matches (cursor.com) with minor typo: 'hi' vs 'hii'",
+        "Address matches exactly on street and postal code",
+        "State format differs but content matches"
+      ],
+      "signals": {
+        "name": {
+          "score": 0.7,
+          "components": {
+            "fullName": 0.7
+          },
+          "method": "partial_match"
+        },
+        "email": {
+          "score": 0.95,
+          "components": {
+            "domain": 1.0
+          }
+        },
+        "address": {
+          "score": 0.9,
+          "components": {
+            "street": 1.0,
+            "postalCode": 1.0,
+            "state": 0.9,
+            "country": 1.0
+          }
+        }
+      },
+      "discrepancies": {
+        "name": {
+          "extracted": "Cursor",
+          "po": "Anysphere Inc.",
+          "difference": "Extracted name appears to be abbreviated form of PO name"
+        },
+        "email": {
+          "extracted": "hi@cursor.com",
+          "po": "hii@cursor.com",
+          "difference": "Minor spelling difference in email address"
+        },
+        "stateFormat": {
+          "extracted": "New York",
+          "po": "New York, New York",
+          "difference": "PO includes city and state, document only state"
+        }
+      },
+      "severity": "warning"
+    },
+    {
+      "type": "ship_to",
+      "status": "partial",
+      "matchScore": 0.75,
+      "confidence": 0.85,
+      "reasons": [
+        "Name represents same person: 'Oluwatoba Aribo' matches 'aribooluwatoba@gmail.com's Organization'",
+        "Email addresses have typo: 'aribooluwatoba' vs 'aribooluwatobao'",
+        "Address partial match: '654 cook' vs '434-654 Cook Rd'",
+        "Postal code and province match exactly"
+      ],
+      "signals": {
+        "name": {
+          "score": 0.8,
+          "components": {
+            "fullName": 0.8
+          },
+          "method": "semantic_match"
+        },
+        "email": {
+          "score": 0.9,
+          "components": {
+            "domain": 1.0
+          }
+        },
+        "address": {
+          "score": 0.7,
+          "components": {
+            "street": 0.6,
+            "postalCode": 1.0,
+            "state": 1.0,
+            "country": 1.0
+          }
+        }
+      },
+      "discrepancies": {
+        "name": {
+          "extracted": "Oluwatoba Aribo",
+          "po": "aribooluwatoba@gmail.com's Organization",
+          "difference": "PO uses email-based organization name vs person's actual name"
+        },
+        "email": {
+          "extracted": "aribooluwatoba@gmail.com",
+          "po": "aribooluwatobao@gmail.com",
+          "difference": "Extra 'o' in PO email address"
+        },
+        "street": {
+          "extracted": "654 cook",
+          "po": "434-654 Cook Rd",
+          "difference": "PO includes full address range and road suffix"
+        }
+      },
+      "severity": "warning"
+    },
+    {
+      "type": "line_item",
+      "status": "matched",
+      "matchScore": 1.0,
+      "confidence": 0.95,
+      "extractedIndex": 0,
+      "poIndex": 0,
+      "reasons": [
+        "Description matches exactly",
+        "Quantity matches exactly (1)",
+        "Unit price matches exactly ($20.00)",
+        "Perfect line item match"
+      ],
+      "signals": {
+        "description": {
+          "score": 1.0,
+          "components": {
+            "text": 1.0
+          }
+        },
+        "quantity": {
+          "score": 1.0,
+          "components": {
+            "value": 1.0
+          }
+        },
+        "unitPrice": {
+          "score": 1.0,
+          "components": {
+            "value": 1.0,
+            "currency": "USD"
+          }
+        }
+      },
+      "discrepancies": {},
+      "severity": "info"
+    }
+  ]
+}
