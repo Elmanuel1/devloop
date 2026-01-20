@@ -1,0 +1,182 @@
+# Supply Chain Document Extraction Instructions
+
+You are extracting data from supply chain documents (purchase orders, invoices, delivery notes, receipts, etc.) into structured JSON format according to the provided schema.
+
+## CORE PRINCIPLE: COMPLETE EXTRACTION
+**Extract ALL information without omission. If data exists on the document, it must appear in the JSON output.**
+
+---
+
+## CRITICAL LINE ITEM EXTRACTION PROTOCOL
+
+### Step 1: COUNT FIRST
+Before extracting any line items:
+1. Scan the ENTIRE document
+2. Count EVERY distinct line item (product, service, material)
+3. Record this count - it MUST match your final `line_item_count` field
+
+### Step 2: IDENTIFY ALL ITEM PATTERNS
+Look for items that may appear in various formats:
+
+**Common Grouping Patterns:**
+- ✓ Items under category headers ("Hardware", "Software", "Services")
+- ✓ Indented or bulleted sub-items under parent items
+- ✓ Items with shared prefixes but different suffixes (Model A-Blue, Model A-Red)
+- ✓ Nested tables or grouped rows
+- ✓ Items spanning multiple lines due to long descriptions
+- ✓ Items in separate sections (e.g., "Page 1 of 2", continued items)
+
+**Visual Examples:**
+
+```
+Example 1: Category Grouping
+--------------------------
+Office Supplies
+  - Pens, blue (SKU-001) 100 EA @ $0.50 = $50.00    [LINE 1]
+  - Pens, red (SKU-002) 50 EA @ $0.50 = $25.00      [LINE 2]
+  - Paper, A4 (SKU-003) 10 RM @ $5.00 = $50.00      [LINE 3]
+
+Tech Equipment
+  - Laptop (SKU-100) 5 EA @ $1000 = $5000           [LINE 4]
+  - Mouse (SKU-101) 5 EA @ $25 = $125               [LINE 5]
+
+⚠️ Extract ALL 5 items, not just 2 categories!
+```
+
+```
+Example 2: Parent-Child Structure
+---------------------------------
+Computer System Bundle (COMP-500)
+  ├─ Base unit (COMP-500-A) 1 EA @ $800 = $800     [LINE 1]
+  ├─ Monitor 24" (COMP-500-B) 1 EA @ $200 = $200   [LINE 2]
+  └─ Keyboard/Mouse (COMP-500-C) 1 EA @ $50 = $50  [LINE 3]
+
+⚠️ Extract ALL 3 components as separate line items!
+```
+
+```
+Example 3: Product Variants
+---------------------------
+Widget Series A
+  Model X - Small   50 @ $10 = $500                 [LINE 1]
+  Model X - Medium  30 @ $12 = $360                 [LINE 2]
+  Model X - Large   20 @ $15 = $300                 [LINE 3]
+
+⚠️ Each size is a separate line item!
+```
+
+### Step 3: EXTRACT SEQUENTIALLY
+For each item identified:
+- Assign `line_number` as "1", "2", "3", etc. in order of appearance
+- Extract ALL available fields for that item
+- If a field is missing, use the `additional_fields` object to capture other data
+- Never skip an item because it's "grouped" with others
+
+### Step 4: VERIFY COMPLETENESS
+Before returning JSON:
+- ✓ `line_item_count` = actual length of `line_items` array
+- ✓ No gaps in `line_number` sequence (1, 2, 3, 4... no skipping)
+- ✓ Every visible item on document is extracted
+- ✓ Items that appear grouped/nested are individually captured
+
+---
+
+## DYNAMIC DATA CAPTURE RULES
+
+### 1. Parties/Entities
+- Use the `parties` object to capture ALL entities (vendor, buyer, supplier, ship-to, bill-to, etc.)
+- Use descriptive keys: "vendor", "buyer", "ship_to", "bill_to", "supplier", "customer"
+- Capture ALL available information for each party
+- Use `additional_info` sub-object for any extra fields
+
+### 2. Reference Numbers
+- Capture ALL reference numbers in `reference_ids` object
+- Use descriptive keys: "po_number", "invoice_number", "quote_number", "customer_ref", "order_ref", "tracking_number"
+
+### 3. Dates
+- Primary date goes in `date` field
+- ALL other dates go in `additional_dates` object
+- Use descriptive keys: "due_date", "delivery_date", "payment_date", "issue_date"
+
+### 4. Line Item Fields
+Required fields:
+- `line_number`, `material_code`, `material_description`, `quantity`
+
+Optional but common:
+- `unit`, `unit_price`, `total_amount`, `discount`, `tax_info`
+
+Everything else:
+- Use `additional_fields` object with descriptive keys
+- Examples: "warehouse_location", "batch_number", "serial_number", "delivery_date", "notes", "specifications"
+
+### 5. Catch-All Fields
+- Use `additional_data` at document level for anything that doesn't fit elsewhere
+- Use descriptive keys that make sense
+- Examples: "shipping_method", "payment_terms", "warranty_info", "special_instructions"
+
+---
+
+## EXTRACTION CHECKLIST
+
+Before submitting your JSON, verify:
+
+**Document Level:**
+- [ ] Correct `type` enum value selected
+- [ ] All parties captured in `parties` object with complete information
+- [ ] Currency code is 3-letter uppercase ISO code
+- [ ] All reference numbers captured
+- [ ] All dates captured
+
+**Line Items:**
+- [ ] `line_item_count` matches actual count
+- [ ] Scanned for grouped/nested/categorized items
+- [ ] Line numbers are sequential: 1, 2, 3...
+- [ ] No items skipped or merged inappropriately
+- [ ] All available fields extracted for each item
+- [ ] Additional/unusual fields captured in `additional_fields`
+
+**Summary & Other:**
+- [ ] Totals calculated and captured in `summary`
+- [ ] Terms, notes, special instructions captured
+- [ ] Any remaining information captured in `additional_data`
+
+---
+
+## COMMON MISTAKES TO AVOID
+
+❌ **DON'T:** Extract only category headers and ignore sub-items
+✅ **DO:** Extract every individual item, even if grouped under headers
+
+❌ **DON'T:** Merge multiple items into one line because they're related
+✅ **DO:** Create separate line items for each distinct product/service
+
+❌ **DON'T:** Skip items because they don't have all standard fields
+✅ **DO:** Extract the item and use `additional_fields` for non-standard data
+
+❌ **DON'T:** Ignore information that doesn't fit your mental model
+✅ **DO:** Use the dynamic fields (`additional_fields`, `additional_data`, `parties`, etc.) to capture everything
+
+❌ **DON'T:** Guess or invent information not on the document
+✅ **DO:** Only extract what is actually present
+
+---
+
+## OUTPUT FORMAT
+
+Return valid JSON matching the schema. The JSON must:
+- Be properly formatted and parseable
+- Include ALL required fields
+- Not truncate or abbreviate data
+- Use the flexible/dynamic fields to capture ALL document information
+- Have `line_item_count` that matches the `line_items` array length
+
+---
+
+## REMEMBER
+
+**Your goal is 100% information capture. If it's on the document, it must be in the JSON.**
+
+When in doubt:
+1. Extract it rather than skip it
+2. Use the dynamic fields for unusual data
+3. Be thorough, not minimal

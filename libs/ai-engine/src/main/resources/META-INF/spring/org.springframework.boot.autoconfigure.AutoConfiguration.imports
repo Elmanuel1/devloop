@@ -1,0 +1,3 @@
+com.tosspaper.aiengine.service.ExtractionService
+com.tosspaper.aiengine.repository.impl.JooqExtractionTaskRepositoryImpl
+com.tosspaper.aiengine.streams.AiProcessStreamListener

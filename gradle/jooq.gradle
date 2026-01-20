@@ -1,0 +1,47 @@
+// JOOQ Configuration Script
+// This script provides JOOQ code generation configuration for subprojects
+
+jooq {
+    version = "3.19.26"
+
+    configurations {
+        main {
+            generationTool {
+                jdbc {
+                    driver = 'org.postgresql.Driver'
+                    user = flyway.user
+                    password = flyway.password
+                    properties {
+                        property { key = 'ssl'; value = 'false' }
+                    }
+                }
+                generator {
+                    name = 'org.jooq.codegen.DefaultGenerator'
+                    database {
+                        name = 'org.jooq.meta.postgres.PostgresDatabase'
+                        inputSchema = 'public'
+                    }
+                    generate {
+                        daos = false
+                        springAnnotations = true
+                        constructorPropertiesAnnotation = true
+                        constructorPropertiesAnnotationOnPojos = true
+                        constructorPropertiesAnnotationOnRecords = true
+                    }
+                    target {
+                        packageName = project.hasProperty('jooqPackageName') ? project.jooqPackageName : 'com.tosspaper.jooq'
+                        directory = layout.buildDirectory.dir("jooq").get().asFile
+                    }
+                    strategy.name = 'org.jooq.codegen.DefaultGeneratorStrategy'
+                }
+            }
+        }
+    }
+}
+
+// Disable configuration cache for all tasks that use TestContainers
+gradle.taskGraph.whenReady { taskGraph ->
+    taskGraph.allTasks.findAll { it.name.contains('jooq') || it.name.contains('flyway') }.each {
+        it.notCompatibleWithConfigurationCache("Uses TestContainers and dynamic configuration")
+    }
+}

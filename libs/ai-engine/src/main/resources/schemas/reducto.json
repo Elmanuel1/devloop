@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schema/supply-chain-document-v5.json",
+  "title": "Supply Chain Document",
+  "type": "object",
+  "required": ["type", "id", "date", "parties", "currency", "line_items", "line_item_count"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["po", "invoice", "delivery_note", "goods_receipt", "quote", "receipt", "packing_slip", "other"],
+      "description": "Document type. MUST be one of the enum values. Use 'other' if document doesn't match predefined types."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique document identifier.",
+      "examples": ["PO-2025-00123", "INV-2025-0456"]
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Primary document date in YYYY-MM-DD format.",
+      "examples": ["2025-10-12"]
+    },
+    "additional_dates": {
+      "type": "object",
+      "description": "Any additional dates found on document (delivery date, due date, etc.).",
+      "additionalProperties": {
+        "type": "string",
+        "format": "date"
+      },
+      "examples": [{"due_date": "2025-11-12", "delivery_date": "2025-10-20"}]
+    },
+    "reference_ids": {
+      "type": "object",
+      "description": "All reference numbers and identifiers found on document.",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "examples": [{"po_number": "PO-123", "customer_ref": "CUST-456", "tracking_number": "TRK-789"}]
+    },
+    "parties": {
+      "type": "object",
+      "description": "All parties/entities mentioned in document. Capture ALL available information for each party.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Entity name"},
+          "code": {"type": "string", "description": "Entity code/identifier"},
+          "address": {"type": "string", "description": "Complete address"},
+          "contact": {"type": "string", "description": "Contact person"},
+          "phone": {"type": "string", "description": "Phone number"},
+          "email": {"type": "string", "description": "Email address"},
+          "tax_id": {"type": "string", "description": "Tax ID/VAT number"},
+          "additional_info": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Any other information about this party"
+          }
+        }
+      },
+      "examples": [{
+        "vendor": {
+          "name": "Acme Corp",
+          "code": "VND-001",
+          "address": "123 Main St, Toronto, ON",
+          "tax_id": "123456789"
+        },
+        "buyer": {
+          "name": "Global Manufacturing",
+          "code": "COMP-500"
+        }
+      }]
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "Three-letter ISO 4217 currency code.",
+      "examples": ["USD", "CAD", "EUR"]
+    },
+    "line_item_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "CRITICAL: Total count of ALL line items extracted. Must equal length of line_items array. Count ALL items including grouped/nested ones BEFORE extraction."
+    },
+    "line_items": {
+      "type": "array",
+      "minItems": 1,
+      "description": "COMPLETE array of ALL line items in document order. Extract EVERY item including grouped, nested, indented, or categorized items. Line numbers must be sequential (1, 2, 3...).",
+      "items": {
+        "type": "object",
+        "required": ["line_number", "material_code", "material_description", "quantity"],
+        "properties": {
+          "line_number": {
+            "type": "string",
+            "description": "Sequential number (1, 2, 3...) in order of appearance.",
+            "examples": ["1", "2", "10"]
+          },
+          "material_code": {
+            "type": "string",
+            "description": "Product/material/SKU code.",
+            "examples": ["SKU-12345", "PROD-A001"]
+          },
+          "material_description": {
+            "type": "string",
+            "description": "Complete item description with all specifications.",
+            "examples": ["Steel bolts - 5mm, zinc plated, box of 100"]
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Quantity ordered/delivered/invoiced."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit of measure (e.g., EA, KG, BOX, HR).",
+            "examples": ["EA", "KG", "BOX"]
+          },
+          "unit_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Price per unit."
+          },
+          "total_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Total line amount."
+          },
+          "discount": {
+            "type": "object",
+            "description": "Discount information if applicable.",
+            "properties": {
+              "type": {"type": "string", "description": "Discount type (percentage, fixed)"},
+              "value": {"type": "number", "description": "Discount value"},
+              "amount": {"type": "number", "description": "Discount amount in currency"}
+            }
+          },
+          "tax_info": {
+            "type": "array",
+            "description": "All applicable taxes for this line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tax_type": {"type": "string", "examples": ["VAT", "GST", "HST"]},
+                "tax_rate": {"type": "number", "minimum": 0, "maximum": 100},
+                "tax_amount": {"type": "number", "minimum": 0}
+              }
+            }
+          },
+          "additional_fields": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Capture ANY other line-level information not covered above (delivery date, warehouse, batch number, notes, etc.)."
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Document totals and summary information.",
+      "properties": {
+        "subtotal": {"type": "number", "description": "Subtotal before taxes"},
+        "total_tax": {"type": "number", "description": "Total tax amount"},
+        "total_discount": {"type": "number", "description": "Total discount amount"},
+        "shipping": {"type": "number", "description": "Shipping/freight charges"},
+        "other_charges": {
+          "type": "object",
+          "additionalProperties": {"type": "number"},
+          "description": "Any other charges"
+        },
+        "grand_total": {"type": "number", "description": "Final total amount"}
+      }
+    },
+    "terms_and_conditions": {
+      "type": "string",
+      "description": "Payment terms, delivery terms, or other T&Cs mentioned."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Any additional notes, comments, or instructions on document."
+    },
+    "additional_data": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "CATCH-ALL: Any other information found on document that doesn't fit above fields. Use descriptive keys."
+    }
+  }
+}

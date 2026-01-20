@@ -1,0 +1,132 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+*.swp
+*.swo
+*~
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# Cursor IDE
+.cursor/
+.cursor
+.cursorrules
+cursor.rules
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+.env.test
+.env.local
+.env.production
+
+# Application specific
+application-local.yml
+application-dev.yml
+*.tmp
+*.temp
+requirements.md
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated sources (JOOQ)
+**/generated/
+**/jooq/
+
+# Test reports
+**/test-results/
+**/reports/
+
+# Configuration cache
+.gradle/configuration-cache/
+springboot_dev.env
+springboot.env
+token
+**logs-**
+**/bin/
+
+# Shell configuration files (may contain credentials)
+.zshrc
+.bashrc
+.bash_profile
+.profile
+*.sh.local
+
+# Certificate files (may contain private keys)
+certs/
+*.crt
+*.key
+*.pem
+!certs/rds-ca-global-bundle.pem
+*.p12
+*.pfx
+flyway_old
+springboot_local.env
+
+# SonarQube scanner properties (may contain tokens)
+sonar-scanner.properties
+files/

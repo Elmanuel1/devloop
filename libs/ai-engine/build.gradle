@@ -1,0 +1,134 @@
+plugins {
+    id 'java-library'
+    id 'org.flywaydb.flyway'
+    id 'org.jsonschema2pojo' version '1.2.1'
+}
+
+repositories {
+    mavenCentral()
+    maven { url 'https://repo.spring.io/milestone' }
+    maven { url 'https://repo.spring.io/snapshot' }
+    // Maven Central Snapshots (Spring AI Agents)
+    maven {
+        url 'https://central.sonatype.com/repository/maven-snapshots/'
+        mavenContent { snapshotsOnly() }
+    }
+}
+
+// JOOQ generation removed - using models.jooq instead
+
+dependencies {
+    // Models
+    implementation project(':libs:models')
+    
+    // Spring AI BOM (1.0.0 GA)
+    implementation platform("org.springframework.ai:spring-ai-bom:1.0.0")
+
+    // Spring AI OpenAI (GA artifact name)
+    implementation 'org.springframework.ai:spring-ai-starter-model-openai'
+
+    // Spring AI Anthropic (Claude agent for filesystem comparison)
+    implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
+
+    // Spring AI Agents - Core AgentClient API (api for transitive exposure)
+    // Exclude transitive spring-ai to avoid version conflict with 1.0.3
+    api('org.springaicommunity.agents:spring-ai-agent-client:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
+    // Spring AI Agents - Claude Code integration
+    api('org.springaicommunity.agents:spring-ai-claude-agent:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
+    // Spring AI Agents - Claude SDK (provides ClaudeAgentClient)
+    api('org.springaicommunity.agents:claude-agent-sdk:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
+    // Spring AI Agents - Judge and Jury for verification
+    api('org.springaicommunity.agents:spring-ai-agents-judge:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
+    api('org.springaicommunity.agents:spring-ai-advisors-judge:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
+    
+    // Spring AI pgvector (GA artifact name includes autoconfiguration)
+    implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
+    
+    // JSON Schema Validator
+    implementation 'com.networknt:json-schema-validator:1.5.5'
+    
+    // Database
+    implementation libs.postgresql
+    implementation libs.flyway.core
+    implementation libs.flyway.database.postgresql
+    
+    // JOOQ (using models.jooq generated classes)
+    implementation libs.jooq
+    
+    // HTTP Client
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+    
+    // JSON Processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.1'
+    
+    // PDF Processing
+    implementation libs.pdfbox
+    
+    // Spring Batch
+    implementation libs.spring.boot.starter.batch
+
+    // Resilience4j
+    implementation libs.resilience4j.spring.boot3
+    implementation libs.resilience4j.retry
+    
+    // Flyway for test database migrations
+    testImplementation libs.flyway.core
+    testImplementation libs.flyway.database.postgresql
+}
+
+// Configure jsonschema2pojo to generate POJOs from schema files
+jsonSchema2Pojo {
+    source = files(
+        "${rootDir}/schema-prompts/schemas/extraction.json",
+        "${rootDir}/schema-prompts/schemas/comparison.json"
+    )
+    targetDirectory = layout.buildDirectory.dir("generated-sources/extraction").get().asFile
+    targetPackage = 'com.tosspaper.aiengine.extraction.dto'
+    sourceType = 'jsonschema'
+    annotationStyle = 'jackson2'
+    includeConstructors = true
+    includeHashcodeAndEquals = true
+    includeToString = true
+    generateBuilders = true
+    useLongIntegers = true
+    includeAdditionalProperties = false
+    serializable = false
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += [
+                layout.buildDirectory.dir("generated/src/main/java").get().asFile,
+                layout.buildDirectory.dir("generated-sources/extraction").get().asFile
+            ]
+        }
+        resources {
+            srcDirs += ["$rootDir/flyway"]
+        }
+    }
+    test {
+        resources {
+            srcDirs += ["$rootDir/flyway"]
+        }
+    }
+}
+
+// JOOQ generation removed - using models.jooq instead
+
+// Ensure JSON Schema POJOs are generated before compileJava
+tasks.named('compileJava').configure {
+    dependsOn tasks.named('generateJsonSchema2Pojo')
+}

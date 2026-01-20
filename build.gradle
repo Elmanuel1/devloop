@@ -1,0 +1,268 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath libs.testcontainers
+        classpath libs.testcontainers.postgresql
+        // Ensure Flyway plugin has DB driver and database plugin on its classpath (use version catalog)
+        classpath libs.postgresql
+        classpath libs.flyway.database.postgresql
+    }
+}
+
+plugins {
+    id 'java'
+    id 'jacoco'
+    alias(libs.plugins.spring.boot) apply false
+    alias(libs.plugins.spring.dep.mgmt) apply false
+    alias(libs.plugins.jooq.plugin) apply false
+    alias(libs.plugins.flyway) apply false
+    alias(libs.plugins.sonarqube)
+}
+
+allprojects {
+    group = 'com.tosspaper'
+    version = '1.0.0'
+
+    repositories {
+        mavenCentral()
+        maven { url 'https://repo.spring.io/milestone' }
+        maven { url 'https://repo.spring.io/snapshot' }
+        // Maven Central Snapshots (Spring AI Agents)
+        maven {
+            url 'https://central.sonatype.com/repository/maven-snapshots/'
+            mavenContent { snapshotsOnly() }
+        }
+    }
+}
+
+subprojects {
+    apply plugin: 'groovy'
+    apply plugin: 'jacoco'
+    apply plugin: 'io.spring.dependency-management'
+    
+    dependencyManagement {
+        imports {
+            mavenBom "org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}"
+        }
+    }
+    
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+        compileJava {
+            options.compilerArgs += ['-parameters']
+        }
+    }
+    
+    dependencies {
+        // Spring Boot starters
+        implementation libs.spring.boot.starter.web
+        implementation libs.spring.boot.starter.data.redis
+        implementation libs.spring.boot.starter.validation
+        implementation libs.spring.boot.starter.actuator
+        implementation libs.spring.boot.starter.jooq
+        
+        // Redis client
+        implementation libs.redisson.spring.boot.starter
+        
+        // Netty DNS resolver for macOS (fixes DNS resolution warnings)
+        runtimeOnly libs.netty.resolver.dns.native.macos
+        implementation 'org.springframework.boot:spring-boot-starter'
+        
+        // Metrics (versions managed by Spring Boot dependency management)
+        implementation 'io.micrometer:micrometer-core'
+        
+        // Micrometer Tracing (versions managed by Spring Boot dependency management)
+        implementation 'io.micrometer:micrometer-tracing'
+        implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+
+        // Spring AOP for @Observed annotation support
+        implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+        // MapStruct
+        implementation libs.mapstruct
+        annotationProcessor libs.mapstruct.processor
+        
+        // Lombok
+        compileOnly libs.lombok
+        annotationProcessor libs.lombok
+        
+        // AWS SDK
+        implementation libs.aws.s3
+        implementation libs.aws.sqs
+        implementation libs.aws.sts
+        
+        // Apache Commons Lang for string utilities
+        implementation libs.commons.lang3
+        
+        // Google Guava for utilities
+        implementation libs.guava
+        
+        // Vavr functional programming library
+        implementation libs.vavr
+        
+        // Testing
+        testImplementation libs.groovy.core
+        testImplementation libs.spock.core
+        testImplementation libs.spock.spring
+        testImplementation libs.spring.boot.starter.test
+        testImplementation libs.testcontainers.postgresql
+        testImplementation libs.testcontainers.spock
+        testImplementation libs.junit.platform.launcher
+    }
+    
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events "passed", "skipped", "failed", "standardOut", "standardError"
+            showStandardStreams = true
+        }
+        systemProperty 'spock.iKnowWhatImDoing.disableGroovyVersionCheck', 'true'
+        finalizedBy jacocoTestReport
+    }
+
+    jacoco {
+        toolVersion = "0.8.12"
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            xml.required = true
+            html.required = true
+            csv.required = false
+        }
+
+        afterEvaluate {
+            classDirectories.setFrom(files(classDirectories.files.collect {
+                fileTree(dir: it, exclude: [
+                    '**/generated/**',
+                    '**/jooq/**',
+                    '**/*Application.class',
+                    '**/*Config.class',
+                    '**/model/**',
+                    '**/dto/**',
+                    '**/config/**'
+                ])
+            }))
+        }
+    }
+
+    jacocoTestCoverageVerification {
+        violationRules {
+            rule {
+                limit {
+                    minimum = 0.0
+                }
+            }
+        }
+    }
+}
+
+// SonarQube configuration for multi-module project
+sonar {
+    properties {
+        property "sonar.projectKey", "tosspaper-email-engine"
+        property "sonar.projectName", "TossPaper Email Engine"
+        property "sonar.sourceEncoding", "UTF-8"
+        property "sonar.java.source", "21"
+        property "sonar.java.target", "21"
+        
+        // Exclude generated code and build artifacts
+        property "sonar.exclusions", [
+            "**/generated/**",
+            "**/build/**",
+            "**/jooq/**",
+            "**/bin/**",
+            "**/*.class"
+        ].join(",")
+        
+        // Test exclusions
+        property "sonar.test.exclusions", [
+            "**/generated/**",
+            "**/build/**"
+        ].join(",")
+        
+        // Coverage exclusions (if using JaCoCo)
+        property "sonar.coverage.exclusions", [
+            "**/generated/**",
+            "**/jooq/**",
+            "**/model/**",
+            "**/dto/**",
+            "**/config/**",
+            "**/*Application.java",
+            "**/*Config.java"
+        ].join(",")
+        
+        // Language settings
+        property "sonar.java.libraries", "${project.buildDir}/libs/*.jar"
+        property "sonar.java.test.libraries", "${project.buildDir}/libs/*.jar"
+        
+        // Groovy/Spock test support
+        property "sonar.groovy.binaries", "${project.buildDir}/classes"
+        property "sonar.groovy.libraries", "${project.buildDir}/libs/*.jar"
+        
+        // Multi-module project structure
+        property "sonar.modules", [
+            "libs:models",
+            "libs:email-engine",
+            "libs:ai-engine",
+            "libs:api-tosspaper",
+            "libs:integrations",
+            "services:everything"
+        ].join(",")
+        
+        // Code analysis settings
+        property "sonar.java.checkstyle.reportPaths", ""
+        property "sonar.java.pmd.reportPaths", ""
+        
+        // Quality gate
+        property "sonar.qualitygate.wait", "true"
+
+        // JaCoCo coverage report path
+        property "sonar.coverage.jacoco.xmlReportPaths", [
+            "${project.buildDir}/reports/jacoco/jacocoAggregateReport/jacocoAggregateReport.xml"
+        ].join(",")
+    }
+}
+
+// Aggregated JaCoCo report for multi-module project
+task jacocoAggregateReport(type: JacocoReport) {
+    group = 'Reporting'
+    description = 'Generate aggregate JaCoCo coverage report for all subprojects'
+
+    dependsOn subprojects*.test
+
+    // Aggregate execution data from all subprojects
+    executionData.setFrom(fileTree(dir: '.', include: '**/build/jacoco/*.exec'))
+
+    // Aggregate source files from all subprojects
+    sourceDirectories.setFrom(files(subprojects.sourceSets.main.allSource.srcDirs))
+
+    // Aggregate class files from all subprojects
+    classDirectories.setFrom(files(subprojects.sourceSets.main.output))
+
+    // Apply exclusions
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                '**/generated/**',
+                '**/jooq/**',
+                '**/*Application.class',
+                '**/*Config.class',
+                '**/model/**',
+                '**/dto/**',
+                '**/config/**'
+            ])
+        }))
+    }
+
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}

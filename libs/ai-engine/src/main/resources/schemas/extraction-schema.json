@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schema/supply-chain-document-v4.json",
+  "$comment": "Single-page supply chain document. LLM MUST provide enum values where required, and line_number reflects order of appearance.",
+  "title": "Single Supply Chain Document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "id", "date", "vendor", "company", "currency", "line_items"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["po", "invoice", "delivery_note", "goods_receipt"],
+      "description": "Document type. MUST be one of: 'po', 'invoice', 'delivery_note', 'goods_receipt'. The LLM or parser MUST provide one of these values."
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique document identifier.",
+      "examples": ["PO-2025-00123"]
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Document date in YYYY-MM-DD format.",
+      "examples": ["2025-10-12"]
+    },
+    "reference_id": {
+      "type": "string",
+      "description": "Optional reference to related document.",
+      "examples": ["INV-2025-0045"]
+    },
+    "vendor": {
+      "type": "object",
+      "required": ["vendor_code", "vendor_name", "vendor_address"],
+      "additionalProperties": false,
+      "description": "Vendor/supplier information.",
+      "properties": {
+        "vendor_code": { "type": "string", "minLength": 1, "description": "Unique vendor code.", "examples": ["VND-001"] },
+        "vendor_name": { "type": "string", "minLength": 1, "description": "Vendor legal name.", "examples": ["Acme Supplies Inc."] },
+        "vendor_address": { "type": "string", "minLength": 1, "description": "Vendor address.", "examples": ["123 Industrial Way, Toronto, ON, Canada"] }
+      }
+    },
+    "company": {
+      "type": "object",
+      "required": ["company_code", "company_name", "company_address"],
+      "additionalProperties": false,
+      "description": "Company (buyer/receiver) information.",
+      "properties": {
+        "company_code": { "type": "string", "minLength": 1, "description": "Unique company code.", "examples": ["COMP-1001"] },
+        "company_name": { "type": "string", "minLength": 1, "description": "Company legal name.", "examples": ["Global Manufacturing Ltd."] },
+        "company_address": { "type": "string", "minLength": 1, "description": "Company address.", "examples": ["456 Enterprise Rd, Ottawa, ON, Canada"] }
+      }
+    },
+    "currency": {
+      "type": "string",
+      "description": "Three-letter ISO 4217 currency code (e.g., USD, EUR, CAD).",
+      "examples": ["USD"]
+    },
+    "line_items": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Array of line items representing products or services. line_number MUST reflect order of appearance starting at 1.",
+      "items": {
+        "type": "object",
+        "required": ["line_number", "material_code", "material_description", "quantity", "unit_price", "total_amount"],
+        "additionalProperties": false,
+        "properties": {
+          "line_number": { 
+            "type": "string", 
+            "description": "Line item number reflecting the order of appearance in the document (first line = 1, second = 2, etc.).",
+            "examples": ["1"]
+          },
+          "material_code": { "type": "string", "description": "Material/product code.", "examples": ["SKU-12345"] },
+          "material_description": { "type": "string", "minLength": 1, "description": "Material description.", "examples": ["Steel bolts - 5mm"] },
+          "quantity": { "type": "number", "minimum": 0, "description": "Quantity of items.", "examples": [100] },
+          "unit_price": { "type": "number", "minimum": 0, "multipleOf": 0.01, "description": "Price per unit.", "examples": [0.75] },
+          "total_amount": { "type": "number", "minimum": 0, "multipleOf": 0.01, "description": "Total line amount (quantity × unit_price).", "examples": [75.0] },
+          "tax_info": {
+            "type": "array",
+            "description": "Applicable taxes for this item.",
+            "items": {
+              "type": "object",
+              "required": ["tax_type", "tax_rate", "tax_amount"],
+              "additionalProperties": false,
+              "properties": {
+                "tax_type": { "type": "string", "description": "Type of tax (e.g., GST, VAT).", "examples": ["VAT"] },
+                "tax_rate": { "type": "number", "minimum": 0, "maximum": 100, "multipleOf": 0.01, "description": "Tax rate percentage.", "examples": [13.0] },
+                "tax_amount": { "type": "number", "minimum": 0, "multipleOf": 0.01, "description": "Tax amount in currency.", "examples": [9.75] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
