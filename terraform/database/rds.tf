@@ -6,24 +6,6 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# KMS Key for RDS Encryption (Performance Insights)
-# -----------------------------------------------------------------------------
-resource "aws_kms_key" "rds" {
-  description             = "KMS key for RDS Performance Insights - ${var.environment}"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
-
-  tags = {
-    Name = "${local.name_prefix}-rds-kms"
-  }
-}
-
-resource "aws_kms_alias" "rds" {
-  name          = "alias/${local.name_prefix}-rds"
-  target_key_id = aws_kms_key.rds.key_id
-}
-
-# -----------------------------------------------------------------------------
 # DB Subnet Group
 # -----------------------------------------------------------------------------
 resource "aws_db_subnet_group" "main" {
@@ -126,10 +108,9 @@ resource "aws_db_instance" "main" {
   # Protection
   deletion_protection = local.config.deletion_protection
 
-  # Monitoring
+  # Monitoring (uses default AWS-managed key for Performance Insights)
   performance_insights_enabled          = true
   performance_insights_retention_period = 7 # Free tier
-  performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
   # Updates
   auto_minor_version_upgrade = true

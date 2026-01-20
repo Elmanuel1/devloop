@@ -48,13 +48,13 @@ resource "aws_iam_role" "github_actions" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              # Main branch - can apply changes
+              # Main branch - for workflow_dispatch (plan/apply)
               "repo:${var.github_org}/${var.github_repository}:ref:refs/heads/main",
-              # Pull requests - can run plan only
+              # Pull requests - for PR validation
               "repo:${var.github_org}/${var.github_repository}:pull_request",
-              # GitHub environments (for environment protection rules)
-              "repo:${var.github_org}/${var.github_repository}:environment:production",
-              "repo:${var.github_org}/${var.github_repository}:environment:staging"
+              # GitHub environments (must match workflow environment names)
+              "repo:${var.github_org}/${var.github_repository}:environment:prod",
+              "repo:${var.github_org}/${var.github_repository}:environment:stage"
             ]
           }
         }
