@@ -129,4 +129,6 @@ springboot_local.env
 
 # SonarQube scanner properties (may contain tokens)
 sonar-scanner.properties
-files/bin/
+
+# Local file storage
+files/

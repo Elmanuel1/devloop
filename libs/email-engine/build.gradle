@@ -1,0 +1,51 @@
+import org.testcontainers.containers.PostgreSQLContainer
+
+plugins {
+    id 'java-library'
+    id 'org.flywaydb.flyway'
+}
+
+// JOOQ generation removed - using models.jooq instead
+
+dependencies {
+    // Models
+    implementation project(':libs:models')
+    
+    // Database
+    implementation libs.postgresql
+    implementation libs.flyway.core
+    implementation libs.flyway.database.postgresql
+    
+    // JOOQ (using models.jooq generated classes)
+    implementation libs.jooq
+    
+    // Mailgun SDK for sending emails
+    implementation libs.mailgun
+    
+    // Spring Boot for configuration properties
+    implementation 'org.springframework.boot:spring-boot-starter'
+    
+    // Flyway for test database migrations
+    testImplementation libs.flyway.core
+    testImplementation libs.flyway.database.postgresql
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += [
+                layout.buildDirectory.dir("generated/src/main/java").get().asFile
+            ]
+        }
+        resources {
+            srcDirs += ["$rootDir/flyway"]
+        }
+    }
+    test {
+        resources {
+            srcDirs += ["$rootDir/flyway"]
+        }
+    }
+}
+
+// JOOQ generation removed - using models.jooq instead

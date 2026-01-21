@@ -1,0 +1,4 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.tosspaper.emailengine.streams.EmailLocalUploadsStreamListener,\
+com.tosspaper.emailengine.service.impl.EmailServiceImpl,\
+com.tosspaper.emailengine.api.WebhookController

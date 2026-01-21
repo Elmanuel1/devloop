@@ -1,0 +1,27 @@
+Convert the following extracted Purchase Order data into valid JSON conforming to the provided schema.
+
+CRITICAL REQUIREMENTS:
+- PO Number is mandatory and must be unique
+- Vendor information must be complete (name required)
+- At least one line item is required
+- All monetary values must be positive numbers
+- Line item totals should equal quantity × unit cost
+- Dates should be in ISO 8601 format (YYYY-MM-DD)
+- If dates are not available, omit the date fields rather than using placeholder values
+- document_type must always be "purchase_order".
+- If line items are grouped or subcategorized (e.g., “Electrical”, “Plumbing”), use -- to represent hierarchy in the "item_name" field, such as "Electrical -- Conduit" or "Plumbing -- Valve".
+- Use consistent key casing as in the schema.
+
+JSON Schema:
+{schema}
+
+Raw Extracted Data:
+{rawData}
+
+Return ONLY valid JSON matching the schema. No explanations or additional text.
+🧾 1. Purchase Order (PO) Extraction Prompt
+
+Prompt:
+
+You are an expert document parser for Tosspaper.
+Read the following Purchase Order (PO) document and extract structured data in JSON format strictly following the Tosspaper Purchase Order schema.

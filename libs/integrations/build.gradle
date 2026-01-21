@@ -1,0 +1,63 @@
+plugins {
+    id 'java-library'
+    id 'groovy'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Internal modules
+    api project(':libs:models')
+
+    // Spring Boot
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.validation
+    implementation libs.spring.boot.starter.data.redis
+
+    // QuickBooks SDK
+    implementation libs.quickbooks.oauth2
+    implementation libs.quickbooks.data
+    implementation libs.quickbooks.devkit
+
+    // JOOQ
+    implementation libs.jooq
+
+    // Resilience4j
+    implementation libs.resilience4j.spring.boot3
+    implementation libs.resilience4j.retry
+
+    // Temporal
+    implementation 'io.temporal:temporal-sdk:1.31.0'
+    implementation 'io.temporal:temporal-spring-boot-starter:1.31.0'
+
+    // BouncyCastle for encryption
+    implementation libs.bouncycastle.bcprov
+
+    // Jackson
+    implementation libs.jackson.datatype.jsr310
+
+    // Guava
+    implementation libs.guava
+
+    // Mailgun SDK
+    implementation libs.mailgun
+
+    // Lombok
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+
+    // Testing
+    testImplementation libs.spring.boot.starter.test
+    testImplementation libs.groovy.core
+    testImplementation libs.spock.core
+    testImplementation libs.spock.spring
+    testImplementation libs.testcontainers
+    testImplementation libs.testcontainers.postgresql
+    testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

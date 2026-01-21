@@ -1,0 +1,39 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.springframework.boot'
+}
+
+dependencies {
+    implementation project(':libs:models')
+    implementation project(':libs:email-engine')
+    implementation project(':libs:ai-engine')
+    implementation project(':libs:api-tosspaper')
+    implementation project(':libs:integrations')
+    
+    // Mailgun SDK for sending emails
+    implementation libs.mailgun
+
+    // AWS SDK for SQS
+    implementation libs.aws.sqs
+    implementation libs.aws.sts
+    
+    implementation libs.spring.boot.starter.batch
+    implementation 'org.springframework.boot:spring-boot-starter'
+    
+    // Spring Security for authentication
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'com.nimbusds:nimbus-jose-jwt:9.37.3'
+
+    // Jackson JSR310 for Java 8 date/time support (OffsetDateTime, LocalDate, etc.)
+    implementation libs.jackson.datatype.jsr310
+}
+
+springBoot {
+    mainClass = 'com.tosspaper.everything.EverythingApplication'
+}
+
+application {
+    mainClass = 'com.tosspaper.everything.EverythingApplication'
+}

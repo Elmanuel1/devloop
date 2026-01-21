@@ -1,0 +1,19 @@
+Convert the following extracted Delivery Slip data into valid JSON conforming to the provided schema.
+
+CRITICAL REQUIREMENTS:
+- Delivery Number is mandatory and must be unique
+- Vendor and Customer information must be complete (name required)
+- At least one line item is required
+- All quantities must be positive numbers
+- Dates should be in ISO 8601 format (YYYY-MM-DD)
+- If dates are not available, omit the date fields rather than using placeholder values
+- If line items are grouped or subcategorized (e.g., “Electrical”, “Plumbing”), use -- to represent hierarchy in the "item_name" field, such as "Electrical -- Conduit" or "Plumbing -- Valve".
+
+
+JSON Schema:
+{schema}
+
+Raw Extracted Data:
+{rawData}
+
+Return ONLY valid JSON matching the schema. No explanations or additional text.

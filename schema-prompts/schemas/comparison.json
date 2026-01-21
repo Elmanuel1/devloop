@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DocumentComparisonResult",
+  "description": "Schema for document comparison between extracted document and purchase order",
+  "type": "object",
+  "required": ["documentId", "poId", "results"],
+  "properties": {
+    "documentId": {
+      "type": "string",
+      "description": "Unique identifier for the extracted document"
+    },
+    "poId": {
+      "type": "string",
+      "description": "Unique identifier for the purchase order"
+    },
+    "overallStatus": {
+      "type": "string",
+      "enum": ["matched", "partial", "unmatched"],
+      "description": "Overall status of document comparison"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Overall confidence in matching"
+    },
+    "blockingIssues": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of blocking issues detected in comparison"
+    },
+    "results": {
+      "type": "array",
+      "description": "Array of comparison results for each part",
+      "items": {
+        "title": "ComparisonPartResult",
+        "type": "object",
+        "required": ["type", "status", "matchScore", "confidence", "signals", "reasons", "severity"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["vendor", "ship_to", "line_item"],
+            "description": "Type of part being compared"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["matched", "partial", "unmatched"],
+            "description": "Status of the comparison for this part"
+          },
+          "matchScore": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Overall match score for this part"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence in the match score"
+          },
+          "reasons": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Human-readable explanation of why the part was matched/unmatched"
+          },
+          "signals": {
+            "type": "object",
+            "description": "Detailed matching signals per field",
+            "properties": {
+              "address": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "street": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                      "postalCode": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                      "state": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                      "province": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                      "country": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["score", "components"]
+              },
+              "name": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "fullName": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                    },
+                    "additionalProperties": false
+                  },
+                  "method": { "type": "string", "description": "Matching method used (e.g., exact, jaro_winkler)" }
+                },
+                "required": ["score", "components", "method"]
+              },
+              "email": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "domain": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["score", "components"]
+              },
+              "description": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "quantity": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "value": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "unitPrice": {
+                "type": "object",
+                "properties": {
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "components": {
+                    "type": "object",
+                    "properties": {
+                      "value": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                      "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "discrepancies": {
+            "type": "object",
+            "description": "Field-level differences between extracted document and PO",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "extracted": {},
+                "po": {},
+                "difference": { "type": "string" }
+              },
+              "required": ["extracted", "po", "difference"]
+            }
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "blocking"],
+            "description": "Indicates criticality of mismatches"
+          },
+          "extractedIndex": { "type": "integer" },
+          "poIndex": { "type": "integer" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

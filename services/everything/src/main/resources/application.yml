@@ -1,0 +1,469 @@
+spring:
+  profiles:
+    active: supabase
+  application:
+    name: tosspaper-everything
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
+
+  temporal:
+    connection:
+      target: ${TEMPORAL_HOST:localhost}:${TEMPORAL_PORT:7233}
+    namespace: ${TEMPORAL_NAMESPACE:default}
+    workers:
+      - task-queue: integration-sync
+        name: integration-sync-worker
+    workers-auto-discovery:
+      packages:
+        - com.tosspaper.integrations.temporal
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5434/tosspaper}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # Increase pool size for virtual threads - with virtual threads we can have many concurrent requests
+      # but they all need database connections when they actually query the DB
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:50}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:600000}
+      # CRITICAL: Must be < 15 min (900000ms) for IAM auth token refresh
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:840000}  # 14 minutes - required for IAM auth compatibility
+      leak-detection-threshold: ${DB_POOL_LEAK_DETECTION:60000}
+      # Connection validation to prevent PoolBase warnings
+      connection-test-query: SELECT 1
+      validation-timeout: 5000  # 5 seconds
+      # Enable connection pool monitoring
+      register-mbeans: true
+      # Log connection pool stats periodically
+      pool-name: tosspaper-pool
+  
+  flyway:
+    enabled: false
+  
+  jooq:
+    sql-dialect: POSTGRES
+  
+  threads:
+    virtual:
+      enabled: true 
+  
+  devtools:
+    restart:
+      enabled: true
+      additional-paths: src/main/resources
+    livereload:
+      enabled: false
+  
+  
+  jackson:
+    time-zone: UTC
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
+    serialization:
+      write-dates-as-timestamps: false
+
+  data:
+    redis:
+      database: ${REDIS_DATABASE:0}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:mypass}
+      timeout: ${REDIS_TIMEOUT:60000}
+      # Stream processing optimization
+      stream:
+        poll-timeout: 1000
+        batch-size: 50
+        consumer-poll-timeout: 2000
+
+  cache:
+    type: redis
+    # Note: Individual cache TTLs are configured in CacheConfig.java
+    # This allows different caches to have different expiration times:
+    # - user-roles: 5 minutes (short TTL for security, immediate revocation)
+    # - Other caches can be added with custom TTLs as needed
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      embedding:
+        model: text-embedding-3-small
+      classifier:
+        model: gpt-5-mini
+        temperature: 1
+        max-tokens: 10000
+      generator:
+        model: gpt-5-mini
+        temperature: 1
+        max-tokens: 10000
+      evaluator:
+        model: gpt-5-mini
+        temperature: 1
+        max-tokens: 10000
+    vectorstore:
+      pgvector:
+        table-name: ${SPRING_AI_VECTORSTORE_PGVECTOR_TABLE_NAME:extraction_embeddings}
+        schema-name: ${SPRING_AI_VECTORSTORE_PGVECTOR_SCHEMA_NAME:public}
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        remove-existing-vector-store-table: false
+        initialize-schema: false
+        schema-validation: true
+        max-document-batch-size: 1000
+
+servlet:
+  multipart:
+    enabled: true
+    max-file-size: 50MB
+    max-request-size: 50MB
+    file-size-threshold: 2MB
+    max-file-count: 1000 
+
+otel:
+  service:
+    name: ${spring.application.name}
+    version: ${APP_VERSION:1.0.0}
+    instance:
+      id: ${HOSTNAME:${spring.application.name}}
+  resource:
+    attributes:
+      service.name: ${spring.application.name}
+      service.version: ${APP_VERSION:1.0.0}
+      deployment.environment: ${ENV:local}
+  
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+    
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+  metrics:
+    enable:
+      hikaricp: true
+    export:
+      # Note: OTLP export is handled by Middleware.io Java agent, not Spring Boot auto-configuration
+      # Disable Spring Boot's OTLP auto-configuration to avoid port 4318 connection errors
+      otlp:
+        enabled: false
+    tags:
+      application: ${spring.application.name}
+      environment: ${MW_ENVIRONMENT:development}
+  tracing:
+    sampling:
+      probability: 0.4
+    propagation:
+      type: w3c
+  observations:
+    key-values:
+      application: ${spring.application.name}
+    http:
+      server:
+        requests:
+          name: http.server.requests
+          # Exclude health check endpoints from observation to avoid log spam
+          ignore-patterns: 
+            - "/actuator/health/**"
+            - "/actuator/health"
+            - "/health"
+            - "/actuator/info"
+            - "/actuator/health/liveness"
+            - "/actuator/health/readiness"
+      client:
+        requests:
+          name: http.client.requests
+
+  jackson:
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+
+# Redisson configuration
+redisson:
+  config: |
+    singleServerConfig:
+      address: "redis://${REDIS_HOST:localhost}:${REDIS_PORT:16379}"
+      password: "${REDIS_PASSWORD:mypass}"
+      database: ${REDIS_DATABASE:0}
+      connectionPoolSize: 10
+      connectionMinimumIdleSize: 5
+      timeout: ${REDIS_TIMEOUT:60000}
+      retryAttempts: 3
+      retryInterval: 1500
+
+# Messaging provider configuration - controls Redis/SQS switching
+messaging:
+  provider: ${MESSAGING_PROVIDER:sqs}  # "redis" or "sqs"
+
+redis:
+  streams:
+    config:
+      email-local-uploads:
+        email-local-upload-group:
+          listener: emailLocalUploadsStreamListener
+          consumers:
+            - email-local-upload-consumer-1
+      ai-process:
+        ai-process-group:
+          listener: aiProcessStreamListener
+          consumers:
+            - ai-process-consumer-1
+            - ai-process-consumer-2
+      vector-store-ingestion:
+        vector-ingestion-group:
+          listener: vectorStoreIngestionListener
+          consumers:
+            - vector-ingestion-consumer-1
+            - vector-ingestion-consumer-2
+            - vector-ingestion-consumer-3
+            - vector-ingestion-consumer-4
+            - vector-ingestion-consumer-5
+            - vector-ingestion-consumer-6
+            - vector-ingestion-consumer-7
+            - vector-ingestion-consumer-8
+            - vector-ingestion-consumer-9
+            - vector-ingestion-consumer-10
+      document-approved-events:
+        document-approved-group:
+          listener: documentApprovedStreamListener
+          consumers:
+            - document-approved-consumer-1
+            - document-approved-consumer-2
+            - document-approved-consumer-3
+            - document-approved-consumer-4
+            - document-approved-consumer-5
+      quickbooks-events:
+        quickbooks-events-group:
+          listener: quickBooksWebhookStreamListener
+          consumers:
+            - quickbooks-events-consumer-1
+            - quickbooks-events-consumer-2
+      integration-push-events:
+        integration-push-group:
+          listener: integrationPushStreamListener
+          consumers:
+            - integration-push-consumer-1
+            - integration-push-consumer-2
+server:
+  timezone: UTC
+  port: 8080
+  max-http-request-header-size: 64KB
+  tomcat:
+    max-http-header-size: 64KB
+    max-file-count: 10000
+    max-parameter-count: 10000
+    max-part-count: ${SERVER_TOMCAT_MAX_PART_COUNT:1000}
+    max-http-form-post-size: 50MB
+
+schema:
+  prompts:
+    path: ${SCHEMA_PROMPTS_PATH:./schema-prompts}
+
+conformance:
+  success-threshold: 0.95
+  max-iterations: 3
+  processing-timeout-hours: 1
+
+po-matching:
+  top-k-candidates: 10                 # Number of PO candidates to retrieve from vector search
+  automatch-similarity-threshold: 0.90 # Auto-match threshold (>= this value, no AI needed)
+  ai-similarity-threshold: 0.80        # Minimum vector similarity for AI evaluation (below this = no match)
+  min-comparison-score: 0.60           # Minimum AI comparison score to accept match (below this = no match)
+
+app:
+  integrations:
+    quickbooks:
+      client-id: ${QUICKBOOKS_CLIENT_ID:}
+      client-secret: ${QUICKBOOKS_CLIENT_SECRET:}
+      redirect-uri: ${QUICKBOOKS_REDIRECT_URI:}
+      discovery-document-url: ${QUICKBOOKS_DISCOVERY_URL:https://developer.api.intuit.com/.well-known/openid-configuration}
+      api-base-url: ${QUICKBOOKS_API_BASE_URL:https://sandbox-quickbooks.api.intuit.com/v3/company}
+      webhooks:
+        verifier-token: ${QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN:}
+      resilience:
+        rate-limiter:
+          limit-per-minute: 500          # 500 requests per minute per realm
+          limit-refresh-period-seconds: 60 # Refresh period 60 seconds
+          timeout-millis: 500            # Wait 500ms for permit before failing
+        bulkhead:
+          max-concurrent-calls: 10        # Max 10 concurrent calls per realm
+          max-wait-duration-seconds: 120 # Wait up to 2 minutes for a slot
+        retry:
+          max-attempts: 3                # Retry up to 3 times
+          wait-millis: 2000              # Initial wait 2 seconds
+          exponential-backoff: true      # Enable exponential backoff
+          backoff-multiplier: 2.0        # Double wait time each retry
+        circuit-breaker:
+          failure-rate-threshold: 50     # Open circuit at 50% failure rate
+          sliding-window-type: COUNT_BASED # COUNT_BASED or TIME_BASED
+          wait-duration-seconds: 60      # Wait 60s before half-open state
+          sliding-window-size: 100       # Count-based window of 100 calls
+          permitted-calls-in-half-open: 10 # Test with 10 calls in half-open
+      sync:
+        batch-size: 30
+        sync-interval-seconds: 180
+    encryption:
+      key: ${INTEGRATION_ENCRYPTION_KEY:}
+  email:
+    allowed-domain: ${APP_EMAIL_ALLOWED_DOMAIN:dev-clientdocs.useassetiq.com}
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:}
+    integrations-redirect-url: ${FRONTEND_INTEGRATIONS_REDIRECT_URL:${frontend.base-url}/dashboard/organization?tab=settings&section=integrations}
+  mailgun:
+    api-key: ${MAILGUN_API_KEY:}
+    domain: ${MAILGUN_DOMAIN:}
+    base-url: ${MAILGUN_BASE_URL:}
+    from-email: ${MAILGUN_FROM_EMAIL:noreply@tosspaper.com}
+  disposable-email:
+    blocklist-file: ${DISPOSABLE_EMAIL_BLOCKLIST_FILE:./disposable_email_blocklist.txt}
+    fetch-enabled: ${DISPOSABLE_EMAIL_FETCH_ENABLED:true}
+    fetch-interval-hours: ${DISPOSABLE_EMAIL_FETCH_INTERVAL_HOURS:24}
+    fetch-url: https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/master/disposable_email_blocklist.conf
+  rejected-documents:
+    retention-hours: ${REJECTED_DOCUMENTS_RETENTION_HOURS:720}  # Default 30 days (720 hours)
+    cleanup-enabled: ${REJECTED_DOCUMENTS_CLEANUP_ENABLED:true}
+    cleanup-batch-size: ${REJECTED_DOCUMENTS_CLEANUP_BATCH_SIZE:1000}  # Max attachments per cleanup run
+  vfs:
+    root: ${FILE_FILESYSTEM_PATH:/Users/macbook/tosspaper-email-engine/files}
+  ai:
+    agents:
+      claude:
+        model: ${CLAUDE_AGENT_MODEL:claude-sonnet-4-20250514}
+        timeout: ${CLAUDE_AGENT_TIMEOUT:PT10M}
+        dangerously-skip-permissions: ${CLAUDE_AGENT_SKIP_PERMISSIONS:true}
+
+aws:
+  rds:
+    # IAM database authentication (passwordless)
+    # Uses EC2 instance profile credentials to generate auth tokens
+    iam-auth-enabled: ${RDS_IAM_AUTH_ENABLED:false}
+    region: ${AWS_REGION:us-east-1}
+  bucket:
+    region: ${AWS_REGION:us-east-1}
+    name: ${AWS_S3_BUCKET_NAME:tosspaper-email-attachments}
+    endpoint: ${AWS_S3_ENDPOINT:} # Dev: https://dev-api.tosspaper.com/s3 (via nginx), Prod: empty (AWS default)
+    path-style-access: ${AWS_S3_PATH_STYLE:false} # Enable for S3-compatible services that require path-style URLs
+    public-read: ${AWS_S3_PUBLIC_READ:false}
+  sqs:
+    region: ${AWS_REGION:us-east-1}
+    endpoint: ${SQS_ENDPOINT:}  # Empty for AWS, LocalStack URL for local (e.g., http://localhost:4566)
+    queue-prefix: ${SQS_QUEUE_PREFIX:tosspaper}
+    queues:
+      email-local-uploads:
+        visibility-timeout-seconds: 300    # 5 min for S3 upload
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+      ai-process:
+        visibility-timeout-seconds: 600    # 10 min for AI extraction
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+      vector-store-ingestion:
+        visibility-timeout-seconds: 60     # 1 min for vector embedding
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+      document-approved-events:
+        visibility-timeout-seconds: 120    # 2 min for notification
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+      quickbooks-events:
+        visibility-timeout-seconds: 300    # 5 min for webhook sync
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+      integration-push-events:
+        visibility-timeout-seconds: 600    # 10 min for push sync
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
+
+# File Configuration
+file:
+  filesystem-path: ${FILE_FILESYSTEM_PATH:/Users/macbook/tosspaper-email-engine/files}
+  validation:
+    max-file-size-bytes: ${FILE_MAX_SIZE:26214400} # 25MB
+    max-filename-length: ${FILE_MAX_FILENAME_LENGTH:255}
+    allowed-content-types:
+    - application/pdf
+    - image/jpeg
+    - image/png
+    - image/gif
+    - image/webp
+    allowed-file-extensions:
+    - pdf
+    - jpg
+    - jpeg
+    - png
+    - gif
+    - webp
+    replacement-map:
+      "..": "_"
+      "/": "_"
+      "\\": "_"
+      ":": "_"
+      "*": "_"
+      "?": "_"
+      "\"": "_"
+      "<": "_"
+      ">": "_"
+      "|": "_"
+    min-aspect-ratio: ${FILE_MIN_ASPECT_RATIO:0.2}  # Reject images narrower than 1:5 (portrait)
+    max-aspect-ratio: ${FILE_MAX_ASPECT_RATIO:5.0}  # Reject images wider than 5:1 (landscape banners)
+
+    # AI Configuration
+ai:
+  provider: ${AI_PROVIDER:reducto}
+  api-key: ${AI_API_KEY:}
+  base-url: ${AI_BASE_URL:https://platform.reducto.ai}
+  http:
+    connect-timeout-seconds: ${AI_HTTP_CONNECT_TIMEOUT:30}
+    read-timeout-seconds: ${AI_HTTP_READ_TIMEOUT:60}
+    write-timeout-seconds: ${AI_HTTP_WRITE_TIMEOUT:60}
+    enable-logging: ${AI_HTTP_ENABLE_LOGGING:true}
+    logging-level: ${AI_HTTP_LOGGING_LEVEL:WARN}
+
+logging:
+  level:
+    # HikariCP connection pool logging - set to WARN to reduce verbosity
+    com.zaxxer.hikari: WARN
+    com.zaxxer.hikari.HikariConfig: INFO
+    com.zaxxer.hikari.pool.HikariPool: INFO
+    com.zaxxer.hikari.pool.PoolBase: WARN
+    com.tosspaper.everything: INFO
+    com.tosspaper: DEBUG
+
+    org.jooq: WARN
+    org.springframework.jdbc: WARN
+# Application Info
+info:
+  app:
+    name: TossPaper Everything Service
+    description: Unified API with Email Engine, AI Processing, and Business Management
+    version: 1.0.0
+
+# TossPaper Integration Configuration
+tosspaper:
+  integration:
+    push:
+      retry:
+        max-attempts: 5

@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Universal Document Extraction Schema",
+  "description": "Unified schema for extracting invoices, delivery slips, and delivery notes",
+  "type": "object",
+  "properties": {
+    "documentType": {
+      "type": "string",
+      "enum": ["invoice", "delivery_slip", "delivery_note", "unknown"],
+      "description": "Document classification."
+    },
+    "documentNumber": {
+      "type": "string",
+      "description": "Unique document identifier (invoice/slip/note number)."
+    },
+    "documentDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Document date in ISO format (YYYY-MM-DD)."
+    },
+    "customerPONumber": {
+      "type": "string",
+      "description": "Purchase Order number for the document. ALWAYS extract if present - applicable to ALL document types (invoices, delivery slips, delivery notes)."
+    },
+    "jobOrderNumber": {
+      "type": "string",
+      "description": "Seller's internal order/job ID."
+    },
+    "invoiceDetails": {
+      "type": "object",
+      "description": "Invoice-specific financial information. Specific to invoices only.",
+      "properties": {
+        "currencyCode": {
+          "type": "string",
+          "description": "Currency (ISO 4217). Required for invoices."
+        },
+        "paymentTerms": {
+          "type": "string",
+          "description": "Payment terms (e.g., 'Net 30'). Required for invoices."
+        },
+        "dueDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Invoice due date in ISO format (YYYY-MM-DD)."
+        }
+      },
+      "required": ["currencyCode", "paymentTerms"]
+    },
+    "shipmentDetails": {
+      "type": "object",
+      "description": "Shipment and logistics information. Specific to delivery slips and delivery notes.",
+      "properties": {
+        "warehouseLocation": {
+          "type": "string",
+          "description": "Warehouse/depot location. Required for delivery notes."
+        },
+        "driverId": {
+          "type": "string",
+          "description": "Driver name or identifier. Required for delivery notes."
+        },
+        "vehicleId": {
+          "type": "string",
+          "description": "Vehicle identifier or license plate."
+        },
+        "deliveryDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Delivery date and time in ISO 8601 format (e.g., 2025-10-30T14:30:00Z). Specific to delivery slips and notes."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Shipment notes or special handling instructions."
+        }
+      }
+    },
+    "deliveryAcknowledgement": {
+      "type": "object",
+      "description": "Delivery acknowledgement and proof of delivery. Specific to delivery slips and delivery notes.",
+      "properties": {
+        "acknowledgedDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Date and time when delivery was acknowledged in ISO 8601 format (e.g., 2025-10-30T14:30:00Z)."
+        },
+        "ticketId": {
+          "type": "string",
+          "description": "Delivery ticket/reference number."
+        },
+        "recipientName": {
+          "type": "string",
+          "description": "Name of the person receiving the delivery."
+        },
+        "recipientSignature": {
+          "type": "string",
+          "description": "Signature or confirmation identifier of recipient."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["delivered", "partial", "rejected"],
+          "description": "Status of delivery acknowledgement."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Delivery acknowledgement notes or comments."
+        }
+      }
+    },
+    "parties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["Seller", "Buyer", "Ship To", "Bill To"],
+            "description": "Party role in transaction."
+          },
+          "name": {
+            "type": "string",
+            "description": "Legal or operational name."
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": { "type": "string" },
+              "postalCode": { "type": "string" },
+              "provinceOrState": { "type": "string" },
+              "countryISO": { "type": "string" }
+            },
+            "required": ["street"]
+          },
+          "referenceNumber": {
+            "type": "string",
+            "description": "Company reference number."
+          },
+          "contactInfo": {
+            "type": "object",
+            "properties": {
+              "phone": { "type": "string" },
+              "email": { "type": "string" }
+            }
+          }
+        },
+        "required": ["role", "name"]
+      },
+      "description": "All parties (Seller, Buyer, Ship To, Bill To)."
+    },
+    "deliveryTransactions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "deliveryDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Delivery/service date in ISO format (YYYY-MM-DD)."
+          },
+          "ticketId": {
+            "type": "string",
+            "description": "Delivery ticket number. ALWAYS extract if present - applicable to ALL document types (invoices, delivery slips, delivery notes)."
+          },
+          "poNumber": {
+            "type": "string",
+            "description": "PO number for this transaction."
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineNumber": {
+                  "type": "string",
+                  "description": "Sequential line number."
+                },
+                "itemCode": {
+                  "type": "string",
+                  "description": "SKU/product code."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Item description."
+                },
+                "unitOfMeasure": {
+                  "type": "string",
+                  "description": "Unit (e.g., 'MT', 'EA')."
+                },
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity delivered/charged."
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Price per unit. ALWAYS extract if present - applicable to ALL document types (invoices, delivery slips, delivery notes). Do not confuse for weight"
+                },
+                "weight": {
+                  "type": "number",
+                  "description": "Item weight. ALWAYS extract if present - applicable to ALL document types (invoices, delivery slips, delivery notes)."
+                }
+              },
+              "required": ["description", "quantity"]
+            }
+          }
+        },
+        "required": ["charges"]
+      },
+      "description": "Distinct delivery/job transactions. ticketId, unitPrice, and weight apply to ALL document types (invoices, delivery slips, delivery notes)."
+    }
+  },
+  "required": [
+    "documentType",
+    "documentNumber",
+    "documentDate",
+    "customerPONumber",
+    "parties",
+    "deliveryTransactions"
+  ]
+}

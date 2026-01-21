@@ -1,0 +1,28 @@
+# Custom PostgreSQL image with pgvector extension
+FROM postgres:15-alpine
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git \
+    postgresql-dev \
+    clang15 \
+    llvm15-dev
+
+# Install pgvector extension
+RUN git clone --branch v0.5.1 https://github.com/pgvector/pgvector.git /tmp/pgvector && \
+    cd /tmp/pgvector && \
+    make && \
+    make install
+
+# Clean up build dependencies
+RUN apk del build-base git postgresql-dev clang15 llvm15-dev
+
+# Create initialization script to enable pgvector
+RUN echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/01-pgvector.sql
+
+# Set default shared_preload_libraries to include vector
+ENV POSTGRES_SHARED_PRELOAD_LIBRARIES=vector
+
+# Expose PostgreSQL port
+EXPOSE 5432

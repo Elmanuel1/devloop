@@ -1,0 +1,42 @@
+# Supabase Configuration
+# This configuration enables Supabase OAuth2/JWT authentication for api-tosspaper endpoints
+
+# Supabase Auth Hook Configuration
+supabase:
+  url: ${SUPABASE_URL:https://jbejwnaxmwomppvzzbhg.supabase.co}  # Your Supabase project URL
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}  # Service role key for admin operations (keep secret!)
+  webhook:
+    secret: ${SUPABASE_WEBHOOK_SECRET:}  # Secret for verifying webhook signatures from Supabase auth hooks
+
+# HTTP Security Configuration for Supabase
+http:
+  security:
+    enabled: true
+    jwt:
+      # Supabase JWT issuer URL
+      issuer: ${SUPABASE_JWT_ISSUER:https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1}
+      # Your application's audience/identifier
+      audience: ${SUPABASE_JWT_AUDIENCE:authenticated}
+      # Supabase JWT verification endpoint
+      jwk-set-uri: ${SUPABASE_JWKS_URI:https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1/.well-known/jwks.json}
+      cache:
+        expire-after-write: ${HTTP_SECURITY_JWT_JWKS_CACHE_EXPIRE_AFTER_WRITE:PT72H}
+        maximum-size: ${HTTP_SECURITY_JWT_JWKS_CACHE_MAXIMUM_SIZE:100}
+    insecure:
+      # Paths that do NOT require authentication (email engine webhooks, AI webhooks, Supabase auth hooks, QuickBooks webhooks)
+      paths: /**/email-messages,/reducto/webhook,/actuator/**,/api/auth/hooks/**,/v1/quickbooks/events
+    authenticated:
+      # Paths that require authentication (api-tosspaper endpoints only)
+      # Email engine APIs remain unauthenticated
+      paths: /v1/companies/**,/v1/projects/**,/v1/contacts/**,/v1/purchase-orders/**
+    csrf:
+      ignored-path: /**/email-messages,/reducto/webhook,/actuator/**,/v1/quickbooks/events
+      enabled: ${HTTP_SECURITY_CSRF_ENABLED:false}
+      cookie:
+        name: XSRF-TOKEN
+        http-only: false
+        secure: true
+        same-site: None
+        domain: ${CSRF_COOKIE_DOMAIN:localhost}
+    cors:
+      domains: ${HTTP_SECURITY_CORS_DOMAINS:http://localhost:3000}

@@ -1,0 +1,48 @@
+You are a data quality evaluator. Evaluate this Delivery Slip JSON.
+
+JSON Schema:
+{schema}
+
+Generated Delivery Slip JSON:
+{generatedJson}
+
+Original Raw Data:
+{rawData}
+
+VALIDATION RULES:
+1. Delivery Number present and non-empty
+2. Vendor and Customer names present
+3. At least one line item
+4. All quantities are positive numbers
+5. Dates are in valid ISO 8601 format if present
+6. Cross-reference with PO Number if available
+- If line items are grouped or subcategorized (e.g., “Electrical”, “Plumbing”), use -- to represent hierarchy in the "item_name" field, such as "Electrical -- Conduit" or "Plumbing -- Valve".
+
+SCORING (start at 1.0, subtract):
+- Missing required fields: -0.3 per field
+- Invalid data types: -0.2 per field
+- Business rule violations: -0.2 per violation
+- Invalid date format: -0.1 per date
+
+IMPORTANT EVALUATION RULES:
+1. ONLY evaluate against the JSON schema - check if generated JSON matches the schema specification
+2. ONLY penalize missing REQUIRED fields per the schema
+3. DO NOT penalize missing optional fields, even if present in raw data
+4. DO NOT penalize omission of placeholder values (e.g., "N/A", empty strings, or similar non-informative values)
+5. Optional fields (not tagged as required in schema) should NOT affect the score, regardless of presence in raw data
+6. Only flag discrepancies in REQUIRED or business-critical fields with actual meaningful values (not placeholders)
+7. If raw data contains placeholder/empty values (like "N/A"), omitting them from generated JSON is CORRECT and should not be penalized
+
+Respond in this EXACT JSON format:
+{
+  "isSchemaValid": boolean,
+  "score": number (0.0 to 1.0),
+  "issues": [
+    {
+      "field": "path.to.field",
+      "problem": "description of the problem",
+      "severity": "critical" or "warning"
+    }
+  ],
+  "suggestions": "specific advice for improving extraction in next attempt only if it the score is less than 0.95"
+}
