@@ -73,9 +73,10 @@ public interface IntegrationsService {
      *
      * @param connectionId the connection ID
      * @param companyId    the company ID (for authorization check)
-     * @param status      the new status (ENABLED or DISABLED)
+     * @param status       the new status (ENABLED or DISABLED)
+     * @return the updated connection
      */
-    void updateConnectionStatus(String connectionId, Long companyId, IntegrationConnectionStatus status);
+    IntegrationConnection updateConnectionStatus(String connectionId, Long companyId, IntegrationConnectionStatus status);
 
     /**
      * Integration settings DTO.

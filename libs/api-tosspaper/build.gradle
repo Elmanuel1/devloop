@@ -1,0 +1,196 @@
+import org.testcontainers.containers.PostgreSQLContainer
+
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath libs.testcontainers.postgresql
+        classpath libs.testcontainers
+        classpath libs.postgresql
+        classpath libs.flyway.database.postgresql
+    }
+}
+
+plugins {
+	alias(libs.plugins.spring.boot)
+	alias(libs.plugins.spring.dep.mgmt)
+	alias(libs.plugins.openapi.generator)
+	// JOOQ plugin removed - using models.jooq instead
+	alias(libs.plugins.flyway)
+	id 'java'
+	id 'groovy'
+	id 'jacoco'
+	id 'org.jsonschema2pojo' version '1.2.1'
+}
+
+group = 'com.tosspaper'
+version = '0.0.1-SNAPSHOT'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// Spring Boot
+	implementation libs.spring.boot.starter.web
+	implementation libs.spring.boot.starter.validation
+	implementation libs.spring.boot.starter.jooq
+	implementation libs.spring.boot.starter.data.redis
+    implementation project(':libs:models')
+    implementation project(':libs:ai-engine')
+    implementation project(':libs:integrations')
+    developmentOnly libs.spring.boot.devtools
+	
+	// Security
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	implementation 'org.springframework.security:spring-security-oauth2-jose:6.4.2'
+	testImplementation libs.spring.security.test
+	
+	// Caffeine Cache (for JWKS caching)
+	implementation 'com.github.ben-manes.caffeine:caffeine'
+	implementation 'org.springframework.boot:spring-boot-starter-cache'
+	
+	// Validation & OpenAPI
+	implementation libs.jakarta.validation.api
+	implementation libs.swagger.annotations
+	implementation libs.jackson.databind.nullable
+	
+	// Database
+	implementation libs.flyway.core
+	implementation libs.flyway.database.postgresql
+	implementation libs.jooq
+	runtimeOnly libs.postgresql
+	
+	// MapStruct & Lombok
+	implementation libs.mapstruct
+	annotationProcessor libs.mapstruct.processor
+	compileOnly libs.lombok
+	annotationProcessor libs.lombok
+	
+	// AWS SDK
+	implementation libs.aws.s3
+	
+	// Mailgun SDK
+	implementation libs.mailgun
+
+	// OkHttp (for Supabase auth client)
+	implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+	implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+
+	// Svix (for webhook verification)
+	implementation 'com.svix:svix:1.37.0'
+
+	// Testing
+	testImplementation libs.spring.boot.starter.test
+	testImplementation libs.groovy.core
+	testImplementation libs.spock.core
+	testImplementation libs.spock.spring
+	testImplementation libs.testcontainers
+	testImplementation libs.testcontainers.postgresql
+	testImplementation libs.testcontainers.junit.jupiter
+	testRuntimeOnly libs.junit.platform.launcher
+	testRuntimeOnly libs.postgresql
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	//systemProperty 'spock.iKnowWhatImDoing.disableGroovyVersionCheck', 'true'
+	//systemProperty 'spock.enforce', 'false'
+}
+
+openApiGenerate {
+	generatorName = 'spring'
+	inputSpec = "$projectDir/openapi.yaml"
+	outputDir = layout.buildDirectory.dir("generated").get().asFile.absolutePath
+	apiPackage = 'com.tosspaper.generated.api'
+	modelPackage = 'com.tosspaper.generated.model'
+	invokerPackage = 'com.tosspaper.generated.invoker'
+	configOptions = [
+		skipDefaultInterface: 'true',
+		interfaceOnly: 'true',
+		useTags: 'true',
+		dateLibrary: 'java8',
+		useSpringBoot3: 'true',
+		serializableModel: 'true',
+		useJakartaEe: 'true',
+		useBeanValidation: 'true',
+		performBeanValidation: 'true',
+		openApiNullable: 'false',
+		useOneOfInterfaces: 'true',
+		schemaInheritanceSupport: 'true',
+		modelInheritance: 'true'
+	]
+	openapiNormalizer = [
+		'REF_AS_PARENT_IN_ALLOF': 'true'
+	]
+}
+
+sourceSets.main.java.srcDirs += layout.buildDirectory.dir("generated/src/main/java").get().asFile
+
+jsonSchema2Pojo {
+    targetPackage = 'com.tosspaper.generated.schema'
+    source = files("${project.rootDir}/schema-prompts/schemas/extraction.json")
+    targetDirectory = file("${project.buildDir}/generated/src/main/java")
+    generateBuilders = true
+    includeAdditionalProperties = false
+    includeConstructors = true
+}
+
+springBoot {
+    mainClass = 'com.tosspaper.ApiTossPaperApplication'
+}
+
+sourceSets {
+	main {
+		java {
+			srcDirs += [layout.buildDirectory.dir("generated/src/main/java").get().asFile]
+		}
+		resources {
+			srcDirs += ["$rootDir/flyway"]
+		}
+	}
+}
+
+// JOOQ generation removed - using models.jooq instead
+
+test {
+	useJUnitPlatform()
+	// Don't fork - run in same JVM for JaCoCo coverage
+	forkEvery = 0
+	maxParallelForks = 1
+}
+
+jacocoTestReport {
+	dependsOn test
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}
+
+processTestResources {
+	from("${rootProject.projectDir}/flyway") {
+		into 'flyway'
+	}
+}
+
+// Ensure OpenAPI code is generated before compiling Java
+tasks.named('compileJava') {
+	dependsOn('openApiGenerate')
+	dependsOn('generateJsonSchema2Pojo')
+}
+
+// TODO: Remove this once we upgrade to spock groovy 5.0.0
+tasks.named('compileTestGroovy') {
+	dependsOn('openApiGenerate')
+	options.compilerArgs += ['-J-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+	options.forkOptions.jvmArgs += ['-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+}
