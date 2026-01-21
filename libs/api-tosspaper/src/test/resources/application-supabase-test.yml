@@ -1,0 +1,53 @@
+# Test configuration for Supabase JWT authentication
+http:
+  security:
+    enabled: true
+    jwt:
+      # Supabase JWT issuer URL for testing
+      issuer: https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1
+      # Test audience
+      audience: authenticated
+      # Use real Supabase JWKS endpoint for testing
+      jwk-set-uri: https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1/.well-known/jwks.json
+    authenticated:
+      # Paths that require authentication
+      paths: /v1/companies/**,/v1/projects/**,/v1/contacts/**
+    csrf:
+      cookie:
+        http-only: false
+        secure: false
+        same-site: None
+        domain: localhost
+    cors:
+      # Allow requests from test domains
+      domains: http://localhost:300*,https://test-domain.com
+
+# Test database configuration
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+    driver-class-name: org.postgresql.Driver
+  jooq:
+    sql-dialect: postgres
+  flyway:
+    enabled: true
+    locations: classpath:flyway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1
+          jwk-set-uri: https://jbejwnaxmwomppvzzbhg.supabase.co/auth/v1/.well-known/jwks.json
+
+# Logging Configuration
+logging:
+  level:
+    com.tosspaper: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security.oauth2.jwt: DEBUG
+    org.springframework.security.oauth2.resourceserver: DEBUG
+    com.nimbusds: DEBUG
+    org.postgresql: INFO

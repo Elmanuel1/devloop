@@ -1,0 +1,112 @@
+spring:
+  application:
+    name: tosspaper-api-tosspaper
+  cache:
+    type: redis
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+  
+  flyway:
+    enabled: true
+    locations: classpath:flyway
+  
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://test-issuer.com
+          jwk-set-uri: https://test-issuer.com/.well-known/jwks.json
+
+  ai:
+    openai:
+      api-key: "dummy-openai-key"
+      classifier:
+        model: "gpt-4o-mini"
+        temperature: 0.0
+        max-tokens: 50
+      generator:
+        model: "gpt-4o-mini"
+        temperature: 0.7
+        max-tokens: 2000
+      evaluator:
+        model: "gpt-4o-mini"
+        temperature: 0.0
+        max-tokens: 3000
+    vectorstore:
+      pgvector:
+        table-name: extraction_embeddings
+        schema-name: public
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        remove-existing-vector-store-table: false
+        initialize-schema: false
+        schema-validation: true
+        max-document-batch-size: 1000
+    provider: reducto
+    api-key: "dummy-key"
+  
+  temporal:
+    connection:
+      target: localhost:7233
+    namespace: default
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.tosspaper: DEBUG
+    org.jooq: DEBUG
+    
+app:
+  integrations:
+    encryption:
+      key: "dummy-test-key-32-chars-long-1234"
+    quickbooks:
+      client-id: "dummy-clientId"
+      client-secret: "dummy-clientSecret"
+      redirect-uri: "http://localhost:8080/callback"
+      discovery-document-url: "https://developer.api.intuit.com/.well-known/openid-configuration"
+      api-base-url: "https://sandbox-quickbooks.api.intuit.com/v3/company"
+      
+  email:
+    allowed-domain: "dev-clientdocs.useassetiq.com"
+  mailgun:
+    api-key: "dummy-key"
+    domain: "dummy-domain"
+    from-email: "test@test.com"
+  frontend:
+    base-url: "http://localhost:3000"
+    integrations-redirect-url: "http://localhost:3000/dashboard/organization?tab=settings&section=integrations"
+
+aws:
+  credentials:
+    access-key: "dummy-key"
+    secret-key: "dummy-secret"
+  bucket:
+    region: "us-east-1"
+    name: "dummy-bucket"
+
+schema:
+  prompts:
+    path: "./schema-prompts"
+
+file:
+  filesystem-path: "./files"
+
+supabase:
+  url: "https://dummy.supabase.co"
+  service-role-key: "dummy-key"
+
+http:
+  security:
+    jwt:
+      issuer: "localhost"
+      audience: "toss-paper"
+      jwk-set-uri: "https://test-issuer.com/.well-known/jwks.json"
+    cors:
+      allowed-origins: "*"

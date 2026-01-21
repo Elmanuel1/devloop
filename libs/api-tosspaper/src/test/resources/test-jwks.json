@@ -1,0 +1,13 @@
+{
+  "keys": [
+    {
+      "kty": "EC",
+      "kid": "756ade9f-a50f-4749-a2ea-fb1e29eae2da",
+      "use": "sig",
+      "alg": "ES256",
+      "crv": "P-256",
+      "x": "test-x-coordinate",
+      "y": "test-y-coordinate"
+    }
+  ]
+}
