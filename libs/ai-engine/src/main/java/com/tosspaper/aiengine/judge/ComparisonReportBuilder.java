@@ -3,8 +3,8 @@ package com.tosspaper.aiengine.judge;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.result.Judgment;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.result.Judgment;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;

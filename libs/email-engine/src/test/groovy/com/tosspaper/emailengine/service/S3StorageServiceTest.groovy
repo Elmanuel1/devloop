@@ -18,7 +18,6 @@ class S3StorageServiceTest extends Specification {
     S3Client s3Client = Mock()
     AwsProperties awsProperties = Mock()
     AwsProperties.Bucket bucketProperties = Mock()
-    AwsProperties.Credentials credentials = Mock()
     FileProperties fileProperties = Mock()
 
     @Subject

@@ -1,9 +1,9 @@
 package com.tosspaper.aiengine.judge;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.springaicommunity.agents.judge.DeterministicJudge;
-import org.springaicommunity.agents.judge.context.JudgmentContext;
-import org.springaicommunity.agents.judge.result.Judgment;
+import org.springaicommunity.judge.DeterministicJudge;
+import org.springaicommunity.judge.context.JudgmentContext;
+import org.springaicommunity.judge.result.Judgment;
 
 /**
  * Deterministic judge that validates the results file is a valid wrapper object.

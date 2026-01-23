@@ -51,4 +51,12 @@ public interface EmailAttachmentRepository {
      * @return List of attachments from that email (only non-deleted threads)
      */
     List<EmailAttachment> findByEmail(String email);
+
+    /**
+     * Find attachment by storage key and company ID.
+     * @param storageKey the S3 storage key
+     * @param companyId the company ID to verify ownership
+     * @return the attachment if found and owned by the company
+     */
+    Optional<EmailAttachment> findByStorageKeyAndCompanyId(String storageKey, Long companyId);
 }

@@ -1,0 +1,63 @@
+{
+  "BatchItemResponse": [
+    {
+      "bId": "bid1",
+      "Vendor": {
+        "Id": "56",
+        "SyncToken": "4",
+        "MetaData": {
+          "CreateTime": "2024-06-15T10:30:00-07:00",
+          "LastUpdatedTime": "2024-12-21T09:00:00-08:00"
+        },
+        "DisplayName": "Thompson Industrial Supplies",
+        "Active": true,
+        "Balance": 2500.00
+      }
+    },
+    {
+      "bId": "bid2",
+      "Item": {
+        "Id": "21",
+        "SyncToken": "5",
+        "MetaData": {
+          "CreateTime": "2024-01-15T09:00:00-08:00",
+          "LastUpdatedTime": "2024-12-21T09:00:00-08:00"
+        },
+        "Name": "Industrial Valve Model X500",
+        "Active": true,
+        "Type": "Inventory",
+        "QtyOnHand": 160
+      }
+    },
+    {
+      "bId": "bid3",
+      "Fault": {
+        "Error": [
+          {
+            "Message": "Object Not Found",
+            "Detail": "Object Not Found : Something you're trying to use has been made inactive. Check the fields with accounts, customers, items, vendors or employees.",
+            "code": "610"
+          }
+        ],
+        "type": "ValidationFault"
+      }
+    },
+    {
+      "bId": "bid4",
+      "QueryResponse": {
+        "Account": [
+          {
+            "Id": "79",
+            "SyncToken": "1",
+            "Name": "Sales of Product Income",
+            "Active": true,
+            "AccountType": "Income"
+          }
+        ],
+        "startPosition": 1,
+        "maxResults": 1
+      }
+    }
+  ],
+  "time": "2024-12-21T09:00:00.000-08:00"
+}

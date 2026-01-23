@@ -1,0 +1,28 @@
+{
+  "Item": {
+    "Id": "35",
+    "SyncToken": "1",
+    "MetaData": {
+      "CreateTime": "2024-06-01T10:00:00-07:00",
+      "LastUpdatedTime": "2024-11-20T11:30:00-08:00"
+    },
+    "Name": "Installation Service",
+    "Description": "Professional installation of industrial equipment. Includes 1-year warranty on labor.",
+    "Active": true,
+    "FullyQualifiedName": "Services:Installation Service",
+    "Taxable": false,
+    "UnitPrice": 150.00,
+    "Type": "Service",
+    "IncomeAccountRef": {
+      "value": "85",
+      "name": "Service Income"
+    },
+    "SubItem": true,
+    "ParentRef": {
+      "value": "34",
+      "name": "Services"
+    },
+    "Level": 1
+  },
+  "time": "2024-11-20T11:30:00.000-08:00"
+}

@@ -2,7 +2,7 @@ package com.tosspaper.rbac;
 
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.CursorUtils;
-import com.tosspaper.common.ForbiddenException;
+import com.tosspaper.models.exception.ForbiddenException;
 import com.tosspaper.generated.model.AuthorizedUser;
 import com.tosspaper.generated.model.PaginatedAuthorizedUserList;
 import com.tosspaper.generated.model.Pagination;

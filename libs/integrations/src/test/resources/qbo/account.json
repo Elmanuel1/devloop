@@ -1,0 +1,26 @@
+{
+  "Account": {
+    "Id": "79",
+    "SyncToken": "1",
+    "MetaData": {
+      "CreateTime": "2024-01-01T08:00:00-08:00",
+      "LastUpdatedTime": "2024-06-15T10:00:00-07:00"
+    },
+    "Name": "Sales of Product Income",
+    "Description": "Income from product sales",
+    "FullyQualifiedName": "Income:Sales of Product Income",
+    "Active": true,
+    "Classification": "Revenue",
+    "AccountType": "Income",
+    "AccountSubType": "SalesOfProductIncome",
+    "AcctNum": "4000",
+    "CurrentBalance": 150000.00,
+    "CurrentBalanceWithSubAccounts": 150000.00,
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "SubAccount": false
+  },
+  "time": "2024-06-15T10:00:00.000-07:00"
+}

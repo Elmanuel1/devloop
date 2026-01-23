@@ -4,11 +4,12 @@ import com.tosspaper.aiengine.judge.ComparisonJuryFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.springaicommunity.agents.advisors.judge.JudgeAdvisor;
 import org.springaicommunity.agents.client.AgentClientRequest;
 import org.springaicommunity.agents.client.AgentClientResponse;
 import org.springaicommunity.agents.client.advisor.api.AgentCallAdvisor;
 import org.springaicommunity.agents.client.advisor.api.AgentCallAdvisorChain;
-import org.springaicommunity.agents.judge.jury.Verdict;
+import org.springaicommunity.judge.jury.Verdict;
 import org.springframework.core.Ordered;
 
 import java.nio.file.Path;
@@ -55,7 +56,6 @@ public class ComparisonJudgeAdvisor implements AgentCallAdvisor {
         ComparisonContextAdvisor.PreparedContext preparedContext =
                 (ComparisonContextAdvisor.PreparedContext) request.context()
                         .get(ComparisonContextAdvisor.PREPARED_CONTEXT_KEY);
-
         if (preparedContext == null) {
             log.warn("PreparedContext not found in request - skipping judge verification");
             return chain.nextCall(request);

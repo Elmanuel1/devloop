@@ -353,10 +353,6 @@ public class ExtractionService {
                 return true;
             });
 
-            if (succeeded) {
-                publisher.publish("po-match-requests", Map.of("assignedId", task.getAssignedId()));
-            }
-            
             log.info("Task {} updated with status: {}, document type: {}", 
                 newTask.getAssignedId(), newTask.getStatus(), docType);
 

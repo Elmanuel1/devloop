@@ -1,0 +1,25 @@
+{
+  "Item": {
+    "Id": "45",
+    "SyncToken": "2",
+    "MetaData": {
+      "CreateTime": "2024-04-10T08:00:00-07:00",
+      "LastUpdatedTime": "2024-12-10T14:00:00-08:00"
+    },
+    "Name": "Custom Fabrication Materials",
+    "Sku": "CUSTOM-FAB-001",
+    "Description": "Raw materials for custom fabrication projects - not tracked in inventory",
+    "Active": true,
+    "FullyQualifiedName": "Materials:Custom Fabrication Materials",
+    "Taxable": true,
+    "UnitPrice": 0,
+    "Type": "NonInventory",
+    "ExpenseAccountRef": {
+      "value": "90",
+      "name": "Job Materials"
+    },
+    "PurchaseDesc": "Custom fabrication raw materials",
+    "PurchaseCost": 0
+  },
+  "time": "2024-12-10T14:00:00.000-08:00"
+}

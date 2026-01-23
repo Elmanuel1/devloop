@@ -1,0 +1,73 @@
+{
+  "Customer": {
+    "Id": "123",
+    "SyncToken": "2",
+    "MetaData": {
+      "CreateTime": "2024-03-15T11:00:00-07:00",
+      "LastUpdatedTime": "2024-12-18T09:30:00-08:00"
+    },
+    "Title": "Dr.",
+    "GivenName": "Sarah",
+    "MiddleName": "Elizabeth",
+    "FamilyName": "Johnson",
+    "Suffix": "PhD",
+    "CompanyName": "Johnson Research Labs",
+    "DisplayName": "[Job Location] Downtown Office Complex",
+    "PrintOnCheckName": "Johnson Research Labs",
+    "Active": true,
+    "PrimaryPhone": {
+      "FreeFormNumber": "(650) 555-7890"
+    },
+    "AlternatePhone": {
+      "FreeFormNumber": "(650) 555-7891"
+    },
+    "Mobile": {
+      "FreeFormNumber": "(650) 555-7892"
+    },
+    "Fax": {
+      "FreeFormNumber": "(650) 555-7893"
+    },
+    "PrimaryEmailAddr": {
+      "Address": "sarah.johnson@johnsonlabs.com"
+    },
+    "WebAddr": {
+      "URI": "https://www.johnsonlabs.com"
+    },
+    "BillAddr": {
+      "Id": "201",
+      "Line1": "500 Innovation Way",
+      "Line2": "Building A, Floor 3",
+      "City": "Mountain View",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94043",
+      "Lat": "37.3861",
+      "Long": "-122.0839"
+    },
+    "ShipAddr": {
+      "Id": "202",
+      "Line1": "500 Innovation Way",
+      "Line2": "Loading Dock B",
+      "City": "Mountain View",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94043"
+    },
+    "Notes": "Primary ship-to location for downtown deliveries. Loading dock access required.",
+    "Job": false,
+    "BillWithParent": false,
+    "Balance": 15000.00,
+    "BalanceWithJobs": 15000.00,
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "PreferredDeliveryMethod": "Email",
+    "Taxable": true,
+    "DefaultTaxCodeRef": {
+      "value": "2",
+      "name": "Taxable"
+    }
+  },
+  "time": "2024-12-18T09:30:00.456-08:00"
+}

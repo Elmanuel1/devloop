@@ -1,0 +1,57 @@
+{
+  "QueryResponse": {
+    "Account": [
+      {
+        "Id": "33",
+        "SyncToken": "0",
+        "Name": "Accounts Payable",
+        "FullyQualifiedName": "Accounts Payable",
+        "Active": true,
+        "Classification": "Liability",
+        "AccountType": "Accounts Payable",
+        "AccountSubType": "AccountsPayable",
+        "AcctNum": "2000",
+        "CurrentBalance": 25000.00
+      },
+      {
+        "Id": "79",
+        "SyncToken": "1",
+        "Name": "Sales of Product Income",
+        "FullyQualifiedName": "Income:Sales of Product Income",
+        "Active": true,
+        "Classification": "Revenue",
+        "AccountType": "Income",
+        "AccountSubType": "SalesOfProductIncome",
+        "AcctNum": "4000",
+        "CurrentBalance": 150000.00
+      },
+      {
+        "Id": "80",
+        "SyncToken": "0",
+        "Name": "Cost of Goods Sold",
+        "FullyQualifiedName": "Cost of Goods Sold",
+        "Active": true,
+        "Classification": "Expense",
+        "AccountType": "Cost of Goods Sold",
+        "AccountSubType": "SuppliesMaterialsCogs",
+        "AcctNum": "5000",
+        "CurrentBalance": 75000.00
+      },
+      {
+        "Id": "81",
+        "SyncToken": "0",
+        "Name": "Inventory Asset",
+        "FullyQualifiedName": "Inventory Asset",
+        "Active": true,
+        "Classification": "Asset",
+        "AccountType": "Other Current Asset",
+        "AccountSubType": "Inventory",
+        "AcctNum": "1200",
+        "CurrentBalance": 50000.00
+      }
+    ],
+    "startPosition": 1,
+    "maxResults": 4
+  },
+  "time": "2024-12-20T12:00:00.000-08:00"
+}

@@ -35,9 +35,6 @@ public class RedisStreamHealthIndicator implements HealthIndicator {
             
             // Get status from the health service (no proxy issues)
             boolean initialized = healthService.isInitialized();
-            
-            // Get status from the health service (no proxy issues)
-            boolean initialized = healthService.isInitialized();
             int totalConsumers = healthService.getTotalConsumers();
             int registeredConsumers = healthService.getRegisteredConsumers();
             

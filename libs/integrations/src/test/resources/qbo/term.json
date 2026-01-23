@@ -1,0 +1,16 @@
+{
+  "Term": {
+    "Id": "3",
+    "SyncToken": "0",
+    "MetaData": {
+      "CreateTime": "2024-01-01T08:00:00-08:00",
+      "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+    },
+    "Name": "Net 30",
+    "Active": true,
+    "Type": "STANDARD",
+    "DueDays": 30,
+    "DiscountPercent": 0
+  },
+  "time": "2024-01-01T08:00:00.000-08:00"
+}

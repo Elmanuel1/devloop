@@ -1,0 +1,61 @@
+{
+  "CDCResponse": [
+    {
+      "QueryResponse": [
+        {
+          "Vendor": [
+            {
+              "Id": "56",
+              "SyncToken": "3",
+              "MetaData": {
+                "CreateTime": "2024-06-15T10:30:00-07:00",
+                "LastUpdatedTime": "2024-12-20T14:45:30-08:00"
+              },
+              "DisplayName": "Thompson Industrial Supplies",
+              "Active": true,
+              "Balance": 2500.00
+            }
+          ],
+          "startPosition": 1,
+          "maxResults": 1
+        },
+        {
+          "Customer": [
+            {
+              "Id": "123",
+              "SyncToken": "2",
+              "MetaData": {
+                "CreateTime": "2024-03-15T11:00:00-07:00",
+                "LastUpdatedTime": "2024-12-18T09:30:00-08:00"
+              },
+              "DisplayName": "[Job Location] Downtown Office Complex",
+              "Active": true,
+              "Balance": 15000.00
+            }
+          ],
+          "startPosition": 1,
+          "maxResults": 1
+        },
+        {
+          "Item": [
+            {
+              "Id": "21",
+              "SyncToken": "4",
+              "MetaData": {
+                "CreateTime": "2024-01-15T09:00:00-08:00",
+                "LastUpdatedTime": "2024-12-15T16:00:00-08:00"
+              },
+              "Name": "Industrial Valve Model X500",
+              "Active": true,
+              "Type": "Inventory",
+              "QtyOnHand": 150
+            }
+          ],
+          "startPosition": 1,
+          "maxResults": 1
+        }
+      ]
+    }
+  ],
+  "time": "2024-12-20T15:00:00.123-08:00"
+}

@@ -1,0 +1,63 @@
+{
+  "Vendor": {
+    "Id": "56",
+    "SyncToken": "3",
+    "MetaData": {
+      "CreateTime": "2024-06-15T10:30:00-07:00",
+      "LastUpdatedTime": "2024-12-20T14:45:30-08:00"
+    },
+    "Title": "Mr.",
+    "GivenName": "Robert",
+    "MiddleName": "James",
+    "FamilyName": "Thompson",
+    "Suffix": "Jr.",
+    "CompanyName": "Thompson Industrial Supplies Ltd.",
+    "DisplayName": "Thompson Industrial Supplies",
+    "PrintOnCheckName": "Thompson Industrial Supplies Ltd.",
+    "Active": true,
+    "PrimaryPhone": {
+      "FreeFormNumber": "(415) 555-1234"
+    },
+    "AlternatePhone": {
+      "FreeFormNumber": "(415) 555-5678"
+    },
+    "Mobile": {
+      "FreeFormNumber": "(415) 555-9012"
+    },
+    "Fax": {
+      "FreeFormNumber": "(415) 555-3456"
+    },
+    "PrimaryEmailAddr": {
+      "Address": "robert.thompson@thompsonindustrial.com"
+    },
+    "WebAddr": {
+      "URI": "https://www.thompsonindustrial.com"
+    },
+    "BillAddr": {
+      "Id": "101",
+      "Line1": "Thompson Industrial Supplies",
+      "Line2": "Robert Thompson",
+      "Line3": "1500 Industrial Blvd, Suite 400",
+      "City": "San Francisco",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94107",
+      "Lat": "37.7749",
+      "Long": "-122.4194"
+    },
+    "Balance": 2500.00,
+    "Vendor1099": true,
+    "TaxIdentifier": "12-3456789",
+    "AcctNum": "VENDOR-2024-056",
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "TermRef": {
+      "value": "3",
+      "name": "Net 30"
+    },
+    "Notes": "Preferred vendor for industrial equipment. Volume discount available for orders over $10,000."
+  },
+  "time": "2024-12-20T14:45:30.123-08:00"
+}

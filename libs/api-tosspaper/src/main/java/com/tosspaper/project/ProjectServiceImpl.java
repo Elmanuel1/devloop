@@ -5,7 +5,7 @@ import com.tosspaper.generated.model.Project;
 import com.tosspaper.generated.model.ProjectCreate;
 import com.tosspaper.generated.model.ProjectUpdate;
 import com.tosspaper.generated.model.ProjectList;
-import com.tosspaper.common.ForbiddenException;
+import com.tosspaper.models.exception.ForbiddenException;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.project.model.ProjectQuery;
 import lombok.RequiredArgsConstructor;

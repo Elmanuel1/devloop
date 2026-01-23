@@ -1,0 +1,133 @@
+{
+  "PurchaseOrder": {
+    "Id": "1001",
+    "SyncToken": "3",
+    "MetaData": {
+      "CreateTime": "2024-11-01T10:00:00-08:00",
+      "LastUpdatedTime": "2024-12-19T15:30:00-08:00"
+    },
+    "DocNumber": "PO-2024-1001",
+    "TxnDate": "2024-11-01",
+    "DueDate": "2024-12-01",
+    "VendorRef": {
+      "value": "56",
+      "name": "Thompson Industrial Supplies"
+    },
+    "APAccountRef": {
+      "value": "33",
+      "name": "Accounts Payable"
+    },
+    "TotalAmt": 4500.00,
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "ExchangeRate": 1.0,
+    "PrivateNote": "Rush order for Q4 production. Contact vendor for expedited shipping.",
+    "Memo": "Purchase Order for industrial valves - Project XYZ",
+    "VendorAddr": {
+      "Id": "301",
+      "Line1": "Thompson Industrial Supplies",
+      "Line2": "1500 Industrial Blvd, Suite 400",
+      "City": "San Francisco",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94107"
+    },
+    "ShipAddr": {
+      "Id": "302",
+      "Line1": "Warehouse A - Receiving",
+      "Line2": "2000 Production Drive",
+      "City": "Oakland",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94621"
+    },
+    "ShipMethodRef": {
+      "value": "1",
+      "name": "Ground Shipping"
+    },
+    "ShipTo": {
+      "value": "123",
+      "name": "[Job Location] Downtown Office Complex"
+    },
+    "FOB": "Destination",
+    "POEmail": {
+      "Address": "purchasing@ourcompany.com"
+    },
+    "SalesTermRef": {
+      "value": "3",
+      "name": "Net 30"
+    },
+    "ClassRef": {
+      "value": "100000000000005",
+      "name": "Manufacturing"
+    },
+    "PrintStatus": "NeedToPrint",
+    "EmailStatus": "NotSet",
+    "POStatus": "Open",
+    "ManuallyClosed": false,
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Description": "Industrial Valve Model X500 - High-pressure valve for manufacturing",
+        "Amount": 3000.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "21",
+            "name": "Industrial Valve Model X500"
+          },
+          "ClassRef": {
+            "value": "100000000000005",
+            "name": "Manufacturing"
+          },
+          "UnitPrice": 300.00,
+          "Qty": 10,
+          "TaxCodeRef": {
+            "value": "TAX"
+          },
+          "CustomerRef": {
+            "value": "123",
+            "name": "[Job Location] Downtown Office Complex"
+          },
+          "BillableStatus": "NotBillable"
+        }
+      },
+      {
+        "Id": "2",
+        "LineNum": 2,
+        "Description": "Installation Service for valve installation",
+        "Amount": 1500.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "35",
+            "name": "Installation Service"
+          },
+          "UnitPrice": 150.00,
+          "Qty": 10,
+          "BillableStatus": "Billable"
+        }
+      }
+    ],
+    "LinkedTxn": [
+      {
+        "TxnId": "5001",
+        "TxnType": "Bill"
+      }
+    ],
+    "CustomField": [
+      {
+        "DefinitionId": "1",
+        "Name": "Project Number",
+        "Type": "StringType",
+        "StringValue": "PRJ-2024-XYZ"
+      }
+    ]
+  },
+  "time": "2024-12-19T15:30:00.123-08:00"
+}

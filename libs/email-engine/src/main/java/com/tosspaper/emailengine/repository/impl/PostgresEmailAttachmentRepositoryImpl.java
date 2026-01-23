@@ -199,7 +199,7 @@ public class PostgresEmailAttachmentRepositoryImpl implements EmailAttachmentRep
     @Override
     public List<EmailAttachment> findByEmail(String email) {
         log.debug("Finding attachments for email: {}", email);
-        
+
         return dsl.select(EMAIL_ATTACHMENT.asterisk())
             .from(EMAIL_ATTACHMENT)
             .join(EMAIL_MESSAGE)
@@ -209,6 +209,23 @@ public class PostgresEmailAttachmentRepositoryImpl implements EmailAttachmentRep
             .where(EMAIL_MESSAGE.FROM_ADDRESS.eq(email))
             .and(EMAIL_THREAD.DELETED_AT.isNull())
             .fetch()
+            .map(record -> mapToEmailAttachment(record.into(EMAIL_ATTACHMENT)));
+    }
+
+    @Override
+    public Optional<EmailAttachment> findByStorageKeyAndCompanyId(String storageKey, Long companyId) {
+        log.debug("Finding attachment by storageKey: {} for company: {}", storageKey, companyId);
+
+        return dsl.select(EMAIL_ATTACHMENT.asterisk())
+            .from(EMAIL_ATTACHMENT)
+            .join(EMAIL_MESSAGE)
+            .on(EMAIL_ATTACHMENT.MESSAGE_ID.eq(EMAIL_MESSAGE.ID))
+            .join(EMAIL_THREAD)
+            .on(EMAIL_MESSAGE.THREAD_ID.eq(EMAIL_THREAD.ID))
+            .where(EMAIL_ATTACHMENT.STORAGE_URL.eq(storageKey))
+            .and(EMAIL_MESSAGE.COMPANY_ID.eq(companyId))
+            .and(EMAIL_THREAD.DELETED_AT.isNull())
+            .fetchOptional()
             .map(record -> mapToEmailAttachment(record.into(EMAIL_ATTACHMENT)));
     }
 }

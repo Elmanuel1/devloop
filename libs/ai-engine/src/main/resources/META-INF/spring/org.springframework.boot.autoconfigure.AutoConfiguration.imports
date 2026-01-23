@@ -1,3 +1,5 @@
-com.tosspaper.aiengine.service.ExtractionService
-com.tosspaper.aiengine.repository.impl.JooqExtractionTaskRepositoryImpl
-com.tosspaper.aiengine.streams.AiProcessStreamListener
+com.tosspaper.aiengine.config.AgentModelConfig
+com.tosspaper.aiengine.config.ChatModelConfig
+com.tosspaper.aiengine.config.HttpClientConfig
+com.tosspaper.aiengine.config.ProcessingServiceConfig
+com.tosspaper.aiengine.config.ReductoConfig

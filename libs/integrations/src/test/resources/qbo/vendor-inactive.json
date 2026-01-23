@@ -1,0 +1,29 @@
+{
+  "Vendor": {
+    "Id": "42",
+    "SyncToken": "5",
+    "MetaData": {
+      "CreateTime": "2023-01-10T08:00:00-08:00",
+      "LastUpdatedTime": "2024-11-15T16:30:00-08:00"
+    },
+    "DisplayName": "Old Supplies Co (Inactive)",
+    "CompanyName": "Old Supplies Company",
+    "Active": false,
+    "PrimaryPhone": {
+      "FreeFormNumber": "(555) 000-0000"
+    },
+    "PrimaryEmailAddr": {
+      "Address": "defunct@oldsupplies.com"
+    },
+    "BillAddr": {
+      "Line1": "999 Closed Street",
+      "City": "Los Angeles",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "90001"
+    },
+    "Balance": 0,
+    "Notes": "Vendor no longer in business as of November 2024."
+  },
+  "time": "2024-11-15T16:30:00.000-08:00"
+}

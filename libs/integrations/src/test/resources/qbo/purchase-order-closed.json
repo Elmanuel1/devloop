@@ -1,0 +1,45 @@
+{
+  "PurchaseOrder": {
+    "Id": "1002",
+    "SyncToken": "5",
+    "MetaData": {
+      "CreateTime": "2024-09-15T09:00:00-07:00",
+      "LastUpdatedTime": "2024-10-30T16:00:00-07:00"
+    },
+    "DocNumber": "PO-2024-1002",
+    "TxnDate": "2024-09-15",
+    "DueDate": "2024-10-15",
+    "VendorRef": {
+      "value": "42",
+      "name": "Old Supplies Co"
+    },
+    "TotalAmt": 2000.00,
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "PrivateNote": "Order completed and closed.",
+    "POStatus": "Closed",
+    "ManuallyClosed": true,
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Description": "Office supplies - completed order",
+        "Amount": 2000.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "50",
+            "name": "Office Supplies"
+          },
+          "UnitPrice": 100.00,
+          "Qty": 20
+        }
+      }
+    ]
+  },
+  "time": "2024-10-30T16:00:00.000-07:00"
+}

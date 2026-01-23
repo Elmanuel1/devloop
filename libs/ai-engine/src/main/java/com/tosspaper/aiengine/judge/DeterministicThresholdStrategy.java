@@ -1,9 +1,9 @@
 package com.tosspaper.aiengine.judge;
 
-import org.springaicommunity.agents.judge.jury.VotingStrategy;
-import org.springaicommunity.agents.judge.result.Judgment;
-import org.springaicommunity.agents.judge.result.JudgmentStatus;
-import org.springaicommunity.agents.judge.score.NumericalScore;
+import org.springaicommunity.judge.jury.VotingStrategy;
+import org.springaicommunity.judge.result.Judgment;
+import org.springaicommunity.judge.result.JudgmentStatus;
+import org.springaicommunity.judge.score.NumericalScore;
 
 import java.util.List;
 import java.util.Map;

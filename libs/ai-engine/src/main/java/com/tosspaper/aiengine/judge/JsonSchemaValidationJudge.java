@@ -6,9 +6,9 @@ import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
 import lombok.extern.slf4j.Slf4j;
-import org.springaicommunity.agents.judge.DeterministicJudge;
-import org.springaicommunity.agents.judge.context.JudgmentContext;
-import org.springaicommunity.agents.judge.result.Judgment;
+import org.springaicommunity.judge.DeterministicJudge;
+import org.springaicommunity.judge.context.JudgmentContext;
+import org.springaicommunity.judge.result.Judgment;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

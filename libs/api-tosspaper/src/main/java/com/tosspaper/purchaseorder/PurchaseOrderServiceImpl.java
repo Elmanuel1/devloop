@@ -3,6 +3,7 @@ package com.tosspaper.purchaseorder;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.*;
+import com.tosspaper.models.exception.ForbiddenException;
 import com.tosspaper.company.CompanyRepository;
 import com.tosspaper.generated.model.*;
 import com.tosspaper.ingestion.VectorStoreIngestionPublisher;

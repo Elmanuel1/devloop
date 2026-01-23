@@ -10,7 +10,8 @@ import com.tosspaper.aiengine.judge.ComparisonJuryFactory;
 import com.tosspaper.aiengine.judge.ComparisonReportBuilder;
 import com.tosspaper.aiengine.judge.ComparisonVerificationException;
 import com.tosspaper.aiengine.judge.ComparisonVerificationReport;
-import org.springaicommunity.agents.judge.jury.Verdict;
+import org.springaicommunity.agents.model.AgentModel;
+import org.springaicommunity.judge.jury.Verdict;
 import com.tosspaper.aiengine.vfs.VFSContextMapper;
 import com.tosspaper.aiengine.vfs.VirtualFilesystemService;
 import com.tosspaper.models.domain.ComparisonContext;
@@ -20,13 +21,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springaicommunity.agents.client.AgentClient;
 import org.springaicommunity.agents.client.AgentClientResponse;
-import org.springaicommunity.agents.claude.ClaudeAgentModel;
-import org.springaicommunity.agents.claude.ClaudeAgentOptions;
-import org.springaicommunity.agents.claude.sdk.ClaudeAgentClient;
-import org.springaicommunity.agents.model.sandbox.LocalSandbox;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -73,8 +71,7 @@ public class FileSystemComparisonAgent {
             For line items with no PO match, set poIndex to null. Each poIndex can only be used once (1:1 matching).
             """;
 
-    private final ClaudeAgentClient claudeClient;
-    private final ClaudeAgentOptions agentOptions;
+    private final AgentModel agentModel;
     private final VirtualFilesystemService vfsService;
     private final VFSContextMapper contextMapper;
     private final ObjectMapper objectMapper;
@@ -98,61 +95,56 @@ public class FileSystemComparisonAgent {
             // Create agent client with working directory from VFS (PO-specific)
             Path workingDir = vfsService.getWorkingDirectory(task.getCompanyId(), task.getPoNumber());
 
-            // Create sandbox restricted to working directory (auto-closed)
-            try (LocalSandbox sandbox = new LocalSandbox(workingDir)) {
-                // Create Claude agent model with sandbox
-                ClaudeAgentModel agentModel = new ClaudeAgentModel(claudeClient, agentOptions, sandbox);
+            // Create advisors - context setup, judge verification, and audit logging
+            ComparisonContextAdvisor contextAdvisor = new ComparisonContextAdvisor(
+                    context, vfsService, contextMapper, objectMapper, schemaLoader);
+            ComparisonJudgeAdvisor judgeAdvisor = new ComparisonJudgeAdvisor(juryFactory);
+            AgentAuditAdvisor auditAdvisor = new AgentAuditAdvisor(vfsService, objectMapper);
 
-                // Create advisors - context setup, judge verification, and audit logging
-                ComparisonContextAdvisor contextAdvisor = new ComparisonContextAdvisor(
-                        context, vfsService, contextMapper, objectMapper, schemaLoader);
-                ComparisonJudgeAdvisor judgeAdvisor = new ComparisonJudgeAdvisor(juryFactory);
-                AgentAuditAdvisor auditAdvisor = new AgentAuditAdvisor(vfsService, objectMapper);
+            // Build AgentClient with injected AgentModel (supports Claude, Gemini, etc.)
+            AgentClient agentClient = AgentClient.builder(agentModel)
+                    .defaultAdvisors(List.of(contextAdvisor, judgeAdvisor, auditAdvisor))
+                    .defaultWorkingDirectory(workingDir)
+                    .defaultTimeout(Duration.ofMinutes(2))
+                    .build();
 
-                // Build AgentClient with advisors (context first, judge middle, audit last)
-                AgentClient agentClient = AgentClient.builder(agentModel)
-                        .defaultAdvisors(List.of(contextAdvisor, judgeAdvisor, auditAdvisor))
-                        .defaultWorkingDirectory(workingDir)
-                        .build();
+            // Format goal with schema path
+            Path schemaPath = schemaLoader.getSchemaPath("comparison");
+            String comparisonGoal = String.format(COMPARISON_GOAL_TEMPLATE, schemaPath.toAbsolutePath());
 
-                // Format goal with schema path
-                Path schemaPath = schemaLoader.getSchemaPath("comparison");
-                String comparisonGoal = String.format(COMPARISON_GOAL_TEMPLATE, schemaPath.toAbsolutePath());
+            // Execute agent
+            log.info("Executing AI agent for document comparison");
+            AgentClientResponse response = agentClient
+                    .goal(comparisonGoal)
+                    .workingDirectory(workingDir)
+                    .run();
 
-                // Execute agent
-                log.info("Executing Claude agent for document comparison");
-                AgentClientResponse response = agentClient
-                        .goal(comparisonGoal)
-                        .workingDirectory(workingDir)
-                        .run();
+            log.debug("Agent response: {}", response.getResult());
 
-                log.debug("Agent response: {}", response.getResult());
+            // Get prepared context from response (added by advisor)
+            PreparedContext prepared = (PreparedContext) response.context()
+                    .get(ComparisonContextAdvisor.PREPARED_CONTEXT_KEY);
 
-                // Get prepared context from response (added by advisor)
-                PreparedContext prepared = (PreparedContext) response.context()
-                        .get(ComparisonContextAdvisor.PREPARED_CONTEXT_KEY);
-
-                if (prepared == null) {
-                    log.error("PreparedContext not found in response - advisor may not have run");
-                    throw new ComparisonAgentException("PreparedContext not found - advisor may not have run", null);
-                }
-
-                // Get verdict from response (added by judge advisor)
-                Verdict verdict = (Verdict) response.context()
-                        .get(ComparisonJudgeAdvisor.JUDGE_VERDICT_KEY);
-
-                if (verdict != null && !verdict.aggregated().pass()) {
-                    // Build verification report for debugging
-                    ComparisonVerificationReport report = reportBuilder.buildReport(
-                            prepared.resultsPath(), verdict);
-                    log.warn("Verification failed: structureValid={}, status={}",
-                            report.isStructureValid(), report.getStatus());
-                    throw new ComparisonVerificationException(verdict);
-                }
-
-                // Read results from VFS
-                return readResults(prepared.resultsPath());
+            if (prepared == null) {
+                log.error("PreparedContext not found in response - advisor may not have run");
+                throw new ComparisonAgentException("PreparedContext not found - advisor may not have run", null);
             }
+
+            // Get verdict from response (added by judge advisor)
+            Verdict verdict = (Verdict) response.context()
+                    .get(ComparisonJudgeAdvisor.JUDGE_VERDICT_KEY);
+
+            if (verdict != null && !verdict.aggregated().pass()) {
+                // Build verification report for debugging
+                ComparisonVerificationReport report = reportBuilder.buildReport(
+                        prepared.resultsPath(), verdict);
+                log.warn("Verification failed: structureValid={}, status={}",
+                        report.isStructureValid(), report.getStatus());
+                throw new ComparisonVerificationException(verdict);
+            }
+
+            // Read results from VFS
+            return readResults(prepared.resultsPath());
 
         } catch (ComparisonVerificationException e) {
             // Re-throw verification exceptions as-is

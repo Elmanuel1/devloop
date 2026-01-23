@@ -1,0 +1,68 @@
+{
+  "Preferences": {
+    "Id": "1",
+    "SyncToken": "5",
+    "MetaData": {
+      "CreateTime": "2024-01-01T00:00:00-08:00",
+      "LastUpdatedTime": "2024-12-01T10:00:00-08:00"
+    },
+    "AccountingInfoPrefs": {
+      "TrackDepartments": true,
+      "DepartmentTerminology": "Location",
+      "ClassTrackingPerTxnLine": true,
+      "FirstMonthOfFiscalYear": "January",
+      "TaxYearMonth": "January",
+      "TaxForm": "Form1120S"
+    },
+    "ProductAndServicesPrefs": {
+      "ForSales": true,
+      "ForPurchase": true,
+      "QuantityWithPriceAndRate": true,
+      "QuantityOnHand": true
+    },
+    "SalesFormsPrefs": {
+      "CustomField": [
+        {
+          "Name": "SalesFormsPrefs.SalesCustomName1",
+          "Type": "StringType",
+          "StringValue": "Project Number"
+        }
+      ],
+      "CustomTxnNumbers": true,
+      "AllowDeposit": true,
+      "AllowDiscount": true,
+      "AllowEstimates": true,
+      "IPNSupportEnabled": false,
+      "AllowServiceDate": false,
+      "DefaultDiscountAccount": "86",
+      "DefaultShippingAccount": "87"
+    },
+    "VendorAndPurchasesPrefs": {
+      "TrackingByCustomer": true,
+      "BillableExpenseTracking": true,
+      "DefaultTerms": {
+        "value": "3",
+        "name": "Net 30"
+      },
+      "POCustomField": [
+        {
+          "Name": "PurchasePrefs.POCustomName1",
+          "Type": "StringType",
+          "StringValue": "Project Number"
+        }
+      ]
+    },
+    "CurrencyPrefs": {
+      "MultiCurrencyEnabled": true,
+      "HomeCurrency": {
+        "value": "USD",
+        "name": "United States Dollar"
+      }
+    },
+    "TaxPrefs": {
+      "UsingSalesTax": true,
+      "PartnerTaxEnabled": false
+    }
+  },
+  "time": "2024-12-01T10:00:00.000-08:00"
+}

@@ -1,3 +1,5 @@
+import org.testcontainers.containers.PostgreSQLContainer
+
 plugins {
     id 'java-library'
     id 'org.jsonschema2pojo' version '1.2.1'
@@ -96,8 +98,8 @@ task postgresContainer {
     notCompatibleWithConfigurationCache("Uses TestContainers and dynamic Flyway configuration")
 
     doFirst {
-        def dbTestContainer = new org.testcontainers.containers.PostgreSQLContainer("pgvector/pgvector:pg16")
-            .withDatabaseName("postgres")
+        def dbTestContainer = new PostgreSQLContainer("pgvector/pgvector:pg16")
+            .withDatabaseName("tosspaper")
             .withUsername("postgres")
             .withPassword("postgres")
             .withCommand("postgres", "-c", "shared_preload_libraries=vector")

@@ -1,0 +1,51 @@
+{
+  "QueryResponse": {
+    "Term": [
+      {
+        "Id": "1",
+        "SyncToken": "0",
+        "Name": "Due on receipt",
+        "Active": true,
+        "Type": "STANDARD",
+        "DueDays": 0
+      },
+      {
+        "Id": "2",
+        "SyncToken": "0",
+        "Name": "Net 15",
+        "Active": true,
+        "Type": "STANDARD",
+        "DueDays": 15
+      },
+      {
+        "Id": "3",
+        "SyncToken": "0",
+        "Name": "Net 30",
+        "Active": true,
+        "Type": "STANDARD",
+        "DueDays": 30
+      },
+      {
+        "Id": "4",
+        "SyncToken": "0",
+        "Name": "Net 60",
+        "Active": true,
+        "Type": "STANDARD",
+        "DueDays": 60
+      },
+      {
+        "Id": "5",
+        "SyncToken": "0",
+        "Name": "2% 10 Net 30",
+        "Active": true,
+        "Type": "STANDARD",
+        "DueDays": 30,
+        "DiscountDays": 10,
+        "DiscountPercent": 2.0
+      }
+    ],
+    "startPosition": 1,
+    "maxResults": 5
+  },
+  "time": "2024-12-20T12:00:00.000-08:00"
+}

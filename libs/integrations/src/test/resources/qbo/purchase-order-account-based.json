@@ -1,0 +1,86 @@
+{
+  "PurchaseOrder": {
+    "Id": "1004",
+    "SyncToken": "1",
+    "MetaData": {
+      "CreateTime": "2024-12-18T14:00:00-08:00",
+      "LastUpdatedTime": "2024-12-19T10:00:00-08:00"
+    },
+    "DocNumber": "PO-2024-1004",
+    "TxnDate": "2024-12-18",
+    "DueDate": "2025-01-17",
+    "VendorRef": {
+      "value": "56",
+      "name": "Thompson Industrial Supplies"
+    },
+    "APAccountRef": {
+      "value": "33",
+      "name": "Accounts Payable"
+    },
+    "TotalAmt": 3500.00,
+    "CurrencyRef": {
+      "value": "CAD",
+      "name": "Canadian Dollar"
+    },
+    "ExchangeRate": 0.74,
+    "Memo": "Account-based expense line items for consulting services",
+    "POStatus": "Open",
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Description": "Consulting services for equipment installation planning",
+        "Amount": 2000.00,
+        "DetailType": "AccountBasedExpenseLineDetail",
+        "AccountBasedExpenseLineDetail": {
+          "AccountRef": {
+            "value": "95",
+            "name": "Professional Services"
+          },
+          "ClassRef": {
+            "value": "100000000000005",
+            "name": "Manufacturing"
+          },
+          "BillableStatus": "Billable",
+          "CustomerRef": {
+            "value": "123",
+            "name": "[Job Location] Downtown Office Complex"
+          }
+        }
+      },
+      {
+        "Id": "2",
+        "LineNum": 2,
+        "Description": "Shipping and handling fees",
+        "Amount": 500.00,
+        "DetailType": "AccountBasedExpenseLineDetail",
+        "AccountBasedExpenseLineDetail": {
+          "AccountRef": {
+            "value": "96",
+            "name": "Shipping Expense"
+          },
+          "BillableStatus": "NotBillable"
+        }
+      },
+      {
+        "Id": "3",
+        "LineNum": 3,
+        "Description": "Safety equipment for installation",
+        "Amount": 1000.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "70",
+            "name": "Safety Equipment"
+          },
+          "UnitPrice": 100.00,
+          "Qty": 10,
+          "BillableStatus": "NotBillable"
+        }
+      }
+    ]
+  },
+  "time": "2024-12-19T10:00:00.000-08:00"
+}

@@ -3,7 +3,7 @@ package com.tosspaper.contact;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.BadRequestException;
-import com.tosspaper.common.ForbiddenException;
+import com.tosspaper.models.exception.ForbiddenException;
 import com.tosspaper.common.security.SecurityUtils;
 import com.tosspaper.generated.model.Contact;
 import com.tosspaper.generated.model.ContactCreate;

@@ -23,9 +23,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 public class FilesServiceImpl implements FilesService {
-    
+
     private final AwsProperties awsProperties;
     private final S3Presigner s3Presigner;
+    private final com.tosspaper.models.service.ReceivedMessageService receivedMessageService;
 
     // Maximum file size: 3MB in bytes
     private static final long MAX_FILE_SIZE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -90,10 +91,11 @@ public class FilesServiceImpl implements FilesService {
     }
 
     private void validateKeyOwnership(Long companyId, String key) {
-        String expectedPrefix = "companies/" + companyId + "/";
-        if (key == null || !key.startsWith(expectedPrefix)) {
+        if (key == null) {
             throw new ForbiddenException("ACCESS_DENIED", "You do not have permission to access this file");
         }
+        receivedMessageService.getAttachmentByStorageKey(key, companyId)
+            .orElseThrow(() -> new ForbiddenException("ACCESS_DENIED", "You do not have permission to access this file"));
     }
 
     private void validateFileSize(long fileSizeBytes) {

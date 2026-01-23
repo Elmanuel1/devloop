@@ -30,17 +30,12 @@ dependencies {
     // Spring AI Anthropic (Claude agent for filesystem comparison)
     implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
 
-    // Spring AI Agents - Core AgentClient API (api for transitive exposure)
-    // Exclude transitive spring-ai to avoid version conflict with 1.0.3
-    api('org.springaicommunity.agents:spring-ai-agent-client:0.1.0-SNAPSHOT') {
+    // Spring AI Agents - Claude starter (includes AgentClient, ClaudeAgentModel, SDK)
+    implementation('org.springaicommunity.agents:spring-ai-starter-agent-claude:0.1.0-SNAPSHOT') {
         exclude group: 'org.springframework.ai'
     }
-    // Spring AI Agents - Claude Code integration
-    api('org.springaicommunity.agents:spring-ai-claude-agent:0.1.0-SNAPSHOT') {
-        exclude group: 'org.springframework.ai'
-    }
-    // Spring AI Agents - Claude SDK (provides ClaudeAgentClient)
-    api('org.springaicommunity.agents:claude-agent-sdk:0.1.0-SNAPSHOT') {
+    // Spring AI Agents - Gemini starter (includes GeminiAgentModel)
+    implementation('org.springaicommunity.agents:spring-ai-starter-agent-gemini:0.1.0-SNAPSHOT') {
         exclude group: 'org.springframework.ai'
     }
     // Spring AI Agents - Judge and Jury for verification

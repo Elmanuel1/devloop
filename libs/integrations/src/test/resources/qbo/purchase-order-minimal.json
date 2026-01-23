@@ -1,0 +1,37 @@
+{
+  "PurchaseOrder": {
+    "Id": "1003",
+    "SyncToken": "0",
+    "MetaData": {
+      "CreateTime": "2024-12-20T08:00:00-08:00",
+      "LastUpdatedTime": "2024-12-20T08:00:00-08:00"
+    },
+    "DocNumber": "PO-2024-1003",
+    "TxnDate": "2024-12-20",
+    "VendorRef": {
+      "value": "99",
+      "name": "Quick Parts Inc"
+    },
+    "TotalAmt": 500.00,
+    "POStatus": "Open",
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Amount": 500.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "60",
+            "name": "Quick Part"
+          },
+          "UnitPrice": 50.00,
+          "Qty": 10
+        }
+      }
+    ]
+  },
+  "time": "2024-12-20T08:00:00.000-08:00"
+}

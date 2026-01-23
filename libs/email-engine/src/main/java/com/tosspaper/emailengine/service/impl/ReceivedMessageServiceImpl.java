@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -31,11 +32,17 @@ public class ReceivedMessageServiceImpl implements ReceivedMessageService {
     @Override
     public List<EmailAttachment> getAttachmentsByMessageId(UUID messageId) {
         log.debug("Getting attachments for message: {}", messageId);
-        
-        // Fetch attachments for the message
+
         var attachments = emailAttachmentRepository.findByMessageId(messageId);
-        
+
         log.debug("Retrieved {} attachments for message {}", attachments.size(), messageId);
         return attachments;
+    }
+
+    @Override
+    public Optional<EmailAttachment> getAttachmentByStorageKey(String storageKey, Long companyId) {
+        log.debug("Getting attachment by storageKey: {} for company: {}", storageKey, companyId);
+
+        return emailAttachmentRepository.findByStorageKeyAndCompanyId(storageKey, companyId);
     }
 }

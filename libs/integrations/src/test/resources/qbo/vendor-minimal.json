@@ -1,0 +1,13 @@
+{
+  "Vendor": {
+    "Id": "99",
+    "SyncToken": "0",
+    "MetaData": {
+      "CreateTime": "2024-12-01T09:00:00-08:00",
+      "LastUpdatedTime": "2024-12-01T09:00:00-08:00"
+    },
+    "DisplayName": "Quick Parts Inc",
+    "Active": true
+  },
+  "time": "2024-12-01T09:00:00.000-08:00"
+}

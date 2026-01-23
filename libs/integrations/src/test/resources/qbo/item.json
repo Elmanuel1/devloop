@@ -1,0 +1,55 @@
+{
+  "Item": {
+    "Id": "21",
+    "SyncToken": "4",
+    "MetaData": {
+      "CreateTime": "2024-01-15T09:00:00-08:00",
+      "LastUpdatedTime": "2024-12-15T16:00:00-08:00"
+    },
+    "Name": "Industrial Valve Model X500",
+    "Sku": "VALVE-X500-001",
+    "Description": "High-pressure industrial valve for manufacturing applications. NSF certified.",
+    "Active": true,
+    "FullyQualifiedName": "Equipment:Valves:Industrial Valve Model X500",
+    "Taxable": true,
+    "SalesTaxIncluded": false,
+    "UnitPrice": 299.99,
+    "Type": "Inventory",
+    "IncomeAccountRef": {
+      "value": "79",
+      "name": "Sales of Product Income"
+    },
+    "PurchaseDesc": "Industrial valve X500 - for purchase orders",
+    "PurchaseTaxIncluded": false,
+    "PurchaseCost": 150.00,
+    "ExpenseAccountRef": {
+      "value": "80",
+      "name": "Cost of Goods Sold"
+    },
+    "AssetAccountRef": {
+      "value": "81",
+      "name": "Inventory Asset"
+    },
+    "TrackQtyOnHand": true,
+    "QtyOnHand": 150,
+    "QtyOnPurchaseOrder": 50,
+    "QtyOnSalesOrder": 25,
+    "ReorderPoint": 20,
+    "InvStartDate": "2024-01-15",
+    "PrefVendorRef": {
+      "value": "56",
+      "name": "Thompson Industrial Supplies"
+    },
+    "SalesTaxCodeRef": {
+      "value": "2",
+      "name": "Taxable"
+    },
+    "SubItem": true,
+    "ParentRef": {
+      "value": "20",
+      "name": "Valves"
+    },
+    "Level": 2
+  },
+  "time": "2024-12-15T16:00:00.789-08:00"
+}

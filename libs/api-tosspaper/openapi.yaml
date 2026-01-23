@@ -4170,6 +4170,12 @@ paths:
       summary: Request Download URL
       description: Request a pre-signed URL to download a file.
       parameters:
+        - name: X-Context-Id
+          in: header
+          required: true
+          description: Company ID
+          schema:
+            type: string
         - name: key
           in: query
           required: true

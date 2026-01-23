@@ -2,12 +2,12 @@ package com.tosspaper.aiengine.judge;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springaicommunity.agents.judge.Judges;
-import org.springaicommunity.agents.judge.context.JudgmentContext;
-import org.springaicommunity.agents.judge.jury.Jury;
-import org.springaicommunity.agents.judge.jury.SimpleJury;
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.jury.WeightedAverageStrategy;
+import org.springaicommunity.judge.Judges;
+import org.springaicommunity.judge.context.JudgmentContext;
+import org.springaicommunity.judge.jury.Jury;
+import org.springaicommunity.judge.jury.SimpleJury;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.jury.WeightedAverageStrategy;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;

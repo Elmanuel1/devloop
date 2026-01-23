@@ -1,0 +1,29 @@
+{
+  "Customer": {
+    "Id": "456",
+    "SyncToken": "1",
+    "MetaData": {
+      "CreateTime": "2024-05-20T14:00:00-07:00",
+      "LastUpdatedTime": "2024-10-10T10:00:00-07:00"
+    },
+    "DisplayName": "Regular Customer Without Job Location Marker",
+    "CompanyName": "Standard Client Corp",
+    "Active": true,
+    "PrimaryPhone": {
+      "FreeFormNumber": "(555) 123-4567"
+    },
+    "PrimaryEmailAddr": {
+      "Address": "contact@standardclient.com"
+    },
+    "BillAddr": {
+      "Line1": "100 Business Ave",
+      "City": "San Jose",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "95110"
+    },
+    "Balance": 5000.00,
+    "Notes": "This customer does not have the [Job Location] prefix and should be skipped during mapping."
+  },
+  "time": "2024-10-10T10:00:00.000-07:00"
+}

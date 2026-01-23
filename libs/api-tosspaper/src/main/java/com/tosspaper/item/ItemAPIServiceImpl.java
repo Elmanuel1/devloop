@@ -2,7 +2,7 @@ package com.tosspaper.item;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.ApiErrorMessages;
-import com.tosspaper.common.ForbiddenException;
+import com.tosspaper.models.exception.ForbiddenException;
 import com.tosspaper.common.security.SecurityUtils;
 import com.tosspaper.generated.model.Item;
 import com.tosspaper.generated.model.ItemCreate;

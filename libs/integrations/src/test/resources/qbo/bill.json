@@ -1,0 +1,68 @@
+{
+  "Bill": {
+    "Id": "5001",
+    "SyncToken": "2",
+    "MetaData": {
+      "CreateTime": "2024-11-15T11:00:00-08:00",
+      "LastUpdatedTime": "2024-12-01T14:30:00-08:00"
+    },
+    "DocNumber": "BILL-2024-5001",
+    "TxnDate": "2024-11-15",
+    "DueDate": "2024-12-15",
+    "VendorRef": {
+      "value": "56",
+      "name": "Thompson Industrial Supplies"
+    },
+    "APAccountRef": {
+      "value": "33",
+      "name": "Accounts Payable"
+    },
+    "TotalAmt": 3000.00,
+    "Balance": 3000.00,
+    "CurrencyRef": {
+      "value": "USD",
+      "name": "United States Dollar"
+    },
+    "ExchangeRate": 1.0,
+    "PrivateNote": "Bill for PO-2024-1001 partial shipment",
+    "SalesTermRef": {
+      "value": "3",
+      "name": "Net 30"
+    },
+    "VendorAddr": {
+      "Line1": "Thompson Industrial Supplies",
+      "Line2": "1500 Industrial Blvd, Suite 400",
+      "City": "San Francisco",
+      "Country": "USA",
+      "CountrySubDivisionCode": "CA",
+      "PostalCode": "94107"
+    },
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Description": "Industrial Valve Model X500 - Partial shipment (10 units)",
+        "Amount": 3000.00,
+        "DetailType": "ItemBasedExpenseLineDetail",
+        "ItemBasedExpenseLineDetail": {
+          "ItemRef": {
+            "value": "21",
+            "name": "Industrial Valve Model X500"
+          },
+          "UnitPrice": 300.00,
+          "Qty": 10,
+          "BillableStatus": "NotBillable"
+        }
+      }
+    ],
+    "LinkedTxn": [
+      {
+        "TxnId": "1001",
+        "TxnType": "PurchaseOrder"
+      }
+    ]
+  },
+  "time": "2024-12-01T14:30:00.000-08:00"
+}

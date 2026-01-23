@@ -1,0 +1,35 @@
+{
+  "Bill": {
+    "Id": "5002",
+    "SyncToken": "0",
+    "MetaData": {
+      "CreateTime": "2024-12-20T09:00:00-08:00",
+      "LastUpdatedTime": "2024-12-20T09:00:00-08:00"
+    },
+    "DocNumber": "BILL-2024-5002",
+    "TxnDate": "2024-12-20",
+    "VendorRef": {
+      "value": "99",
+      "name": "Quick Parts Inc"
+    },
+    "TotalAmt": 250.00,
+    "Balance": 250.00,
+    "domain": "QBO",
+    "sparse": false,
+    "Line": [
+      {
+        "Id": "1",
+        "LineNum": 1,
+        "Amount": 250.00,
+        "DetailType": "AccountBasedExpenseLineDetail",
+        "AccountBasedExpenseLineDetail": {
+          "AccountRef": {
+            "value": "80",
+            "name": "Cost of Goods Sold"
+          }
+        }
+      }
+    ]
+  },
+  "time": "2024-12-20T09:00:00.000-08:00"
+}

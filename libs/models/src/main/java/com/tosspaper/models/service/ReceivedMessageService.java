@@ -6,6 +6,7 @@ import com.tosspaper.models.paging.Paginated;
 import com.tosspaper.models.query.ReceivedMessageQuery;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ReceivedMessageService {
@@ -19,4 +20,9 @@ public interface ReceivedMessageService {
      * Get attachments for a specific message
      */
     List<EmailAttachment> getAttachmentsByMessageId(UUID messageId);
+
+    /**
+     * Get attachment by storage key and company ID.
+     */
+    Optional<EmailAttachment> getAttachmentByStorageKey(String storageKey, Long companyId);
 }

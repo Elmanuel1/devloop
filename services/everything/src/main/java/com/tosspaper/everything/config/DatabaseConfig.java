@@ -28,7 +28,7 @@ import javax.sql.DataSource;
  * - HikariCP max-lifetime < 15 minutes (token lifetime)
  */
 @Configuration
-@EnableConfigurationProperties(RdsIamProperties.class)
+@EnableConfigurationProperties({RdsIamProperties.class, DataSourceProperties.class})
 @Slf4j
 public class DatabaseConfig {
 
@@ -36,15 +36,6 @@ public class DatabaseConfig {
 
     public DatabaseConfig(RdsIamProperties rdsIamProperties) {
         this.rdsIamProperties = rdsIamProperties;
-    }
-
-    /**
-     * Binds spring.datasource.* properties.
-     */
-    @Bean
-    @ConfigurationProperties("spring.datasource")
-    public DataSourceProperties dataSourceProperties() {
-        return new DataSourceProperties();
     }
 
     /**

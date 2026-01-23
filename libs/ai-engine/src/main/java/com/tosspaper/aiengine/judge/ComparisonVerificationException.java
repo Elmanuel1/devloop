@@ -1,7 +1,7 @@
 package com.tosspaper.aiengine.judge;
 
-import org.springaicommunity.agents.judge.jury.Verdict;
-import org.springaicommunity.agents.judge.result.Judgment;
+import org.springaicommunity.judge.jury.Verdict;
+import org.springaicommunity.judge.result.Judgment;
 
 import java.util.Map;
 

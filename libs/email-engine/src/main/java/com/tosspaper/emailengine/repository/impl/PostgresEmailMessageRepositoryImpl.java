@@ -224,10 +224,10 @@ public class PostgresEmailMessageRepositoryImpl implements EmailMessageRepositor
         // Full-text search filter
         if (query.getSearch() != null && !query.getSearch().trim().isEmpty()) {
             String prefixQuery = com.tosspaper.models.utils.PostgresSearchUtils.buildPrefixQuery(query.getSearch());
-            
+
             if (!prefixQuery.isEmpty()) {
                 conditions.add(org.jooq.impl.DSL.condition(
-                    "search_vector @@ to_tsquery('english', {0})", 
+                    "search_vector @@ to_tsquery('english', {0})",
                     prefixQuery
                 ));
             }
