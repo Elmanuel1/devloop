@@ -87,6 +87,10 @@ resource "aws_lb_target_group" "app" {
   protocol = "HTTPS"
   vpc_id   = var.vpc_id
 
+  # Load balancing algorithm - LOR routes to instance with fewest in-flight requests
+  # Better for varying request durations (e.g., AI processing jobs)
+  load_balancing_algorithm_type = "least_outstanding_requests"
+
   # Health check configuration
   health_check {
     enabled             = true
