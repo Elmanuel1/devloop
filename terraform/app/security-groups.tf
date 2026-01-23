@@ -1,12 +1,13 @@
 # =============================================================================
 # Security Groups for Application
 # =============================================================================
-# EC2 in PUBLIC subnet - security group acts as firewall
-# HTTP/HTTPS restricted to Cloudflare IPs only
-# SSH restricted to allowed IPs
+# Traffic flow: Cloudflare -> ALB -> EC2
+# - ALB security group allows Cloudflare IPs (defined in alb.tf)
+# - App security group allows ALB only
 # =============================================================================
 
 # Cloudflare IPv4 ranges (from https://www.cloudflare.com/ips-v4/)
+# Used by ALB security group in alb.tf
 locals {
   cloudflare_ipv4_cidrs = [
     "173.245.48.0/20",
@@ -27,36 +28,23 @@ locals {
   ]
 }
 
+# -----------------------------------------------------------------------------
+# Application Security Group (EC2 instances)
+# -----------------------------------------------------------------------------
+# Traffic from ALB only (no direct Cloudflare access)
+# -----------------------------------------------------------------------------
 resource "aws_security_group" "app" {
   name        = "${local.name_prefix}-app-sg"
-  description = "Security group for application server (Cloudflare only)"
+  description = "Security group for application server (ALB only)"
   vpc_id      = var.vpc_id
 
-  # Ingress: HTTP from Cloudflare only
+  # Ingress: HTTPS from ALB only
   ingress {
-    description = "HTTP from Cloudflare"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4_cidrs
-  }
-
-  # Ingress: HTTPS from Cloudflare only
-  ingress {
-    description = "HTTPS from Cloudflare"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4_cidrs
-  }
-
-  # Ingress: Application port from Cloudflare only
-  ingress {
-    description = "Application port from Cloudflare"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = local.cloudflare_ipv4_cidrs
+    description     = "HTTPS from ALB"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   # Ingress: SSH from allowed IPs only

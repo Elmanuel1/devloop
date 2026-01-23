@@ -74,3 +74,27 @@ variable "db_iam_username" {
   type        = string
   default     = "tosspaper"
 }
+
+# -----------------------------------------------------------------------------
+# Auto Scaling Group Variables
+# -----------------------------------------------------------------------------
+variable "asg_min_size" {
+  description = "Minimum number of instances in the Auto Scaling Group"
+  type        = number
+  default     = 1
+}
+
+variable "asg_max_size" {
+  description = "Maximum number of instances in the Auto Scaling Group"
+  type        = number
+  default     = 2
+}
+
+# -----------------------------------------------------------------------------
+# Alerting Variables
+# -----------------------------------------------------------------------------
+variable "alert_email" {
+  description = "Email address to receive CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}

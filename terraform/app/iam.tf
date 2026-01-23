@@ -126,7 +126,7 @@ resource "aws_iam_role_policy" "sqs_access" {
 }
 
 # -----------------------------------------------------------------------------
-# CloudWatch Metrics Policy
+# CloudWatch Metrics Policy (Application + CloudWatch Agent)
 # -----------------------------------------------------------------------------
 resource "aws_iam_role_policy" "cloudwatch_metrics" {
   name = "cloudwatch-metrics"
@@ -144,9 +144,19 @@ resource "aws_iam_role_policy" "cloudwatch_metrics" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "cloudwatch:namespace" = "Tosspaper"
+            "cloudwatch:namespace" = ["Tosspaper", "CWAgent"]
           }
         }
+      },
+      {
+        Sid    = "CloudWatchAgentDescribe"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeTags",
+          "ec2:DescribeInstances",
+          "autoscaling:DescribeAutoScalingInstances"
+        ]
+        Resource = "*"
       }
     ]
   })

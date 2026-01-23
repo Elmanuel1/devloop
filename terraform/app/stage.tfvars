@@ -20,3 +20,6 @@ db_resource_id       = "db-WMYDNRPAXHDCJYMBDSHR2OJ4AE"
 # SSH access (optional - set for debugging)
 # ssh_key_name      = "your-key-name"
 # ssh_allowed_cidrs = ["YOUR_IP/32"]
+
+# Alerting
+alert_email = "aribooluwatoba@gmail.com"
