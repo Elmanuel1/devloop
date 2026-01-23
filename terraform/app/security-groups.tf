@@ -35,7 +35,7 @@ locals {
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "app" {
   name        = "${local.name_prefix}-app-sg"
-  description = "Security group for application server (ALB only)"
+  description = "Security group for application server (Cloudflare only)"
   vpc_id      = var.vpc_id
 
   # Ingress: HTTPS from ALB only
