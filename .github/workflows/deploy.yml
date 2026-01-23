@@ -1,0 +1,213 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: string
+      version:
+        description: 'Image version (SHA) to deploy'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+        default: stage
+      version:
+        description: 'Image version (SHA) to deploy - leave empty for latest'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: build4africa/tosspaper
+  AWS_REGION: "us-west-2"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.APP_URL }}
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="latest"
+            echo "No version specified, using: $VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Deploying version: $VERSION"
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::905418019159:role/GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Assume Role in Target Account
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.ACCOUNT_ID }}:role/OrganizationAccountAccessRole
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+          role-skip-session-tagging: true
+
+      - name: Get EC2 Instance ID
+        id: ec2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Environment,Values=${{ inputs.environment }}" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)
+
+          if [[ "$INSTANCE_ID" == "None" || -z "$INSTANCE_ID" ]]; then
+            echo "::error::No running EC2 instance found for ${{ inputs.environment }}"
+            exit 1
+          fi
+
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "Found EC2 instance: $INSTANCE_ID"
+
+      - name: Upload deployment files to S3
+        run: |
+          BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
+
+          # Upload docker-compose, nginx config, and temporal config
+          aws s3 cp docker-compose-remote.yml s3://$BUCKET/deploy/docker-compose.yml
+          aws s3 sync nginx/ s3://$BUCKET/deploy/nginx/
+          aws s3 sync temporal/ s3://$BUCKET/deploy/temporal/
+
+          echo "Uploaded deployment files to S3"
+
+      - name: Deploy via SSM
+        run: |
+          INSTANCE_ID="${{ steps.ec2.outputs.instance_id }}"
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
+
+          DEPLOY_SCRIPT=$(cat <<'SCRIPT'
+          set -e
+
+          echo "=== Starting deployment ==="
+
+          # Variables (substituted by GitHub Actions)
+          IMAGE_TAG="__IMAGE_TAG__"
+          BUCKET="__BUCKET__"
+
+          # Navigate to app directory
+          cd /opt/tosspaper
+
+          # Download deployment files from S3
+          echo "Downloading deployment files..."
+          aws s3 cp s3://$BUCKET/deploy/docker-compose.yml docker-compose-remote.yml
+          aws s3 sync s3://$BUCKET/deploy/nginx/ nginx/
+          aws s3 sync s3://$BUCKET/deploy/temporal/ temporal/
+
+          # Login to GHCR using token from Secrets Manager
+          echo "Logging in to GHCR..."
+          aws secretsmanager get-secret-value --secret-id tosspaper/ghcr-token --query 'SecretString' --output text | docker login ghcr.io -u github --password-stdin
+
+          # Pull new image
+          echo "Pulling image: $IMAGE_TAG"
+          docker pull "$IMAGE_TAG"
+
+          # Export IMAGE_TAG for docker-compose
+          export IMAGE_TAG="$IMAGE_TAG"
+
+          # Stop existing containers (keep volumes)
+          echo "Stopping existing containers..."
+          docker compose -f docker-compose-remote.yml down || true
+
+          # Start with new image
+          echo "Starting containers..."
+          docker compose -f docker-compose-remote.yml up -d
+
+          # Wait for health check
+          echo "Waiting for application to be healthy..."
+          sleep 30
+
+          # Check health
+          if curl -sf http://localhost:8080/actuator/health > /dev/null; then
+            echo "Health check passed!"
+          else
+            echo "Health check failed!"
+            docker compose -f docker-compose-remote.yml logs everything --tail=100
+            exit 1
+          fi
+
+          # Cleanup old images
+          docker image prune -f
+
+          echo "=== Deployment complete ==="
+          SCRIPT
+          )
+
+          # Substitute variables (no secrets - GHCR token fetched from SSM at runtime)
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__IMAGE_TAG__/$IMAGE_TAG}"
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__BUCKET__/$BUCKET}"
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "{\"commands\":[$(echo "$DEPLOY_SCRIPT" | jq -Rs .)]}" \
+            --timeout-seconds 600 \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+
+          echo "Waiting for deployment to complete..."
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          OUTPUT=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query '[Status, StandardOutputContent, StandardErrorContent]' \
+            --output json)
+
+          STATUS=$(echo $OUTPUT | jq -r '.[0]')
+          STDOUT=$(echo $OUTPUT | jq -r '.[1]')
+          STDERR=$(echo $OUTPUT | jq -r '.[2]')
+
+          echo "=== Deployment Output ==="
+          echo "$STDOUT"
+
+          if [[ -n "$STDERR" && "$STDERR" != "null" ]]; then
+            echo "=== Errors ==="
+            echo "$STDERR"
+          fi
+
+          if [[ "$STATUS" != "Success" ]]; then
+            echo "::error::Deployment failed with status: $STATUS"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Instance:** ${{ steps.ec2.outputs.instance_id }}" >> $GITHUB_STEP_SUMMARY

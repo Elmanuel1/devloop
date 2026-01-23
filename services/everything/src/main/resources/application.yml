@@ -318,7 +318,10 @@ app:
           permitted-calls-in-half-open: 10 # Test with 10 calls in half-open
       sync:
         batch-size: 30
-        sync-interval-seconds: 180
+        # Schedule interval for integration sync (seconds)
+        # Default: 1800s (30 min). Override with QUICKBOOKS_SYNC_INTERVAL_SECONDS.
+        # Production recommendation: 3600s (1 hour) for lower API usage.
+        sync-interval-seconds: ${QUICKBOOKS_SYNC_INTERVAL_SECONDS:1800}
     encryption:
       key: ${INTEGRATION_ENCRYPTION_KEY:}
   email:

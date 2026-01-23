@@ -132,3 +132,6 @@ sonar-scanner.properties
 
 # Local file storage
 files/
+
+# Local init scripts (DB user creation etc)
+init-scripts/

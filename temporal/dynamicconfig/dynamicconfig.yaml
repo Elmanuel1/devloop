@@ -1,0 +1,166 @@
+# =============================================================================
+# Temporal Dynamic Configuration for PostgreSQL
+# =============================================================================
+# Reference: https://docs.temporal.io/references/dynamic-configuration
+#
+# This file allows runtime configuration changes without restarting Temporal.
+# Values can be constrained by namespace, taskQueue, or other dimensions.
+#
+# Format:
+#   setting.name:
+#     - value: <value>
+#       constraints: {}  # Empty = applies globally
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# TASK QUEUE SETTINGS
+# -----------------------------------------------------------------------------
+
+# limit.maxTaskQueuePollers
+# -------------------------
+# Maximum number of concurrent pollers per task queue.
+# Default: 1000
+# Recommended: 10 (for small deployments)
+# Why: Reduces resource usage. Increase if you have many workers competing
+#      for tasks or experience high latency in task delivery.
+limit.maxTaskQueuePollers:
+  - value: 10
+    constraints: {}
+
+# matching.numTaskqueueReadPartitions
+# ------------------------------------
+# Number of partitions for reading from task queues.
+# Default: 1
+# Recommended: 4 (for moderate throughput)
+# Why: More partitions = better parallelism. Match with write partitions.
+#      Increase for high-throughput workflows (16-64 for production).
+matching.numTaskqueueReadPartitions:
+  - value: 4
+    constraints: {}
+
+# matching.numTaskqueueWritePartitions
+# -------------------------------------
+# Number of partitions for writing to task queues.
+# Default: 1
+# Recommended: 4 (should match read partitions)
+# Why: Must equal or exceed read partitions. Imbalance causes task starvation.
+matching.numTaskqueueWritePartitions:
+  - value: 4
+    constraints: {}
+
+# -----------------------------------------------------------------------------
+# HISTORY SERVICE SETTINGS
+# -----------------------------------------------------------------------------
+
+# history.maximumBufferedEvents
+# ------------------------------
+# Max events buffered in memory before flushing to persistence.
+# Default: 100
+# Recommended: 100 (default is good)
+# Why: Higher values improve throughput but increase memory usage and
+#      potential data loss on crash. Lower for memory-constrained environments.
+history.maximumBufferedEvents:
+  - value: 100
+    constraints: {}
+
+# -----------------------------------------------------------------------------
+# FRONTEND / CONNECTION SETTINGS
+# -----------------------------------------------------------------------------
+
+# frontend.keepAliveMaxConnectionIdle
+# ------------------------------------
+# Max time a connection can be idle before being closed.
+# Default: infinity (no limit)
+# Recommended: 5m
+# Why: Prevents connection leaks and stale connections. Helps with load
+#      balancer health checks and connection pool management.
+frontend.keepAliveMaxConnectionIdle:
+  - value: 5m
+    constraints: {}
+
+# frontend.keepAliveMaxConnectionAge
+# ------------------------------------
+# Max lifetime of a connection regardless of activity.
+# Default: infinity (no limit)
+# Recommended: 10m
+# Why: Forces periodic reconnection, which helps with load balancing and
+#      prevents long-lived connections from causing issues during deployments.
+frontend.keepAliveMaxConnectionAge:
+  - value: 10m
+    constraints: {}
+
+# -----------------------------------------------------------------------------
+# PERSISTENCE / SEARCH SETTINGS
+# -----------------------------------------------------------------------------
+
+# system.forceSearchAttributesCacheRefreshOnRead
+# ------------------------------------------------
+# Force refresh of search attributes cache on every read.
+# Default: false
+# Recommended: false
+# Why: Setting to true adds latency to every read. Only enable if you
+#      frequently modify search attributes and need immediate consistency.
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: false
+    constraints: {}
+
+# -----------------------------------------------------------------------------
+# WORKFLOW EXECUTION LIMITS
+# -----------------------------------------------------------------------------
+
+# limit.maxIDLength
+# ------------------
+# Maximum length for workflow IDs, run IDs, and other identifiers.
+# Default: 1000
+# Recommended: 255 (sufficient for most use cases)
+# Why: Shorter IDs reduce storage and improve query performance.
+#      Increase if you use long composite workflow IDs.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+
+# -----------------------------------------------------------------------------
+# ARCHIVAL SETTINGS
+# -----------------------------------------------------------------------------
+# Archival moves completed workflow history to long-term storage (S3, GCS).
+# Disabled by default - enable when you need compliance/audit trails.
+
+# history.archivalStatus
+# -----------------------
+# Controls archival of workflow execution history.
+# Options: disabled, enabled
+# Default: disabled
+# Recommended: disabled (enable only if needed for compliance)
+# Why: Archival adds overhead and requires additional storage configuration.
+#      Enable with proper S3/GCS bucket setup for audit requirements.
+history.archivalStatus:
+  - value: disabled
+    constraints: {}
+
+# visibility.archivalStatus
+# --------------------------
+# Controls archival of visibility records (workflow metadata).
+# Options: disabled, enabled
+# Default: disabled
+# Recommended: disabled (enable only if needed for compliance)
+# Why: Same as history archival - adds overhead, requires storage setup.
+visibility.archivalStatus:
+  - value: disabled
+    constraints: {}
+
+# =============================================================================
+# PRODUCTION RECOMMENDATIONS
+# =============================================================================
+# For production with higher throughput, consider:
+#
+# matching.numTaskqueueReadPartitions: 16-64
+# matching.numTaskqueueWritePartitions: 16-64
+# limit.maxTaskQueuePollers: 100-1000
+# history.maximumBufferedEvents: 200-500
+#
+# For high-availability, also configure:
+# - Multiple history shards (NUM_HISTORY_SHARDS env var)
+# - Read replicas for PostgreSQL
+# - Connection pooling (PgBouncer)
+# =============================================================================

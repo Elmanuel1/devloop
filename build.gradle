@@ -22,8 +22,8 @@ plugins {
 }
 
 allprojects {
-    group = 'com.tosspaper'
-    version = '1.0.0'
+    group = findProperty('projectGroup') ?: 'com.tosspaper'
+    version = findProperty('projectVersion') ?: '0.0.1'
 
     repositories {
         mavenCentral()

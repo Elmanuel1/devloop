@@ -1,63 +1,46 @@
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    hostname: postgres
-    environment:
-      POSTGRES_DB: tosspaper
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      # - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql
-    networks:
-      - tosspaper-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
   redis:
     image: redis:7-alpine
     container_name: tosspaper-redis
-    environment:
-      REDIS_PASSWORD: mypass
-    command: redis-server --requirepass mypass
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
       - "6379:6379"
     networks:
       - tosspaper-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "mypass", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    env_file:
+      - ./springboot_dev.env
 
   temporal:
-    image: temporalio/auto-setup:latest
+    image: temporalio/auto-setup:${TEMPORAL_VERSION}
     container_name: tosspaper-temporal
     ports:
       - "7233:7233"
     environment:
       - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PWD=postgres
-      - POSTGRES_SEEDS=postgres
+      - DB_PORT=${TEMPORAL_DB_PORT}
+      - POSTGRES_USER=${TEMPORAL_DB_USER}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD}
+      - POSTGRES_SEEDS=${TEMPORAL_DB_HOST}
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamicconfig.yaml
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
     networks:
       - tosspaper-network
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f temporal-server > /dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
       retries: 10
-      start_period: 60s
+      start_period: 120s
+    env_file:
+      - ./springboot_dev.env
 
   temporal-ui:
     image: temporalio/ui:2.21.3
@@ -71,23 +54,8 @@ services:
     depends_on:
       - temporal
 
-  flyway:
-    image: flyway/flyway:11-alpine
-    platform: linux/arm64
-    container_name: tosspaper-flyway
-    command: -url=jdbc:postgresql://postgres:5432/tosspaper -user=postgres -password=postgres -locations=filesystem:/flyway/sql -baselineOnMigrate=true -baselineVersion=0 -connectRetries=60 migrate
-    volumes:
-      - ./flyway:/flyway/sql
-    networks:
-      - tosspaper-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-    stdin_open: true
-    tty: true
-
   everything:
-    image: ghcr.io/build4africa/tosspaper:0.1.21-snapshot
+    image: ${IMAGE_TAG:-ghcr.io/build4africa/tosspaper:latest}
     platform: linux/arm64
     container_name: tosspaper-everything
     extra_hosts:
@@ -111,8 +79,6 @@ services:
     networks:
       - tosspaper-network
     depends_on:
-      flyway:
-        condition: service_completed_successfully
       redis:
         condition: service_healthy
       temporal:
@@ -149,10 +115,6 @@ services:
       everything:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  postgres_data:
-    driver: local
 
 networks:
   tosspaper-network:

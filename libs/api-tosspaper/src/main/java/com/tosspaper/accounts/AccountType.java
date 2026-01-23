@@ -28,6 +28,7 @@ public enum AccountType {
      * -- GETTER --
      *  Get the list of QuickBooks account type values for this filter.
      */
+
     private final List<String> accountTypes;
 
     AccountType(List<String> accountTypes) {

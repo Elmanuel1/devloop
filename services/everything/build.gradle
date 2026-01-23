@@ -37,3 +37,7 @@ springBoot {
 application {
     mainClass = 'com.tosspaper.everything.EverythingApplication'
 }
+
+bootJar {
+    archiveFileName = 'app.jar'
+}

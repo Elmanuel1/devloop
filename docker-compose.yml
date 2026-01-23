@@ -2,19 +2,22 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     hostname: postgres
+    env_file:
+      - ./springboot_local.env
     environment:
-      POSTGRES_DB: tosspaper
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      #- ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql
+      # Optional: mount init-scripts if exists (create temporal user locally)
+      # - ./init-scripts:/docker-entrypoint-initdb.d
     networks:
       - tosspaper-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 60s
       timeout: 5s
       retries: 5
@@ -23,15 +26,17 @@ services:
   redis:
     image: redis:7-alpine
     container_name: tosspaper-redis
-    environment:
-      REDIS_PASSWORD: mypass
-    command: redis-server --requirepass mypass
+    env_file:
+      - ./springboot_local.env
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     networks:
       - tosspaper-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "mypass", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -42,14 +47,14 @@ services:
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=sqs,s3
+      - SERVICES=sqs,s3,ssm
       - DEBUG=0
       - PERSISTENCE=1
       - EXTRA_CORS_ALLOWED_ORIGINS=http://localhost:3000
       - EXTRA_CORS_ALLOWED_HEADERS=*
       - EXTRA_CORS_EXPOSE_HEADERS=ETag,x-amz-meta-custom-header
     volumes:
-      - localstack-data:/var/lib/localstack
+      - localstack_data:/var/lib/localstack
       - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
     networks:
       - tosspaper-network
@@ -60,25 +65,40 @@ services:
       retries: 3
 
   temporal:
-    image: temporalio/auto-setup:1.22
+    image: temporalio/auto-setup:${TEMPORAL_VERSION}
     container_name: tosspaper-temporal
+    env_file:
+      - ./springboot_local.env
     ports:
       - "7233:7233"
     environment:
-      - DB=postgresql
-      - DB_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PWD=postgres
-      - POSTGRES_SEEDS=postgres
+      - DB=postgres12
+      - DB_PORT=${TEMPORAL_DB_PORT}
+      - POSTGRES_USER=${TEMPORAL_DB_USER}
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD}
+      - POSTGRES_SEEDS=${TEMPORAL_DB_HOST}
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamicconfig.yaml
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
     networks:
       - tosspaper-network
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
 
   temporal-ui:
-    image: temporalio/ui:2.21.3
+    image: temporalio/ui:${TEMPORAL_UI_VERSION}
     container_name: tosspaper-temporal-ui
+    env_file:
+      - ./springboot_local.env
     ports:
       - "8088:8080"
     environment:
@@ -88,75 +108,14 @@ services:
     depends_on:
       - temporal
 
-  flyway:
-    image: flyway/flyway:11-alpine
-    platform: linux/arm64
-    container_name: tosspaper-flyway
-    command: -url=jdbc:postgresql://postgres:5432/tosspaper -user=postgres -password=postgres -locations=filesystem:/flyway/sql -baselineOnMigrate=true -baselineVersion=0 -connectRetries=60 migrate
-    volumes:
-      - ./flyway:/flyway/sql
-    networks:
-      - tosspaper-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-  
-
-#  everything:
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
-#    container_name: tosspaper-everything
-#    env_file:
-#      - ./springboot.env
-#    environment:
-#      JAVA_OPTS: >-
-#          -XX:+UnlockExperimentalVMOptions
-#          -XX:+UseZGC
-#          -XX:+UseContainerSupport
-#          -XX:MaxRAMPercentage=75.0
-#          -XX:+UseStringDeduplication
-#          -XX:+ExitOnOutOfMemoryError
-#          -Xss256k
-#          -XX:MaxDirectMemorySize=128m
-#          -Djava.security.egd=file:/dev/./urandom
-#    extra_hosts:
-#      - "host.docker.internal:host-gateway"
-#    ports:
-#      - "8080:8080"
-#    volumes:
-#      - ./files:/app/files
-#      - ./certs/rds-ca-global-bundle.pem:/app/certs/rds-ca-global-bundle.pem:ro
-#    networks:
-#      - tosspaper-network
-#    depends_on:
-#      flyway:
-#        condition: service_completed_successfully
-#      redis:
-#        condition: service_healthy
-#    restart: unless-stopped
-#    healthcheck:
-#      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 5
-#      start_period: 30s
-#    deploy:
-#      resources:
-#        limits:
-#          memory: 2G
-#          cpus: 1
-#        reservations:
-#          memory: 1G
-#          cpus: 1
-
 volumes:
   postgres_data:
     driver: local
-  localstack-data:
+  redis_data:
+    driver: local
+  localstack_data:
     driver: local
 
 networks:
   tosspaper-network:
     driver: bridge
-

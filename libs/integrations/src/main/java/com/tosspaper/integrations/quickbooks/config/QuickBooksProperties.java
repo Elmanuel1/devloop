@@ -151,7 +151,14 @@ public class QuickBooksProperties {
     public static class Sync {
         private int batchSize = 30;
         private int queryLimit = 300;
-        private int syncIntervalSeconds = 180; // 3 minutes
+        /**
+         * Interval between scheduled sync runs (seconds).
+         * Default: 1800 (30 minutes).
+         * Override via app.integrations.quickbooks.sync.sync-interval-seconds
+         * or QUICKBOOKS_SYNC_INTERVAL_SECONDS env var.
+         * Production recommendation: 3600 (1 hour) for lower API usage.
+         */
+        private int syncIntervalSeconds = 1800; // 30 minutes
     }
 
     @Data
