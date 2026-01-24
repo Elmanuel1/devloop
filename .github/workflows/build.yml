@@ -45,6 +45,7 @@ jobs:
   build:
     needs: determine-environment
     runs-on: ubuntu-latest
+    environment: ${{ needs.determine-environment.outputs.environment }}
     permissions:
       contents: write
       packages: write
