@@ -1,20 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: tosspaper-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-    ports:
-      - "6379:6379"
-    networks:
-      - tosspaper-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    env_file:
-      - ./springboot_dev.env
-
   temporal:
     image: temporalio/auto-setup:${TEMPORAL_VERSION}
     container_name: tosspaper-temporal
@@ -79,8 +63,6 @@ services:
     networks:
       - tosspaper-network
     depends_on:
-      redis:
-        condition: service_healthy
       temporal:
         condition: service_healthy
     restart: unless-stopped

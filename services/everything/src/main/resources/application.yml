@@ -87,6 +87,8 @@ spring:
       port: ${REDIS_PORT:16379}
       password: ${REDIS_PASSWORD:mypass}
       timeout: ${REDIS_TIMEOUT:60000}
+      ssl:
+        enabled: ${REDIS_SSL:false}
       # Stream processing optimization
       stream:
         poll-timeout: 1000
@@ -214,7 +216,7 @@ management:
 redisson:
   config: |
     singleServerConfig:
-      address: "redis://${REDIS_HOST:localhost}:${REDIS_PORT:16379}"
+      address: "${REDIS_PROTOCOL:redis}://${REDIS_HOST:localhost}:${REDIS_PORT:16379}"
       password: "${REDIS_PASSWORD:mypass}"
       database: ${REDIS_DATABASE:0}
       connectionPoolSize: 10
