@@ -20,13 +20,28 @@ dnf update -y
 # -----------------------------------------------------------------------------
 # Install Dependencies
 # -----------------------------------------------------------------------------
+# Note: curl-minimal is pre-installed on AL2023, provides curl command
 dnf install -y \
     java-21-amazon-corretto-headless \
     docker \
-    docker-compose-plugin \
     jq \
-    curl \
     wget
+
+# -----------------------------------------------------------------------------
+# Install Docker Compose v2 (standalone binary)
+# -----------------------------------------------------------------------------
+COMPOSE_VERSION="v2.24.5"
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  COMPOSE_ARCH="x86_64" ;;
+    aarch64) COMPOSE_ARCH="aarch64" ;;
+    *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION}/docker-compose-linux-$${COMPOSE_ARCH}" \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
 # -----------------------------------------------------------------------------
 # Configure Docker
