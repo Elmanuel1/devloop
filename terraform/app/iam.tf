@@ -220,3 +220,33 @@ resource "aws_iam_role_policy" "ssm_parameters" {
     ]
   })
 }
+
+# -----------------------------------------------------------------------------
+# ECR Pull Policy (replaces Secrets Manager GHCR token)
+# -----------------------------------------------------------------------------
+resource "aws_iam_role_policy" "ecr_pull" {
+  name = "ecr-pull"
+  role = aws_iam_role.app.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ECRAuth"
+        Effect   = "Allow"
+        Action   = "ecr:GetAuthorizationToken"
+        Resource = "*"
+      },
+      {
+        Sid    = "ECRPull"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+        Resource = aws_ecr_repository.app.arn
+      }
+    ]
+  })
+}

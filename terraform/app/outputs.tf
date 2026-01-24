@@ -102,3 +102,9 @@ output "efs_dns_name" {
   description = "EFS DNS name"
   value       = aws_efs_file_system.app_files.dns_name
 }
+
+# ECR
+output "ecr_repository_url" {
+  description = "ECR repository URL"
+  value       = aws_ecr_repository.app.repository_url
+}

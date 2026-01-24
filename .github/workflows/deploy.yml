@@ -27,8 +27,6 @@ on:
         type: string
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: build4africa/tosspaper
   AWS_REGION: "us-west-2"
 
 jobs:
@@ -107,7 +105,7 @@ jobs:
 
       - name: Deploy via SSM
         run: |
-          IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          IMAGE_TAG="${{ vars.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/tosspaper-${{ inputs.environment }}:${{ steps.version.outputs.version }}"
           BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
           ENVIRONMENT="${{ inputs.environment }}"
 
@@ -119,6 +117,7 @@ jobs:
           # Variables (substituted by GitHub Actions)
           IMAGE_TAG="__IMAGE_TAG__"
           BUCKET="__BUCKET__"
+          AWS_REGION="__AWS_REGION__"
 
           # Navigate to app directory
           cd /opt/tosspaper
@@ -129,9 +128,12 @@ jobs:
           aws s3 sync s3://$BUCKET/deploy/nginx/ nginx/
           aws s3 sync s3://$BUCKET/deploy/temporal/ temporal/
 
-          # Login to GHCR using token from Secrets Manager
-          echo "Logging in to GHCR..."
-          aws secretsmanager get-secret-value --secret-id tosspaper/ghcr-token --query 'SecretString' --output text | docker login ghcr.io -u github --password-stdin
+          # Login to ECR using IAM instance profile (no stored secrets needed)
+          echo "Logging in to ECR..."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin \
+            ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
           # Pull new image
           echo "Pulling image: $IMAGE_TAG"
@@ -173,9 +175,10 @@ jobs:
           SCRIPT
           )
 
-          # Substitute variables (no secrets - GHCR token fetched from SSM at runtime)
+          # Substitute variables (no secrets - ECR auth via IAM instance profile)
           DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__IMAGE_TAG__/$IMAGE_TAG}"
           DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__BUCKET__/$BUCKET}"
+          DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__AWS_REGION__/${{ env.AWS_REGION }}}"
 
           # Get instances as array for canary deployment
           IFS=',' read -ra INSTANCES <<< "${{ steps.ec2.outputs.instance_ids }}"
@@ -292,5 +295,5 @@ jobs:
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ vars.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/tosspaper-${{ inputs.environment }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Instances:** ${{ steps.ec2.outputs.instance_count }} (${{ steps.ec2.outputs.instance_ids }})" >> $GITHUB_STEP_SUMMARY
