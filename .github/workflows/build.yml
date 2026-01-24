@@ -22,6 +22,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: build4africa/tosspaper
 
 jobs:
   determine-environment:
@@ -126,14 +127,14 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Extract metadata for Docker
         if: steps.should_build.outputs.java_changed == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
 
@@ -154,7 +155,7 @@ jobs:
         if: |
           steps.should_build.outputs.java_changed == 'true' &&
           github.event_name != 'pull_request'
-        run: docker push ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.version.outputs.version }}
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
 
       - name: Summary
         if: steps.should_build.outputs.java_changed == 'true'
@@ -162,7 +163,7 @@ jobs:
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ needs.determine-environment.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Skip summary
         if: steps.should_build.outputs.java_changed != 'true'
