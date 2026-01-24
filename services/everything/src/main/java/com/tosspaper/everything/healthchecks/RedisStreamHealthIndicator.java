@@ -19,6 +19,7 @@ public class RedisStreamHealthIndicator implements HealthIndicator {
     private final RedisTemplate<String, String> redisTemplate;
     private final StreamHealthService healthService;
 
+
     @Override
     public Health health() {
         try {
