@@ -15,8 +15,8 @@
 #    Select your options:
 #    ┌─────────────┬─────────────────────────────────────────────────────────┐
 #    │ action      │ plan = preview changes, apply = make changes            │
-#    │ module      │ organization, network, security, database, or app       │
-#    │ environment │ stage (default) or prod - only used for database/app    │
+#    │ module      │ organization, network, security, database, app, params  │
+#    │ environment │ stage (default) or prod - for database/app/parameters   │
 #    └─────────────┴─────────────────────────────────────────────────────────┘
 #
 # MODULE DEPLOYMENT ORDER (first time)
@@ -25,7 +25,8 @@
 #    2. network       - VPC, subnets, transit gateway
 #    3. security      - security groups, KMS keys
 #    4. database      - RDS instances (run for stage, then prod)
-#    5. app           - EC2, load balancers (run for stage, then prod)
+#    5. parameters    - SSM Parameter Store (run for stage, then prod)
+#    6. app           - EC2, load balancers (run for stage, then prod)
 #
 # EXAMPLES
 # --------
@@ -63,8 +64,9 @@ on:
           - security
           - database
           - app
+          - parameters
       environment:
-        description: 'Only applicable to database and app modules'
+        description: 'Environment (for database, app, parameters modules)'
         type: choice
         required: false
         default: 'stage'
@@ -121,12 +123,13 @@ jobs:
   pr-validate-env:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     concurrency:
       group: terraform-${{ matrix.module }}-${{ matrix.environment }}
       cancel-in-progress: false
     strategy:
       matrix:
-        module: [database, app]
+        module: [database, app, parameters]
         environment: [stage]
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +155,10 @@ jobs:
 
       - name: Terraform Plan
         working-directory: terraform/${{ matrix.module }}
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: terraform plan -var-file="${{ matrix.environment }}.tfvars"
+
   # Manual dispatch - run terraform action on specific module
   manual:
     if: github.event_name == 'workflow_dispatch'
@@ -179,7 +185,7 @@ jobs:
         working-directory: terraform/${{ inputs.module }}
         run: |
           # Modules with environment-specific state files
-          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" ]]; then
+          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" || "${{ inputs.module }}" == "parameters" ]]; then
             terraform init -backend-config="key=${{ inputs.module }}-${{ inputs.environment }}.tfstate"
           else
             terraform init
@@ -187,9 +193,11 @@ jobs:
 
       - name: Terraform ${{ inputs.action }}
         working-directory: terraform/${{ inputs.module }}
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
-          # database/app use {env}.tfvars, others use terraform.tfvars
-          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" ]]; then
+          # database/app/parameters use {env}.tfvars, others use terraform.tfvars
+          if [[ "${{ inputs.module }}" == "database" || "${{ inputs.module }}" == "app" || "${{ inputs.module }}" == "parameters" ]]; then
             VAR_FILE="${{ inputs.environment }}.tfvars"
           else
             VAR_FILE="terraform.tfvars"

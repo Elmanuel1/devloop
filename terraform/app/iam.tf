@@ -4,7 +4,7 @@
 # Provides EC2 instance with access to:
 # - S3 bucket (email attachments)
 # - SQS queues
-# - Secrets Manager (DB credentials)
+# - SSM Parameter Store (secrets and config)
 # - CloudWatch (logs and metrics)
 #
 # No AWS credentials stored on EC2 - uses instance profile
@@ -177,6 +177,45 @@ resource "aws_iam_role_policy" "rds_connect" {
         Effect   = "Allow"
         Action   = "rds-db:connect"
         Resource = "arn:aws:rds-db:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:dbuser:${var.db_resource_id}/${var.db_iam_username}"
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# SSM Parameter Store Policy (secrets and config)
+# -----------------------------------------------------------------------------
+resource "aws_iam_role_policy" "ssm_parameters" {
+  name = "ssm-parameters"
+  role = aws_iam_role.app.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "SSMParameterStoreRead"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = [
+          "arn:aws:ssm:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:parameter/tosspaper/${var.environment}/*"
+        ]
+      },
+      {
+        Sid    = "KMSDecrypt"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${data.aws_region.current.id}.amazonaws.com"
+          }
+        }
       }
     ]
   })

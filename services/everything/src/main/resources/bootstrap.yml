@@ -1,0 +1,27 @@
+# Bootstrap configuration - loaded before application.yml
+# Required for AWS Parameter Store config import to work
+#
+# Prod/Stage: Uses instance profile (default)
+# Local dev: Add SPRING_PROFILES_ACTIVE=local or use IntelliJ EnvFile plugin
+spring:
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-west-2}
+      parameterstore:
+        endpoint: ${AWS_SSM_ENDPOINT:}
+        region: ${AWS_REGION:us-west-2}
+
+---
+# Local development - activate with: SPRING_PROFILES_ACTIVE=local,supabase
+spring:
+  config:
+    activate:
+      on-profile: local
+  cloud:
+    aws:
+      credentials:
+        access-key: test
+        secret-key: test
+      parameterstore:
+        endpoint: http://localhost:4566

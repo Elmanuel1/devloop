@@ -33,6 +33,8 @@ mailgun = "2.1.0"
 quickbooks-sdk = "6.7.0"
 bouncycastle = "1.78.1"
 sonarqube = "5.1.0.4882"
+spring-cloud-aws = "3.4.0"
+spring-cloud = "2025.0.1"
 
 [libraries]
 # Spring Boot
@@ -58,10 +60,6 @@ jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-dat
 
 # Spring Security
 spring-security-test = { module = "org.springframework.security:spring-security-test", version.ref = "spring-security" }
-
-# Auth0
-auth0 = { module = "com.auth0:auth0", version.ref = "auth0" }
-auth0MvcCommons = { module = "com.auth0:mvc-auth-commons", version.ref = "auth0" }
 
 # Database
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
@@ -118,6 +116,12 @@ quickbooks-devkit = { module = "com.intuit.quickbooks-online:ipp-v3-java-devkit"
 
 # BouncyCastle for encryption
 bouncycastle-bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+
+# Spring Cloud AWS (versions managed by BOMs)
+spring-cloud-aws-bom = { module = "io.awspring.cloud:spring-cloud-aws-dependencies", version.ref = "spring-cloud-aws" }
+spring-cloud-aws-parameter-store = { module = "io.awspring.cloud:spring-cloud-aws-starter-parameter-store" }
+spring-cloud-bom = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
+spring-cloud-starter-bootstrap = { module = "org.springframework.cloud:spring-cloud-starter-bootstrap" }
 
 # Testing
 groovy-core = { module = "org.apache.groovy:groovy", version.ref = "groovy" }

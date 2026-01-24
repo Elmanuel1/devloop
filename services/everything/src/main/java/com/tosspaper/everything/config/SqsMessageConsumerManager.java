@@ -71,7 +71,7 @@ public class SqsMessageConsumerManager implements MessageConsumerManager {
     @Override
     public void start() {
         running = true;
-        log.info("Starting SQS consumers for {} handlers", handlers.size());
+        log.debug("Starting SQS consumers for {} handlers", handlers.size());
 
         handlers.forEach(handler -> {
             String queueName = handler.getQueueName();
@@ -80,7 +80,7 @@ public class SqsMessageConsumerManager implements MessageConsumerManager {
             if (config != null && config.isEnabled()) {
                 String queueUrl = getQueueUrl(queueName);
                 pollExecutor.submit(() -> pollLoop(queueName, queueUrl, handler, config));
-                log.info("Started SQS consumer for queue: {}", queueName);
+                log.debug("Started SQS consumer for queue: {}", queueName);
             } else if (config == null) {
                 log.warn("No SQS configuration found for queue: {}, skipping", queueName);
             } else {

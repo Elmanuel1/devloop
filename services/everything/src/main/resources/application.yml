@@ -1,4 +1,19 @@
 spring:
+  config:
+    # SSM Parameter Store paths:
+    # - /tosspaper/{env}/secrets/ - SecureString (encrypted secrets)
+    # - /tosspaper/{env}/config/  - String (plain text config)
+    # For local dev, set: SPRING_CLOUD_AWS_PARAMETERSTORE_ENDPOINT=http://localhost:4566
+    import:
+      - optional:aws-parameterstore:/tosspaper/${ENV:local}/secrets/
+      - optional:aws-parameterstore:/tosspaper/${ENV:local}/config/
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-west-2}
+      parameterstore:
+        region: ${AWS_REGION:us-west-2}
+        endpoint: ${SSM_ENDPOINT:}  # Empty for AWS, http://localhost:4566 for LocalStack
   profiles:
     active: supabase
   application:
@@ -328,7 +343,7 @@ app:
     allowed-domain: ${APP_EMAIL_ALLOWED_DOMAIN:dev-clientdocs.useassetiq.com}
   frontend:
     base-url: ${FRONTEND_BASE_URL:}
-    integrations-redirect-url: ${FRONTEND_INTEGRATIONS_REDIRECT_URL:${frontend.base-url}/dashboard/organization?tab=settings&section=integrations}
+    integrations-redirect-url: ${FRONTEND_INTEGRATIONS_REDIRECT_URL:${FRONTEND_BASE_URL}/dashboard/organization?tab=settings&section=integrations}
   mailgun:
     api-key: ${MAILGUN_API_KEY:}
     domain: ${MAILGUN_DOMAIN:}
@@ -359,7 +374,7 @@ aws:
     path-style-access: ${AWS_S3_PATH_STYLE:false} # Enable for S3-compatible services that require path-style URLs
     public-read: ${AWS_S3_PUBLIC_READ:false}
   sqs:
-    region: ${AWS_REGION:us-east-1}
+    region: ${AWS_REGION:us-west-2}
     endpoint: ${SQS_ENDPOINT:}  # Empty for AWS, LocalStack URL for local (e.g., http://localhost:4566)
     queue-prefix: ${SQS_QUEUE_PREFIX:tosspaper}
     queues:
@@ -436,7 +451,7 @@ file:
     # AI Configuration
 ai:
   provider: ${AI_PROVIDER:reducto}
-  api-key: ${AI_API_KEY:}
+  api-key: ${REDUCTO_API_KEY:}
   base-url: ${AI_BASE_URL:https://platform.reducto.ai}
   http:
     connect-timeout-seconds: ${AI_HTTP_CONNECT_TIMEOUT:30}
@@ -453,8 +468,10 @@ logging:
     com.zaxxer.hikari.pool.HikariPool: INFO
     com.zaxxer.hikari.pool.PoolBase: WARN
     com.tosspaper.everything: INFO
-    com.tosspaper: DEBUG
-
+    com.tosspaper: INFO
+    # AWS SSM Parameter Store debugging
+    io.awspring.cloud: DEBUG
+    software.amazon.awssdk: WARN
     org.jooq: WARN
     org.springframework.jdbc: WARN
 # Application Info

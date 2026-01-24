@@ -17,6 +17,14 @@ dependencies {
     // AWS SDK for SQS
     implementation libs.aws.sqs
     implementation libs.aws.sts
+
+    // Spring Cloud AWS for Parameter Store
+    implementation platform(libs.spring.cloud.aws.bom)
+    implementation platform(libs.spring.cloud.bom)
+    implementation libs.spring.cloud.aws.parameter.store
+
+    // Bootstrap context for early config loading (LocalStack endpoint)
+    implementation libs.spring.cloud.starter.bootstrap
     
     implementation libs.spring.boot.starter.batch
     implementation 'org.springframework.boot:spring-boot-starter'

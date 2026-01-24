@@ -12,8 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Optional: mount init-scripts if exists (create temporal user locally)
-      # - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./init-scripts:/docker-entrypoint-initdb.d
     networks:
       - tosspaper-network
     healthcheck:
@@ -47,7 +46,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=sqs,s3,ssm
+      - SERVICES=sqs,s3,ssm,secretsmanager
       - DEBUG=0
       - PERSISTENCE=1
       - EXTRA_CORS_ALLOWED_ORIGINS=http://localhost:3000
@@ -56,6 +55,8 @@ services:
     volumes:
       - localstack_data:/var/lib/localstack
       - ./localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh
+      - ./secrets/local-secrets.json:/etc/localstack/secrets/local-secrets.json:ro
+      - ./secrets/local-config.json:/etc/localstack/secrets/local-config.json:ro
     networks:
       - tosspaper-network
     healthcheck:
@@ -63,6 +64,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  flyway:
+    image: flyway/flyway:10
+    container_name: tosspaper-flyway
+    env_file:
+      - ./springboot_local.env
+    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB} -user=${POSTGRES_USER} -password=${POSTGRES_PASSWORD} -connectRetries=5 migrate
+    volumes:
+      - ./flyway:/flyway/sql
+    networks:
+      - tosspaper-network
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   temporal:
     image: temporalio/auto-setup:${TEMPORAL_VERSION}

@@ -1,0 +1,15 @@
+# Local development overrides
+# Activated when: SPRING_PROFILES_ACTIVE=local,supabase
+spring:
+  cloud:
+    aws:
+      credentials:
+        access-key: test
+        secret-key: test
+      parameterstore:
+        endpoint: http://localhost:4566
+        region: us-west-2
+  config:
+    import:
+      - optional:aws-parameterstore:/tosspaper/local/secrets/
+      - optional:aws-parameterstore:/tosspaper/local/config/

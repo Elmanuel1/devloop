@@ -82,7 +82,6 @@ node_modules/
 .env.production
 
 # Application specific
-application-local.yml
 application-dev.yml
 *.tmp
 *.temp
@@ -135,3 +134,9 @@ files/
 
 # Local init scripts (DB user creation etc)
 init-scripts/
+
+# Secrets - plaintext files are ignored, encrypted (.enc.json) are committed
+secrets/*-secrets.json
+!secrets/*-secrets.enc.json
+!secrets/*-config.json
+!secrets/.sops.yaml
