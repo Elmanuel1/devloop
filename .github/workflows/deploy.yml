@@ -136,6 +136,12 @@ jobs:
           echo "Generating env file from SSM..."
           ./scripts/generate-env-from-ssm.sh __ENVIRONMENT__ ./springboot_dev.env
 
+          # Source env file to export variables for docker-compose YAML substitution
+          # (env_file only makes vars available inside containers, not for YAML parsing)
+          set -a
+          source ./springboot_dev.env
+          set +a
+
           # Login to ECR using IAM instance profile (no stored secrets needed)
           echo "Logging in to ECR..."
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
