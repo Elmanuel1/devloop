@@ -38,23 +38,6 @@ variable "db_security_group_id" {
   type        = string
 }
 
-variable "ssh_key_name" {
-  description = "Name of the SSH key pair for EC2 access"
-  type        = string
-  default     = "" # Optional - set for debugging access
-}
-
-variable "ssh_allowed_cidrs" {
-  description = "CIDR blocks allowed to SSH into the EC2 instance. Cannot be 0.0.0.0/0."
-  type        = list(string)
-  default     = [] # Empty = no SSH access; set to your IP for debugging
-
-  validation {
-    condition     = !contains(var.ssh_allowed_cidrs, "0.0.0.0/0")
-    error_message = "SSH access from 0.0.0.0/0 is not allowed. Use specific IP ranges."
-  }
-}
-
 variable "aws_profile" {
   description = "AWS profile to use for authentication"
   type        = string

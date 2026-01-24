@@ -51,6 +51,12 @@ systemctl start docker
 usermod -aG docker ec2-user
 
 # -----------------------------------------------------------------------------
+# Enable SSM Agent (pre-installed on AL2023, but ensure it's running)
+# -----------------------------------------------------------------------------
+systemctl enable amazon-ssm-agent
+systemctl start amazon-ssm-agent
+
+# -----------------------------------------------------------------------------
 # Install AWS CLI v2 (if not present)
 # -----------------------------------------------------------------------------
 if ! command -v aws &> /dev/null; then

@@ -41,9 +41,6 @@ resource "aws_launch_template" "app" {
     }
   }
 
-  # SSH key (optional)
-  key_name = var.ssh_key_name != "" ? var.ssh_key_name : null
-
   # Spot instances for stage
   dynamic "instance_market_options" {
     for_each = local.config.use_spot ? [1] : []

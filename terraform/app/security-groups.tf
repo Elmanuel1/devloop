@@ -47,15 +47,6 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # Ingress: SSH from allowed IPs only
-  ingress {
-    description = "SSH from allowed IPs"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = var.ssh_allowed_cidrs
-  }
-
   # Egress: Allow all outbound
   egress {
     description = "All outbound traffic"
