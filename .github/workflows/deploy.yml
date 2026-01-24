@@ -71,22 +71,28 @@ jobs:
           role-chaining: true
           role-skip-session-tagging: true
 
-      - name: Get EC2 Instance ID
+      - name: Get EC2 Instance IDs
         id: ec2
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
+          # Get ALL running instances for this environment
+          INSTANCE_IDS=$(aws ec2 describe-instances \
             --filters "Name=tag:Environment,Values=${{ inputs.environment }}" \
                       "Name=instance-state-name,Values=running" \
-            --query 'Reservations[0].Instances[0].InstanceId' \
+            --query 'Reservations[].Instances[].InstanceId' \
             --output text)
 
-          if [[ "$INSTANCE_ID" == "None" || -z "$INSTANCE_ID" ]]; then
-            echo "::error::No running EC2 instance found for ${{ inputs.environment }}"
+          if [[ -z "$INSTANCE_IDS" ]]; then
+            echo "::error::No running EC2 instances found for ${{ inputs.environment }}"
             exit 1
           fi
 
-          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
-          echo "Found EC2 instance: $INSTANCE_ID"
+          # Convert to comma-separated for output
+          INSTANCE_IDS_CSV=$(echo $INSTANCE_IDS | tr ' ' ',')
+          INSTANCE_COUNT=$(echo $INSTANCE_IDS | wc -w | tr -d ' ')
+
+          echo "instance_ids=$INSTANCE_IDS_CSV" >> $GITHUB_OUTPUT
+          echo "instance_count=$INSTANCE_COUNT" >> $GITHUB_OUTPUT
+          echo "Found $INSTANCE_COUNT EC2 instance(s): $INSTANCE_IDS_CSV"
 
       - name: Upload deployment files to S3
         run: |
@@ -101,9 +107,9 @@ jobs:
 
       - name: Deploy via SSM
         run: |
-          INSTANCE_ID="${{ steps.ec2.outputs.instance_id }}"
           IMAGE_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
           BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
+          ENVIRONMENT="${{ inputs.environment }}"
 
           DEPLOY_SCRIPT=$(cat <<'SCRIPT'
           set -e
@@ -142,15 +148,20 @@ jobs:
           echo "Starting containers..."
           docker compose -f docker-compose-remote.yml up -d
 
-          # Wait for health check
+          # Retry health check for up to 5 minutes
           echo "Waiting for application to be healthy..."
-          sleep 30
+          for i in {1..30}; do
+            if curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
+              echo "Health check passed!"
+              break
+            fi
+            echo "  Attempt $i/30 - waiting..."
+            sleep 10
+          done
 
-          # Check health
-          if curl -sf http://localhost:8080/actuator/health > /dev/null; then
-            echo "Health check passed!"
-          else
-            echo "Health check failed!"
+          # Final verification
+          if ! curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
+            echo "Health check failed after 5 minutes!"
             docker compose -f docker-compose-remote.yml logs everything --tail=100
             exit 1
           fi
@@ -166,43 +177,115 @@ jobs:
           DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__IMAGE_TAG__/$IMAGE_TAG}"
           DEPLOY_SCRIPT="${DEPLOY_SCRIPT//__BUCKET__/$BUCKET}"
 
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
+          # Get instances as array for canary deployment
+          IFS=',' read -ra INSTANCES <<< "${{ steps.ec2.outputs.instance_ids }}"
+          TOTAL=${#INSTANCES[@]}
+
+          # Canary = first instance
+          CANARY="${INSTANCES[0]}"
+
+          echo "=== Canary Deployment Strategy ==="
+          echo "Total instances: $TOTAL"
+          echo "Canary instance: $CANARY"
+
+          # Deploy to canary first
+          echo ""
+          echo "=== Deploying canary: $CANARY ==="
+          CANARY_COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$CANARY" \
             --document-name "AWS-RunShellScript" \
             --parameters "{\"commands\":[$(echo "$DEPLOY_SCRIPT" | jq -Rs .)]}" \
             --timeout-seconds 600 \
             --query 'Command.CommandId' \
             --output text)
 
-          echo "SSM Command ID: $COMMAND_ID"
+          echo "Canary SSM Command ID: $CANARY_COMMAND_ID"
+          echo "Waiting for canary deployment to complete..."
 
-          echo "Waiting for deployment to complete..."
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" || true
+          # Wait for canary command to complete (poll until done)
+          CANARY_STATUS="InProgress"
+          for i in {1..60}; do
+            CANARY_STATUS=$(aws ssm list-commands --command-id "$CANARY_COMMAND_ID" --query 'Commands[0].Status' --output text)
+            echo "Canary command status: $CANARY_STATUS"
+            if [[ "$CANARY_STATUS" == "Success" || "$CANARY_STATUS" == "Failed" || "$CANARY_STATUS" == "Cancelled" ]]; then
+              break
+            fi
+            sleep 10
+          done
 
-          OUTPUT=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$INSTANCE_ID" \
-            --query '[Status, StandardOutputContent, StandardErrorContent]' \
+          # Get canary results
+          echo ""
+          echo "=== Canary Deployment Results ==="
+          CANARY_INVOCATION=$(aws ssm list-command-invocations \
+            --command-id "$CANARY_COMMAND_ID" \
+            --details \
+            --query 'CommandInvocations[0].{Instance:InstanceId,Status:Status,Output:CommandPlugins[0].Output}' \
             --output json)
 
-          STATUS=$(echo $OUTPUT | jq -r '.[0]')
-          STDOUT=$(echo $OUTPUT | jq -r '.[1]')
-          STDERR=$(echo $OUTPUT | jq -r '.[2]')
+          echo "$CANARY_INVOCATION" | jq -r '"Instance: \(.Instance) - Status: \(.Status)\n\(.Output)"'
 
-          echo "=== Deployment Output ==="
-          echo "$STDOUT"
-
-          if [[ -n "$STDERR" && "$STDERR" != "null" ]]; then
-            echo "=== Errors ==="
-            echo "$STDERR"
-          fi
-
-          if [[ "$STATUS" != "Success" ]]; then
-            echo "::error::Deployment failed with status: $STATUS"
+          # Check if canary failed
+          CANARY_INVOCATION_STATUS=$(echo "$CANARY_INVOCATION" | jq -r '.Status')
+          if [[ "$CANARY_INVOCATION_STATUS" != "Success" ]]; then
+            echo ""
+            echo "::error::Canary deployment failed! Stopping rollout to protect remaining instances."
             exit 1
           fi
+
+          echo ""
+          echo "Canary deployment successful!"
+
+          # Deploy to remaining instances (if any)
+          if [[ $TOTAL -gt 1 ]]; then
+            REMAINING=("${INSTANCES[@]:1}")
+            REMAINING_IDS=$(IFS=' '; echo "${REMAINING[*]}")
+
+            echo ""
+            echo "=== Deploying to remaining $((TOTAL - 1)) instance(s): $REMAINING_IDS ==="
+
+            REMAINING_COMMAND_ID=$(aws ssm send-command \
+              --instance-ids $REMAINING_IDS \
+              --document-name "AWS-RunShellScript" \
+              --parameters "{\"commands\":[$(echo "$DEPLOY_SCRIPT" | jq -Rs .)]}" \
+              --timeout-seconds 600 \
+              --query 'Command.CommandId' \
+              --output text)
+
+            echo "Remaining instances SSM Command ID: $REMAINING_COMMAND_ID"
+            echo "Waiting for deployment to complete on remaining instances..."
+
+            # Wait for remaining command to complete
+            for i in {1..60}; do
+              REMAINING_STATUS=$(aws ssm list-commands --command-id "$REMAINING_COMMAND_ID" --query 'Commands[0].Status' --output text)
+              echo "Command status: $REMAINING_STATUS"
+              if [[ "$REMAINING_STATUS" == "Success" || "$REMAINING_STATUS" == "Failed" || "$REMAINING_STATUS" == "Cancelled" ]]; then
+                break
+              fi
+              sleep 10
+            done
+
+            # Get results from remaining instances
+            echo ""
+            echo "=== Remaining Instances Deployment Results ==="
+            REMAINING_INVOCATIONS=$(aws ssm list-command-invocations \
+              --command-id "$REMAINING_COMMAND_ID" \
+              --details \
+              --query 'CommandInvocations[].{Instance:InstanceId,Status:Status,Output:CommandPlugins[0].Output}' \
+              --output json)
+
+            echo "$REMAINING_INVOCATIONS" | jq -r '.[] | "Instance: \(.Instance) - Status: \(.Status)\n\(.Output)\n---"'
+
+            # Check if any remaining instances failed
+            FAILED=$(echo "$REMAINING_INVOCATIONS" | jq -r '[.[] | select(.Status != "Success")] | length')
+            if [[ "$FAILED" -gt 0 ]]; then
+              echo ""
+              echo "::error::Deployment failed on $FAILED remaining instance(s)"
+              exit 1
+            fi
+          fi
+
+          echo ""
+          echo "=== Deployment successful on all $TOTAL instance(s)! ==="
 
       - name: Summary
         run: |
@@ -210,4 +293,4 @@ jobs:
           echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Instance:** ${{ steps.ec2.outputs.instance_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Instances:** ${{ steps.ec2.outputs.instance_count }} (${{ steps.ec2.outputs.instance_ids }})" >> $GITHUB_STEP_SUMMARY

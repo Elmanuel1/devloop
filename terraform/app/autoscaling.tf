@@ -118,8 +118,8 @@ resource "aws_autoscaling_group" "app" {
     capacity_distribution_strategy = "balanced-best-effort"
   }
 
-  # Health check - use ELB health check (ALB target group)
-  health_check_type         = "ELB"
+  # Health check - ELB for prod (replace unhealthy), EC2 for stage (debug friendly)
+  health_check_type         = local.config.use_elb_health_check ? "ELB" : "EC2"
   health_check_grace_period = 300
 
   # Instance refresh for rolling updates

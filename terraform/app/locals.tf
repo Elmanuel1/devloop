@@ -10,16 +10,18 @@ locals {
   # Environment-specific settings
   app_config = {
     stage = {
-      instance_type    = "t4g.medium" # 2 vCPU, 4GB RAM
-      use_spot         = true         # ~70% cost savings
-      ebs_volume_size  = 30
-      s3_force_destroy = true # Allow easy cleanup
+      instance_type        = "t4g.medium" # 2 vCPU, 4GB RAM
+      use_spot             = true         # ~70% cost savings
+      ebs_volume_size      = 30
+      s3_force_destroy     = true  # Allow easy cleanup
+      use_elb_health_check = false # EC2 only - don't terminate on ALB failures
     }
     prod = {
-      instance_type    = "t4g.medium" # 2 vCPU, 4GB RAM
-      use_spot         = false        # On-Demand for reliability
-      ebs_volume_size  = 50
-      s3_force_destroy = false # Prevent accidental data loss
+      instance_type        = "t4g.medium" # 2 vCPU, 4GB RAM
+      use_spot             = false        # On-Demand for reliability
+      ebs_volume_size      = 50
+      s3_force_destroy     = false # Prevent accidental data loss
+      use_elb_health_check = true  # Replace unhealthy instances
     }
   }
 
