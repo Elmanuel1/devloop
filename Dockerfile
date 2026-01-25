@@ -1,7 +1,10 @@
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Install minimal packages needed
-RUN apk add --no-cache curl tini
+RUN apk add --no-cache curl tini nodejs npm
+
+# Install Claude CLI globally
+RUN npm install -g @anthropic-ai/claude-code
 
 # Create non-root user
 RUN addgroup -g 1000 tosspaper && adduser -D -u 1000 -G tosspaper tosspaper
