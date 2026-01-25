@@ -58,6 +58,7 @@ services:
     environment:
       ENV: ${ENV:-local}
       AWS_REGION: ${AWS_REGION:-us-west-2}
+      OTEL_SDK_DISABLED: "true"
       JAVA_OPTS: >-
           -XX:+UnlockExperimentalVMOptions
           -XX:+UseZGC
