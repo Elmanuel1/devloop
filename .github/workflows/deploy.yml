@@ -96,10 +96,11 @@ jobs:
         run: |
           BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
 
-          # Upload docker-compose, nginx config, temporal config, and scripts
+          # Upload docker-compose, nginx config, temporal config, certs, and scripts
           aws s3 cp docker-compose-remote.yml s3://$BUCKET/deploy/docker-compose.yml
           aws s3 sync nginx/ s3://$BUCKET/deploy/nginx/
           aws s3 sync temporal/ s3://$BUCKET/deploy/temporal/
+          aws s3 sync certs/ s3://$BUCKET/deploy/certs/
           aws s3 cp scripts/generate-env-from-ssm.sh s3://$BUCKET/deploy/scripts/generate-env-from-ssm.sh
 
           echo "Uploaded deployment files to S3"
@@ -128,6 +129,7 @@ jobs:
           aws s3 cp s3://$BUCKET/deploy/docker-compose.yml docker-compose-remote.yml
           aws s3 sync s3://$BUCKET/deploy/nginx/ nginx/
           aws s3 sync s3://$BUCKET/deploy/temporal/ temporal/
+          aws s3 sync s3://$BUCKET/deploy/certs/ certs/
           mkdir -p scripts
           aws s3 cp s3://$BUCKET/deploy/scripts/generate-env-from-ssm.sh scripts/generate-env-from-ssm.sh
           chmod +x scripts/generate-env-from-ssm.sh

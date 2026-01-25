@@ -13,10 +13,13 @@ services:
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamicconfig.yaml
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_CLI_ADDRESS=temporal:7233
+      - SQL_TLS_ENABLED=true
+      - SQL_TLS_DISABLE_HOST_VERIFICATION=true
     networks:
       - tosspaper-network
     volumes:
       - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+      - ./certs/rds-ca-global-bundle.pem:/etc/temporal/certs/rds-ca-global-bundle.pem:ro
     healthcheck:
       test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
       interval: 30s
