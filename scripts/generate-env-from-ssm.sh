@@ -23,8 +23,9 @@ TEMPORAL_DB_PASSWORD=$(aws ssm get-parameter --name "$SECRETS_PATH/TEMPORAL_DB_P
 
 # Write env file
 cat > "$OUTPUT_FILE" << EOF
-# Environment for SSM parameter paths
+# Environment and region
 ENV=${ENV}
+AWS_REGION=${REGION}
 
 # Temporal configuration (generated from SSM)
 TEMPORAL_VERSION=1.24.2
