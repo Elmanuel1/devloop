@@ -13,7 +13,7 @@ services:
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamicconfig.yaml
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_CLI_ADDRESS=temporal:7233
-      - SQL_TLS_ENABLED=true
+      - SQL_TLS=true
       - SQL_TLS_DISABLE_HOST_VERIFICATION=true
     networks:
       - tosspaper-network
