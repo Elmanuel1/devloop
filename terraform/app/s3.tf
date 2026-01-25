@@ -132,7 +132,7 @@ resource "aws_s3_bucket_cors_configuration" "attachments" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST"]
-    allowed_origins = !local.is_lower_env ? ["https://app.tosspaper.com"] : ["http://localhost:3000", "https://dev.tosspaper.com"]
+    allowed_origins = var.s3_cors_allowed_origins
     expose_headers  = ["ETag", "x-amz-meta-custom-header"]
     max_age_seconds = 3000
   }

@@ -23,3 +23,6 @@ db_resource_id       = "db-WMYDNRPAXHDCJYMBDSHR2OJ4AE"
 
 # Alerting
 alert_email = "aribooluwatoba@gmail.com"
+
+# S3 CORS allowed origins
+s3_cors_allowed_origins = ["http://localhost:3000", "https://devapp.tosspaper.com"]

@@ -81,3 +81,11 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+# -----------------------------------------------------------------------------
+# S3 CORS Configuration
+# -----------------------------------------------------------------------------
+variable "s3_cors_allowed_origins" {
+  description = "List of allowed origins for S3 CORS configuration"
+  type        = list(string)
+}
