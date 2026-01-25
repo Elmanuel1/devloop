@@ -28,14 +28,15 @@ USER tosspaper
 # Expose port
 EXPOSE 8080
 
-# JVM optimization
+# JVM optimization - limit heap to 2GB to prevent OOM kills
 ENV JAVA_OPTS="-XX:+UseContainerSupport \
-               -XX:MaxRAMPercentage=75.0 \
+               -Xmx2g \
+               -Xms512m \
                -XX:+UseG1GC \
                -XX:+UseStringDeduplication \
                -XX:+OptimizeStringConcat \
                -Djava.security.egd=file:/dev/./urandom \
-               -XX:+ExitOnOutOfMemoryError \
+               -XX:+HeapDumpOnOutOfMemoryError \
                --enable-preview"
 
 # OpenTelemetry agent system properties for trace context propagation
