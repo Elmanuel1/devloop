@@ -21,7 +21,7 @@ resource "aws_ebs_encryption_by_default" "enabled" {
 # Prevents SSRF-based credential theft attacks
 resource "aws_ec2_instance_metadata_defaults" "imdsv2_required" {
   http_tokens                 = "required" # IMDSv2 only
-  http_put_response_hop_limit = 1          # Prevent container escape
+  http_put_response_hop_limit = 2          # Allow Docker containers to access IMDS
   http_endpoint               = "enabled"
 
   # Note: This only affects NEW instances. Existing instances retain their settings.
