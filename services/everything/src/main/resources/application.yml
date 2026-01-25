@@ -34,10 +34,14 @@ spring:
         - com.tosspaper.integrations.temporal
 
   datasource:
+    # For RDS IAM auth, use: jdbc:aws-wrapper:postgresql://host:port/db?wrapperPlugins=iam&sslmode=verify-full&sslrootcert=/app/certs/rds-ca-global-bundle.pem
+    # For local dev, use: jdbc:postgresql://localhost:5434/tosspaper
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5434/tosspaper}
     username: ${DATABASE_USERNAME:postgres}
-    password: ${DATABASE_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
+    password: ${DATABASE_PASSWORD:}
+    # For RDS IAM auth, use: software.amazon.jdbc.Driver
+    # For local dev, use: org.postgresql.Driver
+    driver-class-name: ${DATABASE_DRIVER:org.postgresql.Driver}
     hikari:
       # Increase pool size for virtual threads - with virtual threads we can have many concurrent requests
       # but they all need database connections when they actually query the DB
@@ -55,6 +59,8 @@ spring:
       register-mbeans: false
       # Log connection pool stats periodically
       pool-name: tosspaper-pool
+      # Required for AWS JDBC Wrapper - proper exception handling with HikariCP
+      exception-override-class-name: ${DB_EXCEPTION_OVERRIDE:}
   
   flyway:
     enabled: false

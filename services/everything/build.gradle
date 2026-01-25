@@ -18,6 +18,10 @@ dependencies {
     implementation libs.aws.sqs
     implementation libs.aws.sts
 
+    // AWS Advanced JDBC Driver for RDS IAM authentication
+    runtimeOnly libs.aws.jdbc.wrapper
+    runtimeOnly libs.aws.rds  // Required for IAM auth plugin
+
     // Spring Cloud AWS for Parameter Store
     implementation platform(libs.spring.cloud.aws.bom)
     implementation platform(libs.spring.cloud.bom)
