@@ -21,6 +21,9 @@ TEMPORAL_DB_PORT=$(aws ssm get-parameter --name "$CONFIG_PATH/TEMPORAL_DB_PORT" 
 TEMPORAL_DB_USER=$(aws ssm get-parameter --name "$CONFIG_PATH/TEMPORAL_DB_USER" --region "$REGION" --query 'Parameter.Value' --output text)
 TEMPORAL_DB_PASSWORD=$(aws ssm get-parameter --name "$SECRETS_PATH/TEMPORAL_DB_PASSWORD" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text)
 
+# Claude CLI API key (needed as env var for subprocess)
+ANTHROPIC_API_KEY=$(aws ssm get-parameter --name "$SECRETS_PATH/ANTHROPIC_API_KEY" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+
 # Write env file
 cat > "$OUTPUT_FILE" << EOF
 # Environment and region
@@ -33,6 +36,9 @@ TEMPORAL_DB_HOST=${TEMPORAL_DB_HOST}
 TEMPORAL_DB_PORT=${TEMPORAL_DB_PORT}
 TEMPORAL_DB_USER=${TEMPORAL_DB_USER}
 TEMPORAL_DB_PASSWORD=${TEMPORAL_DB_PASSWORD}
+
+# Claude CLI (needed as env var for subprocess)
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 EOF
 
 chmod 600 "$OUTPUT_FILE"
