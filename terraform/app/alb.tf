@@ -79,12 +79,12 @@ resource "aws_lb" "app" {
 }
 
 # -----------------------------------------------------------------------------
-# Target Group - HTTPS to EC2 instances (nginx on 443)
+# Target Group - HTTP to EC2 instances (nginx on 80, TLS terminated at ALB)
 # -----------------------------------------------------------------------------
 resource "aws_lb_target_group" "app" {
-  name     = "${local.name_prefix}-tg"
-  port     = 443
-  protocol = "HTTPS"
+  name     = "${local.name_prefix}-tg-http"
+  port     = 80
+  protocol = "HTTP"
   vpc_id   = var.vpc_id
 
   # Load balancing algorithm - LOR routes to instance with fewest in-flight requests
@@ -99,8 +99,8 @@ resource "aws_lb_target_group" "app" {
     timeout             = 10
     interval            = 30
     path                = "/actuator/health"
-    port                = "443"
-    protocol            = "HTTPS"
+    port                = "80"
+    protocol            = "HTTP"
     matcher             = "200"
   }
 

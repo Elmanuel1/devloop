@@ -38,11 +38,11 @@ resource "aws_security_group" "app" {
   description = "Security group for application server (Cloudflare only)"
   vpc_id      = var.vpc_id
 
-  # Ingress: HTTPS from ALB only
+  # Ingress: HTTP from ALB only (TLS terminated at ALB)
   ingress {
-    description     = "HTTPS from ALB"
-    from_port       = 443
-    to_port         = 443
+    description     = "HTTP from ALB"
+    from_port       = 80
+    to_port         = 80
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
