@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Setup Temporal Databases on RDS
+# Setup Temporal User on RDS (Idempotent)
 # =============================================================================
-# Creates temporal and temporal_visibility databases with proper permissions.
-# Run this ONCE when setting up a new environment.
+# Creates temporal user with CREATEDB privilege. Temporal auto-setup will
+# create the databases (temporal, temporal_visibility) on first run.
+#
+# This script is idempotent - safe to run multiple times.
 #
 # Usage:
 #   ./scripts/setup-temporal-db.sh <environment> <temporal_password>
@@ -15,7 +17,7 @@
 # Prerequisites:
 #   - AWS CLI configured with appropriate permissions
 #   - Access to Secrets Manager for RDS master credentials
-#   - psql client (or Docker with postgres image)
+#   - Docker (uses postgres:15 image)
 # =============================================================================
 
 set -e
@@ -34,7 +36,7 @@ REGION="${AWS_REGION:-us-west-2}"
 RDS_HOST="tosspaper-${ENV}-postgres.cdak8uywcr2c.us-west-2.rds.amazonaws.com"
 SECRET_ID="tosspaper-${ENV}/database/credentials"
 
-echo "=== Temporal Database Setup for ${ENV} ==="
+echo "=== Temporal User Setup for ${ENV} ==="
 echo "RDS Host: ${RDS_HOST}"
 echo ""
 
@@ -57,18 +59,8 @@ fi
 echo "Master user: ${MASTER_USER}"
 echo ""
 
-# Function to run SQL
+# Function to run SQL with Docker
 run_sql() {
-    local database="${1:-postgres}"
-    local sql="$2"
-
-    PGPASSWORD="$MASTER_PASS" psql \
-        "sslmode=require host=${RDS_HOST} user=${MASTER_USER} dbname=${database}" \
-        -c "$sql"
-}
-
-# Alternative: Use Docker if psql not installed
-run_sql_docker() {
     local database="${1:-postgres}"
     local sql="$2"
 
@@ -79,55 +71,34 @@ run_sql_docker() {
         -c "$sql"
 }
 
-# Check if psql is available, otherwise use Docker
-if command -v psql &> /dev/null; then
-    SQL_CMD="run_sql"
-    echo "Using local psql client"
-else
-    SQL_CMD="run_sql_docker"
-    echo "Using Docker postgres:15 image"
-fi
-
-echo ""
-echo "--- Step 1: Create temporal user ---"
-$SQL_CMD postgres "CREATE USER temporal WITH PASSWORD '${TEMPORAL_PASSWORD}';" 2>/dev/null || echo "User 'temporal' may already exist, continuing..."
-
-echo ""
-echo "--- Step 2: Create temporal database ---"
-$SQL_CMD postgres "CREATE DATABASE temporal;" 2>/dev/null || echo "Database 'temporal' may already exist, continuing..."
-
-echo ""
-echo "--- Step 3: Create temporal_visibility database ---"
-$SQL_CMD postgres "CREATE DATABASE temporal_visibility;" 2>/dev/null || echo "Database 'temporal_visibility' may already exist, continuing..."
-
-echo ""
-echo "--- Step 4: Grant database privileges ---"
-$SQL_CMD postgres "GRANT ALL PRIVILEGES ON DATABASE temporal TO temporal;"
-$SQL_CMD postgres "GRANT ALL PRIVILEGES ON DATABASE temporal_visibility TO temporal;"
-
-echo ""
-echo "--- Step 5: Set database ownership ---"
-$SQL_CMD postgres "ALTER DATABASE temporal OWNER TO temporal;"
-# Note: temporal_visibility ownership is optional
-
-echo ""
-echo "--- Step 6: Grant schema privileges ---"
-$SQL_CMD temporal "GRANT ALL ON SCHEMA public TO temporal;"
-$SQL_CMD temporal_visibility "GRANT ALL ON SCHEMA public TO temporal;"
+echo "--- Creating temporal user with CREATEDB privilege (idempotent) ---"
+run_sql postgres "
+DO \$\$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'temporal') THEN
+        CREATE USER temporal WITH PASSWORD '${TEMPORAL_PASSWORD}' CREATEDB;
+        RAISE NOTICE 'User temporal created';
+    ELSE
+        ALTER USER temporal WITH PASSWORD '${TEMPORAL_PASSWORD}' CREATEDB;
+        RAISE NOTICE 'User temporal updated';
+    END IF;
+END
+\$\$;
+"
 
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Databases created:"
+echo "User: temporal"
+echo "Privileges: CREATEDB (can create temporal, temporal_visibility databases)"
+echo ""
+echo "Temporal auto-setup will create these databases on first deploy:"
 echo "  - temporal"
 echo "  - temporal_visibility"
-echo ""
-echo "User: temporal"
-echo "Password: (as provided)"
 echo ""
 echo "Next steps:"
 echo "  1. Add TEMPORAL_DB_PASSWORD to SSM Parameter Store:"
 echo "     aws ssm put-parameter --name '/tosspaper/${ENV}/secrets/TEMPORAL_DB_PASSWORD' \\"
 echo "         --value '${TEMPORAL_PASSWORD}' --type SecureString --region ${REGION}"
 echo ""
-echo "  2. Deploy the application - Temporal will auto-migrate the schema"
+echo "  2. Deploy the application - Temporal will auto-create and migrate databases"
