@@ -50,6 +50,10 @@ public class RdsIamHikariDataSource extends HikariDataSource {
      */
     public RdsIamHikariDataSource(String region, String jdbcUrl, String dbUsername) {
         super();
+        // Set required HikariDataSource properties
+        this.setJdbcUrl(jdbcUrl);
+        this.setUsername(dbUsername);
+
         this.region = region;
         this.dbUsername = dbUsername;
 
