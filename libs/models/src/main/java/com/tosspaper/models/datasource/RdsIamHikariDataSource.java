@@ -69,6 +69,11 @@ public class RdsIamHikariDataSource extends HikariDataSource {
                 .region(Region.of(region))
                 .build();
 
+        // Generate initial token and set it as the password
+        // HikariCP uses this password for the connection pool
+        String initialToken = generateNewToken();
+        this.setPassword(initialToken);
+
         log.info("Initialized RDS IAM HikariDataSource - hostname: {}, port: {}, user: {}, region: {}",
                 hostname, port, dbUsername, region);
     }
