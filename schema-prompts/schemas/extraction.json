@@ -112,8 +112,8 @@
         "properties": {
           "role": {
             "type": "string",
-            "enum": ["Seller", "Buyer", "Ship To", "Bill To"],
-            "description": "Party role in transaction."
+            "enum": ["Seller", "Buyer", "Bill To"],
+            "description": "Party role in transaction. Seller is who issues the receipt, or delivery ticket. Buyer is the person receiving the goods or service."
           },
           "name": {
             "type": "string",
@@ -122,10 +122,30 @@
           "address": {
             "type": "object",
             "properties": {
-              "street": { "type": "string" },
-              "postalCode": { "type": "string" },
-              "provinceOrState": { "type": "string" },
-              "countryISO": { "type": "string" }
+              "street": {
+                "type": "string",
+                "description": "Street address including unit/suite number if present."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town name."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code or ZIP code."
+              },
+              "provinceOrState": {
+                "type": "string",
+                "description": "Province, state, or region name (e.g., 'Ontario', 'California')."
+              },
+              "countryISO": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code (e.g., 'CA', 'US', 'MX')."
+              },
+              "country": {
+                "type": "string",
+                "description": "Full country name (e.g., 'Canada', 'United States')."
+              }
             },
             "required": ["street"]
           },

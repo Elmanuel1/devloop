@@ -13,6 +13,7 @@ import com.tosspaper.models.service.PurchaseOrderLookupService;
 import io.micrometer.observation.annotation.Observed;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +34,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @Primary
+@ConditionalOnProperty(name = "ai.comparison.streaming.enabled", havingValue = "false", matchIfMissing = true)
 public class FileSystemDocumentPartComparisonService extends AbstractDocumentPartComparisonService {
 
     private final FileSystemComparisonAgent comparisonAgent;

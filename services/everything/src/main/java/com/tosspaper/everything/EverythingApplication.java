@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import com.tosspaper.aiengine.properties.AIProperties;
+import com.tosspaper.aiengine.properties.ComparisonProperties;
 
 @SpringBootApplication(exclude = DataSourceAutoConfiguration.class)
 @EnableScheduling
@@ -16,6 +17,7 @@ import com.tosspaper.aiengine.properties.AIProperties;
     AwsProperties.class,
     FileProperties.class,
     AIProperties.class,
+    ComparisonProperties.class,
     com.tosspaper.aiengine.properties.HttpProperties.class,
     InsecurePathConfigurationProperties.class,
     AllowedCorsDomainsConfigurationProperties.class,

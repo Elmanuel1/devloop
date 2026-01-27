@@ -95,15 +95,19 @@ jobs:
       - name: Upload deployment files to S3
         run: |
           BUCKET="tosspaper-email-attachments-${{ inputs.environment }}"
+          IMAGE_TAG="${{ vars.ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/tosspaper-${{ inputs.environment }}:${{ steps.version.outputs.version }}"
+
+          # Bake IMAGE_TAG into docker-compose before uploading (so new instances use correct version)
+          sed "s|\${IMAGE_TAG:-[^}]*}|${IMAGE_TAG}|g" docker-compose-remote.yml > /tmp/docker-compose.yml
 
           # Upload docker-compose, nginx config, temporal config, RDS cert, and scripts
-          aws s3 cp docker-compose-remote.yml s3://$BUCKET/deploy/docker-compose.yml
+          aws s3 cp /tmp/docker-compose.yml s3://$BUCKET/deploy/docker-compose.yml
           aws s3 sync nginx/ s3://$BUCKET/deploy/nginx/
           aws s3 sync temporal/ s3://$BUCKET/deploy/temporal/
           aws s3 cp certs/rds-ca-global-bundle.pem s3://$BUCKET/deploy/certs/rds-ca-global-bundle.pem
           aws s3 cp scripts/generate-env-from-ssm.sh s3://$BUCKET/deploy/scripts/generate-env-from-ssm.sh
 
-          echo "Uploaded deployment files to S3"
+          echo "Uploaded deployment files to S3 with IMAGE_TAG=$IMAGE_TAG"
 
       - name: Deploy via SSM
         run: |

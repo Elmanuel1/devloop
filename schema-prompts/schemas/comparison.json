@@ -89,17 +89,16 @@
               "name": {
                 "type": "object",
                 "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0, "description": "1.0=identical, 0.9=minor format diff, 0.8=typo, 0.7=format differs, 0.6=semantic match (brand=legal name), <0.5=mismatch" },
                   "components": {
                     "type": "object",
                     "properties": {
                       "fullName": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
                     },
                     "additionalProperties": false
-                  },
-                  "method": { "type": "string", "description": "Matching method used (e.g., exact, jaro_winkler)" }
+                  }
                 },
-                "required": ["score", "components", "method"]
+                "required": ["score", "components"]
               },
               "email": {
                 "type": "object",

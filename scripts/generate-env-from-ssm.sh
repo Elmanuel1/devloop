@@ -24,6 +24,9 @@ TEMPORAL_DB_PASSWORD=$(aws ssm get-parameter --name "$SECRETS_PATH/TEMPORAL_DB_P
 # Claude CLI API key (needed as env var for subprocess)
 ANTHROPIC_API_KEY=$(aws ssm get-parameter --name "$SECRETS_PATH/ANTHROPIC_API_KEY" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
+# OpenAI API key (for streaming comparison)
+OPENAI_API_KEY=$(aws ssm get-parameter --name "$SECRETS_PATH/OPENAI_API_KEY" --with-decryption --region "$REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+
 # Write env file
 cat > "$OUTPUT_FILE" << EOF
 # Environment and region
@@ -37,8 +40,13 @@ TEMPORAL_DB_PORT=${TEMPORAL_DB_PORT}
 TEMPORAL_DB_USER=${TEMPORAL_DB_USER}
 TEMPORAL_DB_PASSWORD=${TEMPORAL_DB_PASSWORD}
 
-# Claude CLI (needed as env var for subprocess)
+# AI API keys
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+
+# AI Comparison settings (streaming disabled by default)
+AI_COMPARISON_PROVIDER=openai
+AI_STREAMING_ENABLED=false
 EOF
 
 chmod 600 "$OUTPUT_FILE"

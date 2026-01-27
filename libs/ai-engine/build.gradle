@@ -21,8 +21,8 @@ dependencies {
     // Models
     implementation project(':libs:models')
     
-    // Spring AI BOM (1.0.0 GA)
-    implementation platform("org.springframework.ai:spring-ai-bom:1.0.0")
+    // Spring AI BOM (1.1.2 - includes prompt caching for Anthropic)
+    implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
 
     // Spring AI OpenAI (GA artifact name)
     implementation 'org.springframework.ai:spring-ai-starter-model-openai'
@@ -81,6 +81,11 @@ dependencies {
     // Flyway for test database migrations
     testImplementation libs.flyway.core
     testImplementation libs.flyway.database.postgresql
+
+    // Spring AI Agents - Judge for test compilation (SNAPSHOT)
+    testImplementation('org.springaicommunity.agents:spring-ai-agents-judge:0.1.0-SNAPSHOT') {
+        exclude group: 'org.springframework.ai'
+    }
 }
 
 // Configure jsonschema2pojo to generate POJOs from schema files

@@ -8,10 +8,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Implementation of VirtualFilesystemService with security protections.
@@ -40,7 +46,7 @@ public class VirtualFilesystemServiceImpl implements VirtualFilesystemService {
         validatePathComponents(context.poNumber(), context.documentId(), context.documentType().getFilePrefix());
 
         Path filePath = buildPath(context);
-        return writeFile(filePath, context.content());
+        return writeFileInternal(filePath, context.content());
     }
 
     @Override
@@ -69,6 +75,120 @@ public class VirtualFilesystemServiceImpl implements VirtualFilesystemService {
     public String readFile(Path path) {
         validatePathWithinRoot(path);
         return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    @Override
+    @SneakyThrows
+    public ReadChunkResult readChunk(Path path, long offset, int limit) {
+        validatePathWithinRoot(path);
+
+        if (!Files.exists(path)) {
+            throw new IllegalArgumentException("File not found: " + path);
+        }
+
+        byte[] bytes = Files.readAllBytes(path);
+        long totalSize = bytes.length;
+
+        if (offset >= totalSize) {
+            return new ReadChunkResult("", offset, 0, totalSize, false);
+        }
+
+        int start = (int) Math.min(offset, totalSize);
+        int end = (int) Math.min(start + limit, totalSize);
+        int length = end - start;
+
+        String content = new String(bytes, start, length, StandardCharsets.UTF_8);
+        boolean hasMore = end < totalSize;
+
+        return new ReadChunkResult(content, offset, length, totalSize, hasMore);
+    }
+
+    @Override
+    public Path writeFile(Path path, String content) {
+        validatePathWithinRoot(path);
+        return writeFileInternal(path, content);
+    }
+
+    @Override
+    @SneakyThrows
+    public List<FileInfo> listDirectory(Path path) {
+        validatePathWithinRoot(path);
+
+        if (!Files.exists(path)) {
+            return List.of();
+        }
+
+        if (!Files.isDirectory(path)) {
+            throw new IllegalArgumentException("Not a directory: " + path);
+        }
+
+        List<FileInfo> result = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(path)) {
+            stream.forEach(p -> {
+                String name = p.getFileName().toString();
+                if (Files.isDirectory(p)) {
+                    result.add(FileInfo.directory(name));
+                } else {
+                    try {
+                        result.add(FileInfo.file(name, Files.size(p)));
+                    } catch (IOException e) {
+                        result.add(FileInfo.file(name, 0));
+                    }
+                }
+            });
+        }
+        return result;
+    }
+
+    @Override
+    @SneakyThrows
+    public List<GrepResult> grep(Path path, String pattern, int beforeContext, int afterContext) {
+        validatePathWithinRoot(path);
+
+        List<GrepResult> results = new ArrayList<>();
+        Pattern regex = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE);
+
+        if (Files.isDirectory(path)) {
+            // Search all files in directory recursively
+            try (Stream<Path> stream = Files.walk(path)) {
+                stream.filter(Files::isRegularFile)
+                      .forEach(file -> results.addAll(grepFile(file, path, regex, beforeContext, afterContext)));
+            }
+        } else if (Files.isRegularFile(path)) {
+            results.addAll(grepFile(path, path.getParent(), regex, beforeContext, afterContext));
+        }
+
+        return results;
+    }
+
+    @SneakyThrows
+    private List<GrepResult> grepFile(Path file, Path basePath, Pattern pattern, int beforeContext, int afterContext) {
+        List<GrepResult> results = new ArrayList<>();
+        List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i);
+            Matcher matcher = pattern.matcher(line);
+
+            if (matcher.find()) {
+                List<String> context = new ArrayList<>();
+
+                // Add before context
+                for (int j = Math.max(0, i - beforeContext); j < i; j++) {
+                    context.add(lines.get(j));
+                }
+
+                // Add after context
+                for (int j = i + 1; j <= Math.min(lines.size() - 1, i + afterContext); j++) {
+                    context.add(lines.get(j));
+                }
+
+                String relativePath = basePath.relativize(file).toString();
+                results.add(GrepResult.withContext(relativePath, i + 1, line, context));
+            }
+        }
+
+        return results;
     }
 
     @Override
@@ -116,7 +236,7 @@ public class VirtualFilesystemServiceImpl implements VirtualFilesystemService {
      * Write content to file, creating parent directories if needed.
      */
     @SneakyThrows
-    private Path writeFile(Path path, String content) {
+    private Path writeFileInternal(Path path, String content) {
         validatePathWithinRoot(path);
         if (properties.isAutoCreateDirectories()) {
             Files.createDirectories(path.getParent());

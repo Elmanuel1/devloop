@@ -43,6 +43,8 @@ dependencies {
 	implementation libs.spring.boot.starter.validation
 	implementation libs.spring.boot.starter.jooq
 	implementation libs.spring.boot.starter.data.redis
+	// WebFlux for SSE streaming
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation project(':libs:models')
     implementation project(':libs:ai-engine')
     implementation project(':libs:integrations')

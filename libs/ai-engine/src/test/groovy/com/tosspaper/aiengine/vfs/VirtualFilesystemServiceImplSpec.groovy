@@ -369,4 +369,241 @@ class VirtualFilesystemServiceImplSpec extends Specification {
         path.toString().contains("po/PO_123_456/")
         Files.exists(path)
     }
+
+    // ==================== READ CHUNK TESTS ====================
+
+    def "should read chunk from beginning of file"() {
+        given: "a file with known content"
+        def content = "0123456789ABCDEFGHIJ"
+        def filePath = tempDir.resolve("test-chunk.txt")
+        Files.writeString(filePath, content)
+
+        when: "reading first chunk"
+        def result = service.readChunk(filePath, 0, 10)
+
+        then: "returns correct chunk"
+        result.content() == "0123456789"
+        result.offset() == 0
+        result.length() == 10
+        result.totalSize() == 20
+        result.hasMore()
+    }
+
+    def "should read chunk from middle of file"() {
+        given: "a file with known content"
+        def content = "0123456789ABCDEFGHIJ"
+        def filePath = tempDir.resolve("test-chunk2.txt")
+        Files.writeString(filePath, content)
+
+        when: "reading from offset 10"
+        def result = service.readChunk(filePath, 10, 10)
+
+        then: "returns correct chunk"
+        result.content() == "ABCDEFGHIJ"
+        result.offset() == 10
+        result.length() == 10
+        result.totalSize() == 20
+        !result.hasMore()
+    }
+
+    def "should return empty chunk when offset exceeds file size"() {
+        given: "a small file"
+        def content = "small"
+        def filePath = tempDir.resolve("test-small.txt")
+        Files.writeString(filePath, content)
+
+        when: "reading from offset beyond file"
+        def result = service.readChunk(filePath, 100, 10)
+
+        then: "returns empty chunk"
+        result.content() == ""
+        result.length() == 0
+        result.totalSize() == 5
+        !result.hasMore()
+    }
+
+    def "should throw exception for readChunk on non-existent file"() {
+        given: "non-existent file path"
+        def filePath = tempDir.resolve("non-existent.txt")
+
+        when: "reading chunk"
+        service.readChunk(filePath, 0, 10)
+
+        then: "exception is thrown"
+        thrown(IllegalArgumentException)
+    }
+
+    // ==================== WRITE FILE TESTS ====================
+
+    def "should write file with public writeFile method"() {
+        given: "a path and content"
+        def filePath = tempDir.resolve("companies/1/po/PO-123/test-write.json")
+        def content = '{"test": "write"}'
+
+        when: "writing file"
+        def result = service.writeFile(filePath, content)
+
+        then: "file is written"
+        Files.exists(result)
+        Files.readString(result) == content
+    }
+
+    def "should create parent directories when writing file"() {
+        given: "a path with non-existent parents"
+        def filePath = tempDir.resolve("new/deep/path/file.txt")
+        def content = "test content"
+
+        when: "writing file"
+        service.writeFile(filePath, content)
+
+        then: "file and parents are created"
+        Files.exists(filePath)
+        Files.readString(filePath) == content
+    }
+
+    def "should reject writeFile outside VFS root"() {
+        given: "a path outside VFS root"
+        def outsidePath = tempDir.parent.resolve("outside-write.txt")
+
+        when: "writing file"
+        service.writeFile(outsidePath, "content")
+
+        then: "security exception is thrown"
+        thrown(SecurityException)
+    }
+
+    // ==================== LIST DIRECTORY TESTS ====================
+
+    def "should list directory contents"() {
+        given: "a directory with files and subdirectories"
+        def dirPath = tempDir.resolve("list-test")
+        Files.createDirectories(dirPath)
+        Files.writeString(dirPath.resolve("file1.txt"), "content1")
+        Files.writeString(dirPath.resolve("file2.json"), "content2")
+        Files.createDirectories(dirPath.resolve("subdir"))
+
+        when: "listing directory"
+        def results = service.listDirectory(dirPath)
+
+        then: "all entries are returned"
+        results.size() == 3
+
+        and: "files are identified correctly"
+        def file1 = results.find { it.name() == "file1.txt" }
+        file1 != null
+        file1.isFile()
+        file1.size() == 8
+
+        and: "directories are identified correctly"
+        def subdir = results.find { it.name() == "subdir" }
+        subdir != null
+        subdir.isDirectory()
+    }
+
+    def "should return empty list for non-existent directory"() {
+        given: "non-existent directory"
+        def dirPath = tempDir.resolve("non-existent-dir")
+
+        when: "listing directory"
+        def results = service.listDirectory(dirPath)
+
+        then: "empty list returned"
+        results.isEmpty()
+    }
+
+    def "should throw exception when listing file as directory"() {
+        given: "a file path"
+        def filePath = tempDir.resolve("not-a-dir.txt")
+        Files.writeString(filePath, "content")
+
+        when: "listing as directory"
+        service.listDirectory(filePath)
+
+        then: "exception is thrown"
+        thrown(IllegalArgumentException)
+    }
+
+    // ==================== GREP TESTS ====================
+
+    def "should find pattern in single file"() {
+        given: "a file with searchable content"
+        def filePath = tempDir.resolve("grep-test.txt")
+        Files.writeString(filePath, """line 1: hello world
+line 2: foo bar
+line 3: hello again
+line 4: end""")
+
+        when: "searching for pattern"
+        def results = service.grep(filePath, "hello", 0, 0)
+
+        then: "matches are found"
+        results.size() == 2
+        results[0].lineNumber() == 1
+        results[0].matchContent().contains("hello world")
+        results[1].lineNumber() == 3
+        results[1].matchContent().contains("hello again")
+    }
+
+    def "should find pattern in directory recursively"() {
+        given: "a directory with multiple files"
+        def dirPath = tempDir.resolve("grep-dir")
+        Files.createDirectories(dirPath.resolve("subdir"))
+        Files.writeString(dirPath.resolve("file1.txt"), "match here")
+        Files.writeString(dirPath.resolve("file2.txt"), "no hit")
+        Files.writeString(dirPath.resolve("subdir/file3.txt"), "match inside")
+
+        when: "searching directory"
+        def results = service.grep(dirPath, "match", 0, 0)
+
+        then: "finds matches in all files"
+        results.size() == 2
+        results.any { it.file().contains("file1.txt") }
+        results.any { it.file().contains("file3.txt") }
+    }
+
+    def "should include context lines in grep results"() {
+        given: "a file with multiple lines"
+        def filePath = tempDir.resolve("grep-context.txt")
+        Files.writeString(filePath, """line 1
+line 2
+line 3 MATCH
+line 4
+line 5""")
+
+        when: "searching with context"
+        def results = service.grep(filePath, "MATCH", 1, 1)
+
+        then: "context is included"
+        results.size() == 1
+        results[0].context().size() == 2
+        results[0].context().any { it.contains("line 2") }
+        results[0].context().any { it.contains("line 4") }
+    }
+
+    def "should return empty list when no matches"() {
+        given: "a file without the pattern"
+        def filePath = tempDir.resolve("grep-nomatch.txt")
+        Files.writeString(filePath, "no matches here")
+
+        when: "searching for pattern"
+        def results = service.grep(filePath, "NOTFOUND", 0, 0)
+
+        then: "empty list returned"
+        results.isEmpty()
+    }
+
+    def "should handle regex patterns in grep"() {
+        given: "a file with content"
+        def filePath = tempDir.resolve("grep-regex.txt")
+        Files.writeString(filePath, """email: test@example.com
+phone: 123-456-7890
+other: text""")
+
+        when: "searching with regex"
+        def results = service.grep(filePath, "\\d{3}-\\d{3}-\\d{4}", 0, 0)
+
+        then: "regex match is found"
+        results.size() == 1
+        results[0].matchContent().contains("123-456-7890")
+    }
 }

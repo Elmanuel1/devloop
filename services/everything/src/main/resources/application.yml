@@ -113,6 +113,8 @@ spring:
         timeout: ${CLAUDE_AGENT_TIMEOUT:PT2M}
         yolo: ${CLAUDE_AGENT_YOLO:true}
         executable-path: ${CLAUDE_AGENT_PATH:claude}
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
     openai:
       api-key: ${OPENAI_API_KEY:}
       embedding:
@@ -300,7 +302,7 @@ schema:
 conformance:
   success-threshold: 0.95
   max-iterations: 3
-  processing-timeout-hours: 1
+
 
 po-matching:
   top-k-candidates: 10                 # Number of PO candidates to retrieve from vector search
@@ -465,6 +467,32 @@ ai:
     write-timeout-seconds: ${AI_HTTP_WRITE_TIMEOUT:60}
     enable-logging: ${AI_HTTP_ENABLE_LOGGING:true}
     logging-level: ${AI_HTTP_LOGGING_LEVEL:WARN}
+  # Document comparison settings
+  comparison:
+    # AI provider for comparison: openai (lower cost) or anthropic (better analysis)
+    provider: ${AI_COMPARISON_PROVIDER:anthropic}
+    # Extended thinking (Claude only) - shows AI reasoning
+    extended-thinking: ${AI_COMPARISON_EXTENDED_THINKING:true}
+    # Stream thinking tokens to client
+    stream-thinking: ${AI_COMPARISON_STREAM_THINKING:true}
+    # Thinking token budget
+    thinking-budget: ${AI_COMPARISON_THINKING_BUDGET:10000}
+    # Fallback to Claude if OpenAI fails
+    fallback-enabled: ${AI_COMPARISON_FALLBACK_ENABLED:true}
+    streaming:
+      # Enable streaming implementation (false = CLI, true = ChatClient)
+      enabled: ${AI_STREAMING_ENABLED:true}
+      # SSE connection timeout in seconds
+      timeout-seconds: ${AI_STREAMING_TIMEOUT:300}
+      # Max concurrent streaming connections
+      max-concurrent: ${AI_STREAMING_MAX_CONCURRENT:100}
+    context:
+      # Default chunk size for reading large files
+      default-chunk-size: ${AI_CONTEXT_CHUNK_SIZE:10000}
+      # Mask previous observations to reduce token usage
+      observation-masking: ${AI_CONTEXT_OBSERVATION_MASKING:true}
+      # Write large results to files instead of keeping in context
+      file-based-results: ${AI_CONTEXT_FILE_BASED_RESULTS:true}
 
 logging:
   level:

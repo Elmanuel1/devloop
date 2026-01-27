@@ -281,4 +281,49 @@ iptables-save > /etc/sysconfig/iptables
 # -----------------------------------------------------------------------------
 chown -R ec2-user:ec2-user /opt/tosspaper
 
+# -----------------------------------------------------------------------------
+# Deploy Application (pull image and start containers)
+# -----------------------------------------------------------------------------
+echo "Deploying application..."
+
+cd /opt/tosspaper
+
+# Download deployment files from S3 (docker-compose has IMAGE_TAG baked in from deploy workflow)
+BUCKET="${s3_bucket_name}"
+aws s3 cp "s3://$BUCKET/deploy/docker-compose.yml" docker-compose-remote.yml || true
+aws s3 sync "s3://$BUCKET/deploy/nginx/" nginx/ || true
+aws s3 sync "s3://$BUCKET/deploy/temporal/" temporal/ || true
+mkdir -p certs scripts
+aws s3 cp "s3://$BUCKET/deploy/certs/rds-ca-global-bundle.pem" certs/rds-ca-global-bundle.pem || true
+aws s3 cp "s3://$BUCKET/deploy/scripts/generate-env-from-ssm.sh" scripts/generate-env-from-ssm.sh || true
+chmod +x scripts/generate-env-from-ssm.sh 2>/dev/null || true
+
+# Generate env file from SSM (if script exists)
+if [ -f scripts/generate-env-from-ssm.sh ]; then
+    ./scripts/generate-env-from-ssm.sh ${environment} ./springboot_dev.env
+    set -a
+    source ./springboot_dev.env
+    set +a
+fi
+
+# Login to ECR
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ECR_REGISTRY="$ACCOUNT_ID.dkr.ecr.${aws_region}.amazonaws.com"
+aws ecr get-login-password --region ${aws_region} | \
+    docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+# Pull and run (if docker-compose exists - IMAGE_TAG is baked in from deploy workflow)
+if [ -f docker-compose-remote.yml ]; then
+    # Extract image from docker-compose and pull it
+    IMAGE_TAG=$(grep -oP 'image:\s*\K[^\s]+' docker-compose-remote.yml | grep tosspaper | head -1)
+    if [ -n "$IMAGE_TAG" ]; then
+        docker pull "$IMAGE_TAG"
+    fi
+    docker compose -f docker-compose-remote.yml up -d
+    echo "Application deployed successfully"
+else
+    echo "WARNING: docker-compose-remote.yml not found in S3, skipping deployment"
+    echo "Run GitHub Actions deploy workflow to initialize deployment files"
+fi
+
 echo "User-data script completed at $(date)"
