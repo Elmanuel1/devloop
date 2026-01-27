@@ -62,7 +62,6 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AI_COMPARISON_PROVIDER: ${AI_COMPARISON_PROVIDER:-openai}
-      AI_STREAMING_ENABLED: ${AI_STREAMING_ENABLED:-false}
       JAVA_OPTS: >-
           -XX:+UnlockExperimentalVMOptions
           -XX:+UseZGC

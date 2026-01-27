@@ -19,7 +19,6 @@ import java.util.*;
 @RestController
 @RequiredArgsConstructor
 public class WebhookController {
-
     private static final String EMAIL_MESSAGES_ENDPOINT = "/{provider}/email-messages";
     private static final String JSON_CONTENT_TYPE = MediaType.APPLICATION_JSON_VALUE;
     private static final String MULTIPART_CONTENT_TYPE = MediaType.MULTIPART_FORM_DATA_VALUE;
