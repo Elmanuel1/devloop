@@ -17,9 +17,68 @@ Your task is to:
 5.  **Exclusions:** Only exclude lines that are **explicit financial sums, subtotals, or grand totals** (i.e., aggregate rows).
 6.  **Grouping:** The core transaction data must be captured in the `delivery_transactions` array, where each object represents a *single delivery slip* or *single job entry*, uniquely identified by its **ticket_id**.
 7.  **Optional Fields:** If a specific field is not present in the document, it should be **omitted entirely** from the final JSON output object.
-is it up to date
+---
 
+### 📇 **Party Extraction (Seller, Buyer, Bill To)**
 
+Extract **ALL** parties visible in the document into the `parties` array. For each party, extract:
+
+**Required Fields:**
+* `role`: One of "Seller", "Buyer", or "Bill To"
+  - **Seller** = The vendor/supplier issuing the document (appears in header, "From:", "Sold By:", company letterhead)
+  - **Buyer** = The customer receiving goods/services (appears in "To:", "Ship To:", "Deliver To:", "Customer:")
+  - **Bill To** = The billing recipient if different from buyer (appears in "Bill To:", "Invoice To:")
+
+* `name`: Full legal or trade name of the company/person
+
+**Address Fields (extract ALL components found):**
+* `address.street`: Full street address including unit/suite number (e.g., "123 Main Street, Suite 100")
+* `address.city`: City or town name
+* `address.postalCode`: Postal code, ZIP code, or postcode (e.g., "M5V 1A1", "90210", "SW1A 1AA")
+* `address.provinceOrState`: Province, state, or region name (e.g., "Ontario", "California", "British Columbia")
+* `address.countryISO`: ISO 3166-1 alpha-2 country code - ALWAYS extract or infer (e.g., "CA", "US", "UK", "MX")
+* `address.country`: Full country name (e.g., "Canada", "United States", "Mexico")
+
+**Contact Information (extract if present):**
+* `contactInfo.phone`: Phone number including country code if shown
+* `contactInfo.email`: Email address
+
+**Reference (extract if present):**
+* `referenceNumber`: Vendor code, customer number, or account number
+
+**Address Extraction Rules:**
+1. Look for addresses in headers, footers, letterheads, and address blocks
+2. Parse multi-line addresses into individual components
+3. Infer `countryISO` from address context (postal code format, phone prefix, currency)
+4. For Canadian addresses: look for province abbreviations (ON, BC, AB, QC, etc.)
+5. For US addresses: look for state abbreviations (CA, NY, TX, etc.)
+6. Common locations for party info:
+   - Top-left corner: Usually Seller/Vendor
+   - "Bill To" / "Invoice To" block: Buyer or Bill To party
+   - "Ship To" / "Deliver To" block: Buyer (shipping address)
+
+**Example Party Extraction:**
+```json
+{
+  "role": "Seller",
+  "name": "Acme Supplies Inc.",
+  "address": {
+    "street": "123 Industrial Way, Unit 5",
+    "city": "Toronto",
+    "postalCode": "M5V 2K1",
+    "provinceOrState": "Ontario",
+    "countryISO": "CA",
+    "country": "Canada"
+  },
+  "contactInfo": {
+    "phone": "+1-416-555-1234",
+    "email": "billing@acmesupplies.com"
+  },
+  "referenceNumber": "VND-001"
+}
+```
+
+---
 
 ### 🧩 **1. Document Classification**
 

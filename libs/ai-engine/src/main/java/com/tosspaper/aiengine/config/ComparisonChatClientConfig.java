@@ -17,8 +17,6 @@ import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.WebSearchOptions;
-import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.WebSearchOptions.SearchContextSize;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,6 +30,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.lang.Nullable;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -63,7 +63,7 @@ public class ComparisonChatClientConfig {
     @Value("${spring.ai.anthropic.api-key:}")
     private String anthropicApiKey;
 
-    @Value("${ai.comparison.openai.model:gpt-4o}")
+    @Value("${ai.comparison.openai.model:gpt-5.1}")
     private String openAiModel;
 
     @Value("${ai.comparison.anthropic.model:claude-sonnet-4-20250514}")
@@ -143,10 +143,6 @@ public class ComparisonChatClientConfig {
                         .model(openAiModel)
                         .temperature(0.1)  // Low temperature for consistent comparisons
                         .maxCompletionTokens(4096)
-                        .webSearchOptions(new WebSearchOptions(
-                                SearchContextSize.MEDIUM,  // LOW, MEDIUM, HIGH - balance between thoroughness and cost
-                                null  // userLocation - not needed for company verification
-                        ))
                         .build())
                 .retryTemplate(retryTemplate)
                 .observationRegistry(observationRegistry)
@@ -156,6 +152,7 @@ public class ComparisonChatClientConfig {
     /**
      * ChatClient for document comparison using OpenAI.
      * Created when ai.comparison.provider=openai.
+     * Includes MCP tools (Tavily web search) when available.
      */
     @Bean
     @Qualifier("comparisonChatClient")
@@ -163,14 +160,26 @@ public class ComparisonChatClientConfig {
     public ChatClient openAiComparisonChatClient(
             @Qualifier("comparisonOpenAiChatModel") OpenAiChatModel chatModel,
             FileTools fileTools,
-            ComparisonAuditAdvisor auditAdvisor) {
-        log.info("Creating OpenAI ChatClient for document comparison with file tools and audit");
+            ComparisonAuditAdvisor auditAdvisor,
+            @Nullable ToolCallbackProvider mcpToolCallbackProvider) {
 
-        return ChatClient.builder(chatModel)
-                .defaultTools(fileTools)
+        var builder = ChatClient.builder(chatModel)
+                .defaultTools(fileTools)  // @Tool annotated methods
                 .defaultAdvisors(auditAdvisor)
-                .defaultSystem(buildSystemPrompt())
-                .build();
+                .defaultSystem(buildSystemPrompt());
+
+        // Add MCP tools (Tavily) using toolCallbacks if available
+        if (mcpToolCallbackProvider != null) {
+            var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
+            if (mcpTools.length > 0) {
+                log.info("Creating OpenAI ChatClient with {} MCP tools (Tavily web search enabled)", mcpTools.length);
+                builder.defaultToolCallbacks(mcpTools);  // ToolCallback objects
+            }
+        } else {
+            log.info("Creating OpenAI ChatClient for document comparison (no MCP tools)");
+        }
+
+        return builder.build();
     }
 
     /**
@@ -229,6 +238,7 @@ public class ComparisonChatClientConfig {
     /**
      * ChatClient for document comparison using Anthropic Claude.
      * Created when ai.comparison.provider=anthropic.
+     * Includes MCP tools (Tavily web search) when available.
      */
     @Bean
     @Qualifier("comparisonChatClient")
@@ -236,15 +246,28 @@ public class ComparisonChatClientConfig {
     public ChatClient anthropicComparisonChatClient(
             @Qualifier("comparisonAnthropicChatModel") AnthropicChatModel chatModel,
             FileTools fileTools,
-            ComparisonAuditAdvisor auditAdvisor) {
-        log.info("Creating Anthropic ChatClient for document comparison with file tools and audit (extended thinking: {})",
-                properties.isExtendedThinking());
+            ComparisonAuditAdvisor auditAdvisor,
+            @Nullable ToolCallbackProvider mcpToolCallbackProvider) {
 
-        return ChatClient.builder(chatModel)
-                .defaultTools(fileTools)
+        var builder = ChatClient.builder(chatModel)
+                .defaultTools(fileTools)  // @Tool annotated methods
                 .defaultAdvisors(auditAdvisor)
-                .defaultSystem(buildSystemPrompt())
-                .build();
+                .defaultSystem(buildSystemPrompt());
+
+        // Add MCP tools (Tavily) using toolCallbacks if available
+        if (mcpToolCallbackProvider != null) {
+            var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
+            if (mcpTools != null && mcpTools.length > 0) {
+                log.info("Creating Anthropic ChatClient with {} MCP tools (Tavily web search enabled), extended thinking: {}",
+                        mcpTools.length, properties.isExtendedThinking());
+                builder.defaultToolCallbacks(mcpTools);  // ToolCallback objects
+            }
+        } else {
+            log.info("Creating Anthropic ChatClient for document comparison (no MCP tools), extended thinking: {}",
+                    properties.isExtendedThinking());
+        }
+
+        return builder.build();
     }
 
     /**
@@ -260,6 +283,7 @@ public class ComparisonChatClientConfig {
             - readFile(path): Read a file's contents
             - listDirectory(path): List files in a directory
             - grep(pattern, path): Search for text in files
+            - tavily_search(query): Web search to verify vendor relationships (if available)
 
             ## WORKFLOW
 
@@ -358,10 +382,10 @@ public class ComparisonChatClientConfig {
             4. **Subsidiaries**:
                - Child company invoicing on behalf of parent
 
-            ## VENDOR NAME VERIFICATION (WEB SEARCH)
+            ## VENDOR NAME VERIFICATION (TAVILY WEB SEARCH)
 
             When vendor names differ between PO and document:
-            1. Use your web search capability to verify if they're related
+            1. Use the tavily_search tool to verify if they're related (if available)
             2. Search for: "[vendor1] [vendor2] same company" or "[vendor1] parent company"
             3. If search confirms ANY relationship (brand/product, subsidiary, DBA, acquisition):
                - match: "close" (ALWAYS close, never mismatch)

@@ -142,6 +142,15 @@ spring:
         initialize-schema: false
         schema-validation: true
         max-document-batch-size: 1000
+    # MCP Client for Tavily web search (vendor verification)
+    mcp:
+      client:
+        enabled: ${TAVILY_ENABLED:false}
+        streamable-http:
+          connections:
+            tavily:
+              url: https://mcp.tavily.com
+              endpoint: /mcp/?tavilyApiKey=${TAVILY_API_KEY:}
 
 servlet:
   multipart:
@@ -508,6 +517,9 @@ logging:
     software.amazon.awssdk: WARN
     org.jooq: WARN
     org.springframework.jdbc: WARN
+    # MCP Client debugging
+    io.modelcontextprotocol: DEBUG
+    org.springframework.ai.mcp: DEBUG
 # Application Info
 info:
   app:
