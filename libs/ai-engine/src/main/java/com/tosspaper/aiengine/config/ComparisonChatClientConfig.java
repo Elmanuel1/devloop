@@ -142,7 +142,7 @@ public class ComparisonChatClientConfig {
                 .defaultOptions(OpenAiChatOptions.builder()
                         .model(openAiModel)
                         .temperature(0.1)  // Low temperature for consistent comparisons
-                        .maxCompletionTokens(4096)
+                        .maxCompletionTokens(100000)
                         .build())
                 .retryTemplate(retryTemplate)
                 .observationRegistry(observationRegistry)
