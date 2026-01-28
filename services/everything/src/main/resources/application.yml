@@ -469,8 +469,8 @@ ai:
     logging-level: ${AI_HTTP_LOGGING_LEVEL:WARN}
   # Document comparison settings
   comparison:
-    # AI provider for comparison: openai (lower cost) or anthropic (better analysis)
-    provider: ${AI_COMPARISON_PROVIDER:anthropic}
+    # AI provider for comparison: openai (default, with web search) or anthropic (better analysis)
+    provider: ${AI_COMPARISON_PROVIDER:openai}
     # Extended thinking (Claude only) - shows AI reasoning
     extended-thinking: ${AI_COMPARISON_EXTENDED_THINKING:true}
     # Stream thinking tokens to client
