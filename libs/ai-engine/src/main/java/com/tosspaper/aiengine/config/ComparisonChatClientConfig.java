@@ -172,8 +172,11 @@ public class ComparisonChatClientConfig {
         if (mcpToolCallbackProvider != null) {
             var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
             if (mcpTools.length > 0) {
-                log.info("Creating OpenAI ChatClient with {} MCP tools (Tavily web search enabled)", mcpTools.length);
-                builder.defaultToolCallbacks(mcpTools);  // ToolCallback objects
+                var toolNames = java.util.Arrays.stream(mcpTools)
+                        .map(tool -> tool.getToolDefinition().name())
+                        .toList();
+                log.info("Creating OpenAI ChatClient with MCP tools: {}", toolNames);
+                builder.defaultToolCallbacks(mcpTools);
             }
         } else {
             log.info("Creating OpenAI ChatClient for document comparison (no MCP tools)");
