@@ -1,185 +1,145 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "DocumentComparisonResult",
-  "description": "Schema for document comparison between extracted document and purchase order",
+  "description": "Schema for document comparison between extracted document and purchase order. Each result contains field-by-field comparisons with human-readable explanations.",
   "type": "object",
   "required": ["documentId", "poId", "results"],
+  "$defs": {
+    "FieldComparison": {
+      "title": "FieldComparison",
+      "type": "object",
+      "description": "A single field comparison showing PO value, document value, and explanation",
+      "required": ["field", "poValue", "documentValue", "match", "isBlocking", "explanation"],
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "Human-readable field name displayed to user",
+          "examples": [
+            "Name",
+            "Address",
+            "Email",
+            "Phone",
+            "Description",
+            "Quantity",
+            "Unit Price",
+            "Currency",
+            "Country"
+          ]
+        },
+        "poValue": {
+          "type": "string",
+          "description": "Value from the Purchase Order, formatted for display. Use human-readable format (e.g., 'USD $28.00' not '28'). Use 'Not specified' if field is empty in PO."
+        },
+        "documentValue": {
+          "type": "string",
+          "description": "Value extracted from the document, formatted for display. Use human-readable format (e.g., 'CAD $28.00' not '28'). Use 'Not specified' if field is empty in document."
+        },
+        "match": {
+          "type": "string",
+          "enum": ["exact", "close", "mismatch"],
+          "description": "Match classification: 'exact' = identical or semantically equivalent, 'close' = minor differences (formatting, typos), 'mismatch' = significant difference requiring attention"
+        },
+        "isBlocking": {
+          "type": "boolean",
+          "description": "True if this specific field comparison causes a blocking issue. Blocking fields include: price differences, currency mismatches, quantity discrepancies, items not in PO, oversupply."
+        },
+        "explanation": {
+          "type": "string",
+          "description": "For exact matches, use empty string or brief 'Exact match'. For close/mismatch, provide a complete, detailed human-readable sentence explaining the difference. Must be easy to read and understand. Do NOT include 'BLOCKING:' prefix or match scores.",
+          "examples": [
+            "",
+            "Exact match",
+            "The address uses a slightly different format but refers to the same location.",
+            "The brand name 'Cursor' on the invoice corresponds to the legal company name 'Anysphere, Inc.' on the purchase order.",
+            "The email address contains a typo with an extra letter 'i', showing 'hii@cursor.com' instead of 'hi@cursor.com'.",
+            "The purchase order specifies USD currency but the invoice is billed in CAD. This requires review as currency conversion may affect the final amount.",
+            "The unit price on the invoice is $5.00 higher than what was agreed on the purchase order.",
+            "The invoice quantity of 8 units exceeds the purchase order quantity of 5 units by 3 units.",
+            "This line item appears on the invoice but was not included in the original purchase order.",
+            "The street address is missing the unit number 434 that appears on the purchase order."
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ComparisonResult": {
+      "title": "ComparisonResult",
+      "type": "object",
+      "description": "Result of comparing a single document part (vendor, ship-to, or line item) against the purchase order",
+      "required": ["type", "status", "matchScore", "severity", "comparisons"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["vendor", "ship_to", "line_item"],
+          "description": "Type of entity being compared: 'vendor' = supplier/seller, 'ship_to' = delivery address, 'line_item' = individual product/service"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["matched", "partial", "unmatched"],
+          "description": "Comparison status for this part based on matchScore: 'matched' (>0.9), 'partial' (0.5-0.9), 'unmatched' (<0.5)"
+        },
+        "matchScore": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Overall match score calculated from individual field comparisons. 1.0 = perfect match, 0.0 = complete mismatch"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "blocking"],
+          "description": "Severity level: 'info' = cosmetic differences, 'warning' = notable differences, 'blocking' = critical issues that prevent approval"
+        },
+        "extractedIndex": {
+          "type": "integer",
+          "description": "Zero-based index of the line item in the extracted document (only for type='line_item')"
+        },
+        "poIndex": {
+          "type": ["integer", "null"],
+          "description": "Zero-based index of the matching line item in the PO, or null if no match found (only for type='line_item')"
+        },
+        "comparisons": {
+          "type": "array",
+          "description": "Field-by-field comparisons with human-readable values and explanations. Each entry shows exactly what was compared and why.",
+          "items": {
+            "$ref": "#/$defs/FieldComparison"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "properties": {
     "documentId": {
       "type": "string",
-      "description": "Unique identifier for the extracted document"
+      "description": "Unique identifier for the extracted document (e.g., 'mg-1769309498742-ceee7536')"
     },
     "poId": {
       "type": "string",
-      "description": "Unique identifier for the purchase order"
+      "description": "Display ID of the purchase order being compared against (e.g., '2505007')"
     },
     "overallStatus": {
       "type": "string",
       "enum": ["matched", "partial", "unmatched"],
-      "description": "Overall status of document comparison"
+      "description": "Overall comparison status: 'matched' = all fields match, 'partial' = some fields match, 'unmatched' = critical mismatches found"
     },
     "confidence": {
       "type": "number",
       "minimum": 0.0,
       "maximum": 1.0,
-      "description": "Overall confidence in matching"
+      "description": "Overall confidence in the comparison result (0.0 = no confidence, 1.0 = fully confident)"
     },
     "blockingIssues": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of blocking issues detected in comparison"
+      "description": "Count of results with severity='blocking'. These are critical issues that must be resolved before approval."
     },
     "results": {
       "type": "array",
-      "description": "Array of comparison results for each part",
+      "description": "Array of comparison results - one for vendor, one for ship_to, and one per line item",
       "items": {
-        "title": "ComparisonPartResult",
-        "type": "object",
-        "required": ["type", "status", "matchScore", "confidence", "signals", "reasons", "severity"],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["vendor", "ship_to", "line_item"],
-            "description": "Type of part being compared"
-          },
-          "status": {
-            "type": "string",
-            "enum": ["matched", "partial", "unmatched"],
-            "description": "Status of the comparison for this part"
-          },
-          "matchScore": {
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 1.0,
-            "description": "Overall match score for this part"
-          },
-          "confidence": {
-            "type": "number",
-            "minimum": 0.0,
-            "maximum": 1.0,
-            "description": "Confidence in the match score"
-          },
-          "reasons": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Human-readable explanation of why the part was matched/unmatched"
-          },
-          "signals": {
-            "type": "object",
-            "description": "Detailed matching signals per field",
-            "properties": {
-              "address": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "street": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                      "postalCode": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                      "state": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                      "province": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                      "country": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["score", "components"]
-              },
-              "name": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0, "description": "1.0=identical, 0.9=minor format diff, 0.8=typo, 0.7=format differs, 0.6=semantic match (brand=legal name), <0.5=mismatch" },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "fullName": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["score", "components"]
-              },
-              "email": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "domain": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["score", "components"]
-              },
-              "description": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "text": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
-                    },
-                    "additionalProperties": false
-                  }
-                }
-              },
-              "quantity": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "value": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
-                    },
-                    "additionalProperties": false
-                  }
-                }
-              },
-              "unitPrice": {
-                "type": "object",
-                "properties": {
-                  "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                  "components": {
-                    "type": "object",
-                    "properties": {
-                      "value": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-                      "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
-                    },
-                    "additionalProperties": false
-                  }
-                }
-              }
-            },
-            "additionalProperties": true
-          },
-          "discrepancies": {
-            "type": "object",
-            "description": "Field-level differences between extracted document and PO",
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "extracted": {},
-                "po": {},
-                "difference": { "type": "string" }
-              },
-              "required": ["extracted", "po", "difference"]
-            }
-          },
-          "severity": {
-            "type": "string",
-            "enum": ["info", "warning", "blocking"],
-            "description": "Indicates criticality of mismatches"
-          },
-          "extractedIndex": { "type": "integer" },
-          "poIndex": { "type": "integer" }
-        },
-        "additionalProperties": false
+        "$ref": "#/$defs/ComparisonResult"
       }
     }
-  }
+  },
+  "additionalProperties": false
 }

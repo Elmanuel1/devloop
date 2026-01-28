@@ -7,7 +7,7 @@ import com.tosspaper.models.domain.Party;
 import com.tosspaper.models.domain.PurchaseOrder;
 import com.tosspaper.models.domain.integration.IntegrationConnection;
 import com.tosspaper.models.extraction.dto.Comparison;
-import com.tosspaper.models.extraction.dto.Result;
+import com.tosspaper.models.extraction.dto.ComparisonResult;
 import com.tosspaper.models.service.ContactSyncService;
 import com.tosspaper.models.service.DocumentPartComparisonService;
 import com.tosspaper.models.service.PurchaseOrderSyncService;
@@ -197,8 +197,8 @@ public class BillDependencyStrategy implements DependencyStrategy {
         }
 
         // Filter for matched line items with valid PO index
-        List<Result> matches = comparisonOpt.get().getResults().stream()
-            .filter(r -> r.getType() == Result.Type.LINE_ITEM)
+        List<ComparisonResult> matches = comparisonOpt.get().getResults().stream()
+            .filter(r -> r.getType() == ComparisonResult.Type.LINE_ITEM)
             .filter(r -> r.getPoIndex() != null)
             .toList();
 
@@ -212,7 +212,7 @@ public class BillDependencyStrategy implements DependencyStrategy {
             matches.size(), invoice.getDocumentNumber());
 
         // Map each matched line item
-        for (Result match : matches) {
+        for (ComparisonResult match : matches) {
             Integer invoiceIndex = match.getExtractedIndex() != null
                     ? match.getExtractedIndex().intValue() : null;
             Integer poIndex = match.getPoIndex() != null
@@ -250,10 +250,10 @@ public class BillDependencyStrategy implements DependencyStrategy {
             invoiceItem.setExternalItemId(poItem.getExternalItemId());
             invoiceItem.setExternalAccountId(poItem.getExternalAccountId());
 
-            log.debug("Matched invoice line {} '{}' to PO line {} '{}' (confidence: {}, externalItemId: {}, externalAccountId: {})",
+            log.debug("Matched invoice line {} '{}' to PO line {} '{}' (matchScore: {}, externalItemId: {}, externalAccountId: {})",
                 invoiceIndex, invoiceItem.getDescription(),
                 poIndex, poItem.getName(),
-                match.getConfidence(),
+                match.getMatchScore(),
                 poItem.getExternalItemId(),
                 poItem.getExternalAccountId());
         }

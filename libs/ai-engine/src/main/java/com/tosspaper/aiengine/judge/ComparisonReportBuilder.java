@@ -116,8 +116,8 @@ public class ComparisonReportBuilder {
         return ComparisonVerificationReport.ContactComparison.builder()
                 .matched(hasMatch(entry))
                 .matchScore(getDouble(entry, "matchScore"))
-                .matchReasons(getReasons(entry))
-                .discrepancies(parseDiscrepancies(entry.get("discrepancies")))
+                .matchReasons(buildReasonsFromComparisons(entry))
+                .discrepancies(parseDiscrepanciesFromComparisons(entry.get("comparisons")))
                 .build();
     }
 
@@ -132,49 +132,66 @@ public class ComparisonReportBuilder {
                 .poIndex(poIndex)
                 .matched(poIndex != null)
                 .matchScore(getDouble(entry, "matchScore"))
-                .matchReasons(getReasons(entry))
-                .discrepancies(parseDiscrepancies(entry.get("discrepancies")))
+                .matchReasons(buildReasonsFromComparisons(entry))
+                .discrepancies(parseDiscrepanciesFromComparisons(entry.get("comparisons")))
                 .build();
     }
 
-    private Map<String, ComparisonVerificationReport.DiscrepancyDetail> parseDiscrepancies(JsonNode discrepanciesNode) {
-        if (discrepanciesNode == null || discrepanciesNode.isNull() || !discrepanciesNode.isObject()) {
-            return new HashMap<>();
+    /**
+     * Builds discrepancies from the new comparisons array format.
+     * Only includes fields where match != "exact".
+     */
+    private Map<String, ComparisonVerificationReport.DiscrepancyDetail> parseDiscrepanciesFromComparisons(JsonNode comparisonsNode) {
+        Map<String, ComparisonVerificationReport.DiscrepancyDetail> result = new HashMap<>();
+
+        if (comparisonsNode == null || comparisonsNode.isNull() || !comparisonsNode.isArray()) {
+            return result;
         }
 
-        Map<String, ComparisonVerificationReport.DiscrepancyDetail> result = new HashMap<>();
-        discrepanciesNode.fields().forEachRemaining(field -> {
-            JsonNode detail = field.getValue();
-            result.put(field.getKey(), ComparisonVerificationReport.DiscrepancyDetail.builder()
-                    .documentValue(getNodeValue(detail, "extracted"))
-                    .poValue(getNodeValue(detail, "po"))
-                    .difference(getNodeValue(detail, "difference"))
-                    .build());
-        });
+        for (JsonNode comparison : comparisonsNode) {
+            String match = getString(comparison, "match");
+            // Only include non-exact matches as discrepancies
+            if (match != null && !"exact".equals(match)) {
+                String field = getString(comparison, "field");
+                if (field != null) {
+                    result.put(field, ComparisonVerificationReport.DiscrepancyDetail.builder()
+                            .documentValue(getString(comparison, "documentValue"))
+                            .poValue(getString(comparison, "poValue"))
+                            .difference(getString(comparison, "explanation"))
+                            .build());
+                }
+            }
+        }
         return result;
     }
 
-    private boolean hasMatch(JsonNode entry) {
-        // Contact is considered matched if matchScore is present and > 0
-        if (entry.has("matchScore") && !entry.get("matchScore").isNull()) {
-            return entry.get("matchScore").asDouble() > 0;
-        }
-        // Or if reasons doesn't indicate "no match"
-        String reasons = getReasons(entry);
-        return reasons != null && !reasons.toLowerCase().contains("no match");
-    }
-
-    private String getReasons(JsonNode entry) {
-        if (!entry.has("reasons") || entry.get("reasons").isNull()) {
+    /**
+     * Builds a reasons string from the comparisons array explanations.
+     */
+    private String buildReasonsFromComparisons(JsonNode entry) {
+        JsonNode comparisonsNode = entry.get("comparisons");
+        if (comparisonsNode == null || comparisonsNode.isNull() || !comparisonsNode.isArray()) {
             return null;
         }
-        JsonNode reasonsNode = entry.get("reasons");
-        if (reasonsNode.isArray()) {
-            List<String> reasonsList = new ArrayList<>();
-            reasonsNode.forEach(r -> reasonsList.add(r.asText()));
-            return String.join("; ", reasonsList);
+
+        List<String> explanations = new ArrayList<>();
+        for (JsonNode comparison : comparisonsNode) {
+            String explanation = getString(comparison, "explanation");
+            if (explanation != null && !explanation.isEmpty()) {
+                explanations.add(explanation);
+            }
         }
-        return reasonsNode.asText();
+        return explanations.isEmpty() ? null : String.join("; ", explanations);
+    }
+
+    private boolean hasMatch(JsonNode entry) {
+        // Contact is considered matched if matchScore is present and > 0.5
+        if (entry.has("matchScore") && !entry.get("matchScore").isNull()) {
+            return entry.get("matchScore").asDouble() > 0.5;
+        }
+        // Or check status
+        String status = getString(entry, "status");
+        return "matched".equals(status) || "partial".equals(status);
     }
 
     private Double getDouble(JsonNode entry, String field) {

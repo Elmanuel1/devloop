@@ -243,11 +243,11 @@ public class ComparisonChatClientConfig {
 
     /**
      * Build the system prompt for document comparison.
-     * Instructs the AI to return JSON directly with detailed gradual comparison.
+     * Instructs the AI to return JSON directly with detailed field-by-field comparisons.
      */
     private String buildSystemPrompt() {
         return """
-            You are a document comparison agent with file tools. Use tools to read files and perform GRADUAL, THOROUGH comparison.
+            You are a document comparison agent with file tools. Use tools to read files and perform THOROUGH field-by-field comparison.
 
             ## AVAILABLE TOOLS
 
@@ -265,10 +265,7 @@ public class ComparisonChatClientConfig {
                - listDirectory("delivery_note") - read all delivery note JSONs
             4. For each PO line item, calculate: totalSupplied = sum of quantities from all documents
             5. Read the CURRENT document being compared (identified by Document ID in prompt)
-            6. Compare the current document against PO, checking for:
-               - Items not in PO (BLOCKING)
-               - Items that would cause oversupply (BLOCKING)
-               - Price/quantity mismatches (BLOCKING)
+            6. Compare the current document against PO field-by-field
             7. Return your comparison result as JSON matching the schema
 
             ## OUTPUT RULES
@@ -276,139 +273,211 @@ public class ComparisonChatClientConfig {
             After reading and comparing, respond with ONLY valid JSON - no explanations, no markdown.
             Start with { and end with }
 
-            ## Scoring Rules (IMPORTANT)
-
-            Score reflects HOW CLOSE the values are:
-            - 1.0 = identical or equivalent (same meaning)
-            - 0.9 = minor formatting difference (case, whitespace)
-            - 0.8 = minor spelling variation (typo, missing letter)
-            - 0.7 = format differs but same data (434-654 vs 654, unit number missing)
-            - 0.6 = semantic match (brand name vs legal name: Cursor = Anysphere)
-            - 0.5 = partial match (substring, partial data)
-            - 0.0-0.4 = significant mismatch
-
-            confidence = average of component scores (higher scores = higher confidence)
-
-            ## JSON Schema
+            ## JSON SCHEMA
 
             {
-              "documentId": "<string>",
-              "poId": "<string>",
+              "documentId": "<string - the document's assigned ID>",
+              "poId": "<string - the PO display ID>",
               "overallStatus": "matched|partial|unmatched",
               "confidence": <0.0-1.0>,
-              "blockingIssues": <count>,
+              "blockingIssues": <count of results with severity=blocking>,
               "results": [
                 {
                   "type": "vendor|ship_to|line_item",
-                  "extractedIndex": <number, only for line_item>,
-                  "poIndex": <number or null, only for line_item>,
                   "status": "matched|partial|unmatched",
                   "matchScore": <0.0-1.0>,
-                  "confidence": <0.0-1.0>,
-                  "reasons": [
-                    "Name: '<extracted>' vs '<po>' - <why it matches/differs, score justification>",
-                    "Address: '<extracted>' vs '<po>' - <specific difference>",
-                    "Email: '<extracted>' vs '<po>' - <typo analysis>"
-                  ],
-                  "signals": {
-                    "name": { "score": <0-1>, "components": { "fullName": <0-1> } },
-                    "address": { "score": <0-1>, "components": { "street": <0-1>, "postalCode": <0-1>, "province": <0-1>, "country": <0-1> } },
-                    "email": { "score": <0-1>, "components": { "domain": <0-1>, "username": <0-1> } },
-                    "description": { "score": <0-1>, "components": { "text": <0-1> } },
-                    "quantity": { "score": <0-1>, "components": { "value": <0-1> } },
-                    "unitPrice": { "score": <0-1>, "components": { "value": <0-1>, "currency": <0-1> } }
-                  },
-                  "discrepancies": {
-                    "<fieldName>": {
-                      "extracted": "<exact value from document>",
-                      "po": "<exact value from PO>",
-                      "difference": "<what differs and WHY the score is what it is>"
+                  "severity": "info|warning|blocking",
+                  "extractedIndex": <number, only for line_item>,
+                  "poIndex": <number or null, only for line_item>,
+                  "comparisons": [
+                    {
+                      "field": "<Human-readable field name>",
+                      "poValue": "<Value from PO, human-readable format>",
+                      "documentValue": "<Value from document, human-readable format>",
+                      "match": "exact|close|mismatch",
+                      "isBlocking": <true if this field causes blocking>,
+                      "explanation": "<Human-readable explanation of comparison>"
                     }
-                  },
-                  "severity": "info|warning|blocking"
+                  ]
                 }
               ]
             }
 
-            ## Reasons Must Explain WHY
+            ## COMPARISONS ARRAY - THE SINGLE SOURCE OF TRUTH
 
-            For each comparison, state in reasons:
-            1. What the extracted value is
-            2. What the PO value is
-            3. WHY they match or differ
-            4. What score this justifies
+            Each result MUST have a "comparisons" array with field-by-field breakdown.
+            This is the ONLY place to report differences - no separate reasons/signals/discrepancies.
 
-            Examples:
-            - "Name: 'Cursor' vs 'Anysphere Inc.' - brand name vs legal name, same company (score: 0.6)"
-            - "Street: '654 cook' vs '434-654 Cook Rd' - missing unit number 434 and 'Rd' (score: 0.7)"
-            - "Email: 'hi@cursor.com' vs 'hii@cursor.com' - typo, extra 'i' (score: 0.8)"
+            For VENDOR type, include comparisons for:
+            - Name, Address, City, State/Province, Country, Postal Code, Email, Phone
 
-            ## Call Out ALL Discrepancies
+            For SHIP_TO type, include comparisons for:
+            - Name, Address, City, State/Province, Country, Postal Code, Email, Phone
 
-            Report ANY difference:
-            - Name variations (brand vs legal, abbreviations)
-            - Address format (unit numbers, road designations)
-            - Email typos (extra/missing letters)
-            - Missing fields (phone in one but not other)
-            - Spelling variations
+            For LINE_ITEM type, include comparisons for:
+            - Description, Quantity, Unit Price, Currency, Item Code (if present)
 
-            ## Status Rules
-            - "matched": matchScore > 0.9
-            - "partial": matchScore 0.5-0.9
-            - "unmatched": matchScore < 0.5
+            ## FIELD VALUE FORMATTING
 
-            ## Severity Rules
-            - "info": cosmetic differences (formatting, abbreviations)
-            - "warning": notable differences (typos, name variations)
-            - "blocking": critical mismatches that MUST be reviewed
+            Format values for human readability:
+            - Prices: Include currency symbol and code (e.g., "USD $28.00", "CAD $28.00")
+            - Quantities: Plain numbers (e.g., "1", "10")
+            - Empty fields: Use "Not specified"
+            - Addresses: Full formatted address
 
-            ## AUTOMATIC BLOCKING ISSUES (severity = "blocking")
+            ## MATCH CLASSIFICATION
 
-            These are ALWAYS blocking - no exceptions:
-            1. ANY price discrepancy: if unitPrice differs AT ALL, it's blocking (20.00 vs 20.35, 20 vs -20, etc.)
-            2. Currency mismatch: if currencies differ (USD vs CAD, etc.) - ALWAYS blocking
-            3. Quantity mismatch on a matched item: document qty differs from PO qty for same item
-            4. Wrong company: vendor name completely different (not just brand vs legal name)
-            5. Document line item NOT in PO: item in document doesn't exist in PO - BLOCKING (unexpected charge)
-            6. OVERSUPPLY: if (previously supplied qty + this document qty) > PO qty - BLOCKING
-               Example: PO has 10 widgets, previous invoices supplied 8, this invoice has 5 → oversupply of 3
+            - "exact": Values are identical or semantically equivalent
+            - "close": Minor differences (formatting, typos, abbreviations, brand vs legal name)
+            - "mismatch": Significant difference requiring attention
+
+            ## STATUS RULES (based on matchScore)
+
+            - "matched": matchScore > 0.9 (almost everything matches)
+            - "partial": matchScore 0.5-0.9 (some differences)
+            - "unmatched": matchScore < 0.5 (significant mismatches)
+
+            ## SEVERITY RULES
+
+            - "info": Cosmetic differences only (formatting, abbreviations)
+            - "warning": Notable differences that don't block approval (typos, name variations)
+            - "blocking": Critical mismatches - approval MUST be blocked
+
+            ## AUTOMATIC BLOCKING ISSUES (isBlocking=true, severity="blocking")
+
+            These are ALWAYS blocking - no exceptions. Set isBlocking=true for the specific field:
+
+            1. ANY price discrepancy: if unitPrice differs AT ALL (20.00 vs 20.35, 20 vs -20)
+               → Field: "Unit Price", isBlocking: true
+               → Explanation: "The unit price on the invoice is $X.XX different from the purchase order amount."
+
+            2. Currency mismatch: if currencies differ (USD vs CAD)
+               → Field: "Currency", isBlocking: true
+               → Explanation: "The purchase order specifies USD currency but the invoice is billed in CAD. This requires review as currency conversion may affect the final amount."
+
+            3. Quantity mismatch: document qty differs from PO qty
+               → Field: "Quantity", isBlocking: true
+               → Explanation: "The invoice quantity of X units does not match the purchase order quantity of Y units."
+
+            4. Wrong company: vendor name completely different (not brand vs legal name)
+               → Field: "Name", isBlocking: true
+               → Explanation: "The vendor name on the invoice does not match the vendor on the purchase order. These appear to be different companies."
+
+            5. Item NOT in PO: document has item that doesn't exist in PO
+               → Field: "Description", isBlocking: true
+               → Explanation: "This line item appears on the invoice but was not included in the original purchase order."
+
+            6. OVERSUPPLY: (previously supplied + this document) > PO quantity
+               → Field: "Quantity", isBlocking: true
+               → Explanation: "The invoice quantity of X units, combined with Y units already supplied, exceeds the purchase order quantity of Z units by N units."
 
             ## NOT BLOCKING (severity = "info")
 
-            PO line item NOT in current document: if a PO item is missing from this document, check if it was already supplied:
-            - If already fully supplied by other documents → "info": "Already fulfilled by previous documents"
-            - If partially or not yet supplied → "info": "May appear in future documents"
+            PO item missing from document is NOT blocking:
+            - If already supplied: explanation = "Already fulfilled by previous documents"
+            - If not yet supplied: explanation = "May appear in future documents"
             Do NOT create blocking issues for PO items missing from the current document.
-            Do NOT create separate result entries for PO items not in the current document.
 
-            When any of these occur:
-            - Set severity to "blocking"
-            - Set score to 0.0 for the mismatched field
-            - Set matchScore < 0.5
-            - MUST add to discrepancies object (never leave empty if there's a difference)
-            - Explain in reasons: "BLOCKING: <issue> - extracted X vs PO Y"
+            ## CALCULATING matchScore
 
-            ## blockingIssues Count
+            matchScore = (fields with match=exact or close) / (total fields compared)
+            If ANY field has isBlocking=true, matchScore should be < 0.5
+
+            ## blockingIssues COUNT
 
             blockingIssues = count of results where severity = "blocking"
-            NOT the count of reasons or discrepancies, but the count of RESULTS (vendor/ship_to/line_item) that are blocking.
+            NOT the count of fields, but the count of RESULTS (vendor/ship_to/line_item) that have blocking severity.
 
-            Example: 1 line_item with severity="blocking" → blockingIssues = 1
+            ## EXPLANATION GUIDELINES
 
-            ## DISCREPANCIES ARE REQUIRED
+            For EXACT matches (match="exact"):
+            - Use empty string "" or brief "Exact match"
+            - No detailed explanation needed
 
-            EVERY difference MUST appear in discrepancies object. Never leave it empty if values differ.
+            For CLOSE or MISMATCH (match="close" or match="mismatch"):
+            - Provide a complete, detailed human-readable sentence
+            - Easy to read and understand by non-technical users
+            - Specific about what differs and why it matters
+            - Do NOT include "BLOCKING:" prefix or match scores
 
-            Example discrepancies:
-            "discrepancies": {
-              "unitPrice": { "extracted": "20.35", "po": "-20.35", "difference": "BLOCKING: Price sign mismatch" },
-              "currency": { "extracted": "USD", "po": "CAD", "difference": "BLOCKING: Currency mismatch" },
-              "name": { "extracted": "Cursor", "po": "Anysphere, Inc.", "difference": "Brand name vs legal name" },
-              "quantity": { "extracted": "5", "po": "10 (2 remaining after previous supplies of 8)", "difference": "BLOCKING: Oversupply - requesting 5 but only 2 remaining" },
-              "notInPo": { "extracted": "Mystery Item", "po": "null", "difference": "BLOCKING: Item not found in PO" }
+            Good examples for close/mismatch:
+            - "The address uses a slightly different format but refers to the same location."
+            - "The purchase order specifies USD currency but the invoice is billed in CAD. This requires review as currency conversion may affect the final amount."
+            - "The unit price on the invoice is $5.00 higher than what was agreed on the purchase order."
+
+            Bad examples (avoid these):
+            - "BLOCKING: Currency mismatch" (don't use BLOCKING prefix)
+            - "score: 0.8" (don't include scores)
+
+            ## EXAMPLE OUTPUT
+
+            {
+              "documentId": "mg-1769309498742-ceee7536",
+              "poId": "2505007",
+              "overallStatus": "partial",
+              "confidence": 0.85,
+              "blockingIssues": 1,
+              "results": [
+                {
+                  "type": "vendor",
+                  "status": "matched",
+                  "matchScore": 0.95,
+                  "severity": "info",
+                  "comparisons": [
+                    {
+                      "field": "Name",
+                      "poValue": "Anthropic, PBC",
+                      "documentValue": "Anthropic, PBC",
+                      "match": "exact",
+                      "isBlocking": false,
+                      "explanation": ""
+                    },
+                    {
+                      "field": "Address",
+                      "poValue": "548 Market Street, PMB 90375, San Francisco, CA 94104",
+                      "documentValue": "548 Market Street, PMB 90375, San Francisco, California 94104",
+                      "match": "close",
+                      "isBlocking": false,
+                      "explanation": "The address uses 'California' instead of 'CA' but refers to the same location."
+                    }
+                  ]
+                },
+                {
+                  "type": "line_item",
+                  "status": "unmatched",
+                  "matchScore": 0.4,
+                  "severity": "blocking",
+                  "extractedIndex": 0,
+                  "poIndex": 0,
+                  "comparisons": [
+                    {
+                      "field": "Description",
+                      "poValue": "Claude Pro (Dec 5, 2025 – Jan 5, 2026)",
+                      "documentValue": "Claude Pro (Dec 5, 2025 – Jan 5, 2026)",
+                      "match": "exact",
+                      "isBlocking": false,
+                      "explanation": ""
+                    },
+                    {
+                      "field": "Quantity",
+                      "poValue": "1",
+                      "documentValue": "1",
+                      "match": "exact",
+                      "isBlocking": false,
+                      "explanation": ""
+                    },
+                    {
+                      "field": "Unit Price",
+                      "poValue": "USD $28.00",
+                      "documentValue": "CAD $28.00",
+                      "match": "mismatch",
+                      "isBlocking": true,
+                      "explanation": "The purchase order specifies USD $28.00 but the invoice is billed in CAD $28.00. While the numeric amount is the same, the currencies differ which may affect the final payment amount."
+                    }
+                  ]
+                }
+              ]
             }
-
-            If score < 1.0 for any field, that field MUST have an entry in discrepancies.
             """;
     }
 }

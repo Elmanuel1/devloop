@@ -3,17 +3,22 @@ package com.tosspaper.comparisons;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.generated.model.ComparisonPartResult;
 import com.tosspaper.generated.model.DocumentComparisonResult;
+import com.tosspaper.generated.model.FieldComparison;
 import com.tosspaper.models.extraction.dto.Comparison;
-import com.tosspaper.models.extraction.dto.Result;
+import com.tosspaper.models.extraction.dto.ComparisonResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * Maps domain Comparison DTOs to API DocumentComparisonResult DTOs.
+ *
+ * <p>The new schema uses a single "comparisons" array per result instead of
+ * separate "reasons", "signals", and "discrepancies" objects. This makes the
+ * comparison data more human-readable and easier to display in the UI.
  */
 @Slf4j
 @Component
@@ -31,8 +36,6 @@ public class DocumentComparisonMapper {
         dto.setDocumentId(comparison.getDocumentId());
         dto.setPoId(comparison.getPoId());
         dto.setConfidence(comparison.getConfidence());
-        dto.setBlockingIssues(comparison.getBlockingIssues() != null
-                ? comparison.getBlockingIssues().intValue() : null);
 
         // Map overallStatus enum
         if (comparison.getOverallStatus() != null) {
@@ -40,16 +43,26 @@ public class DocumentComparisonMapper {
         }
 
         // Map results array
+        List<ComparisonPartResult> results = null;
         if (comparison.getResults() != null) {
-            dto.setResults(comparison.getResults().stream()
+            results = comparison.getResults().stream()
                     .map(this::toPartResult)
-                    .collect(Collectors.toList()));
+                    .collect(Collectors.toList());
+            dto.setResults(results);
         }
+
+        // Recalculate blockingIssues from results (count results with severity=blocking)
+        int blockingCount = results != null
+                ? (int) results.stream()
+                    .filter(r -> r.getSeverity() == ComparisonPartResult.SeverityEnum.BLOCKING)
+                    .count()
+                : 0;
+        dto.setBlockingIssues(blockingCount);
 
         return dto;
     }
 
-    private ComparisonPartResult toPartResult(Result result) {
+    private ComparisonPartResult toPartResult(ComparisonResult result) {
         if (result == null) {
             return null;
         }
@@ -67,8 +80,6 @@ public class DocumentComparisonMapper {
         }
 
         dto.setMatchScore(result.getMatchScore());
-        dto.setConfidence(result.getConfidence());
-        dto.setReasons(result.getReasons());
 
         // Map severity enum
         if (result.getSeverity() != null) {
@@ -80,29 +91,44 @@ public class DocumentComparisonMapper {
         dto.setPoIndex(result.getPoIndex() != null
                 ? result.getPoIndex().intValue() : null);
 
-        // Map signals - convert typed object to Map using ObjectMapper
-        if (result.getSignals() != null) {
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> signalsMap = objectMapper.convertValue(result.getSignals(), Map.class);
-                dto.setSignals(signalsMap);
-            } catch (Exception e) {
-                log.warn("Failed to convert signals to map: {}", e.getMessage());
-            }
-        }
-
-        // Map discrepancies - convert typed object to Map using ObjectMapper
-        if (result.getDiscrepancies() != null) {
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> discrepanciesMap = objectMapper.convertValue(result.getDiscrepancies(), Map.class);
-                dto.setDiscrepancies(discrepanciesMap);
-            } catch (Exception e) {
-                log.warn("Failed to convert discrepancies to map: {}", e.getMessage());
-            }
+        // Map comparisons array
+        if (result.getComparisons() != null) {
+            dto.setComparisons(result.getComparisons().stream()
+                    .map(this::toFieldComparison)
+                    .collect(Collectors.toList()));
         }
 
         return dto;
+    }
+
+    private FieldComparison toFieldComparison(
+            com.tosspaper.models.extraction.dto.FieldComparison source) {
+        if (source == null) {
+            return null;
+        }
+
+        FieldComparison dto = new FieldComparison();
+        dto.setField(source.getField());
+        dto.setPoValue(source.getPoValue());
+        dto.setDocumentValue(source.getDocumentValue());
+        dto.setIsBlocking(source.getIsBlocking() != null ? source.getIsBlocking() : false);
+        dto.setExplanation(source.getExplanation());
+
+        // Map match enum
+        if (source.getMatch() != null) {
+            dto.setMatch(mapMatch(source.getMatch()));
+        }
+
+        return dto;
+    }
+
+    private FieldComparison.MatchEnum mapMatch(
+            com.tosspaper.models.extraction.dto.FieldComparison.Match match) {
+        return switch (match) {
+            case EXACT -> FieldComparison.MatchEnum.EXACT;
+            case CLOSE -> FieldComparison.MatchEnum.CLOSE;
+            case MISMATCH -> FieldComparison.MatchEnum.MISMATCH;
+        };
     }
 
     private DocumentComparisonResult.OverallStatusEnum mapOverallStatus(Comparison.OverallStatus status) {
@@ -113,7 +139,7 @@ public class DocumentComparisonMapper {
         };
     }
 
-    private ComparisonPartResult.TypeEnum mapType(Result.Type type) {
+    private ComparisonPartResult.TypeEnum mapType(ComparisonResult.Type type) {
         return switch (type) {
             case VENDOR -> ComparisonPartResult.TypeEnum.VENDOR;
             case SHIP_TO -> ComparisonPartResult.TypeEnum.SHIP_TO;
@@ -121,7 +147,7 @@ public class DocumentComparisonMapper {
         };
     }
 
-    private ComparisonPartResult.StatusEnum mapStatus(Result.Status status) {
+    private ComparisonPartResult.StatusEnum mapStatus(ComparisonResult.Status status) {
         return switch (status) {
             case MATCHED -> ComparisonPartResult.StatusEnum.MATCHED;
             case PARTIAL -> ComparisonPartResult.StatusEnum.PARTIAL;
@@ -129,7 +155,7 @@ public class DocumentComparisonMapper {
         };
     }
 
-    private ComparisonPartResult.SeverityEnum mapSeverity(Result.Severity severity) {
+    private ComparisonPartResult.SeverityEnum mapSeverity(ComparisonResult.Severity severity) {
         return switch (severity) {
             case INFO -> ComparisonPartResult.SeverityEnum.INFO;
             case WARNING -> ComparisonPartResult.SeverityEnum.WARNING;

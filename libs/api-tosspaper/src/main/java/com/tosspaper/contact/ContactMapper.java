@@ -179,7 +179,7 @@ public interface ContactMapper {
     }
     
     /**
-     * Convert ContactsRecord to Party domain model.
+     * Convert ContactsRecord to a Party domain model.
      * Used for integration push events.
      */
     default Party toParty(ContactsRecord record) {

@@ -1408,7 +1408,7 @@ components:
     ComparisonPartResult:
       type: object
       description: Result of comparing a single document part (vendor, ship-to, or line item) against the purchase order
-      required: [type, status, matchScore, confidence, signals, reasons, severity]
+      required: [type, status, matchScore, severity, comparisons]
       properties:
         type:
           type: string
@@ -1424,26 +1424,6 @@ components:
           minimum: 0.0
           maximum: 1.0
           description: Overall match score between extracted document part and PO part (0.0-1.0)
-        confidence:
-          type: number
-          format: double
-          minimum: 0.0
-          maximum: 1.0
-          description: AI confidence in the match score (0.0-1.0)
-        reasons:
-          type: array
-          items:
-            type: string
-          description: Human-readable explanation of why the part was matched/unmatched
-        signals:
-          type: object
-          additionalProperties: true
-          description: Detailed matching signals per field (address, name, email, quantity, unitPrice, etc.)
-        discrepancies:
-          type: object
-          additionalProperties: true
-          nullable: true
-          description: Field-level differences between extracted document and PO (extracted value, PO value, difference explanation)
         severity:
           type: string
           enum: [info, warning, blocking]
@@ -1456,6 +1436,40 @@ components:
           type: integer
           nullable: true
           description: 0-based index of the matched PO line item (null if no match or for vendor/ship_to)
+        comparisons:
+          type: array
+          description: Field-by-field comparisons with human-readable values and explanations
+          items:
+            $ref: '#/components/schemas/FieldComparison'
+
+    FieldComparison:
+      type: object
+      description: A single field comparison showing PO value, document value, and explanation
+      required: [field, poValue, documentValue, match, isBlocking, explanation]
+      properties:
+        field:
+          type: string
+          description: Human-readable field name (e.g., Name, Address, Unit Price, Currency)
+          example: "Unit Price"
+        poValue:
+          type: string
+          description: Value from the Purchase Order, formatted for display
+          example: "USD $28.00"
+        documentValue:
+          type: string
+          description: Value extracted from the document, formatted for display
+          example: "CAD $28.00"
+        match:
+          type: string
+          enum: [exact, close, mismatch]
+          description: Match classification - exact (identical), close (minor differences), mismatch (significant difference)
+        isBlocking:
+          type: boolean
+          description: True if this field comparison causes a blocking issue that prevents approval
+        explanation:
+          type: string
+          description: Human-readable explanation of the comparison result. Blocking issues are prefixed with 'BLOCKING:'
+          example: "BLOCKING: Currency mismatch - PO uses USD but invoice is in CAD"
 
     DocumentComparisonResult:
       type: object
