@@ -17,6 +17,8 @@ import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.WebSearchOptions;
+import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest.WebSearchOptions.SearchContextSize;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -141,6 +143,10 @@ public class ComparisonChatClientConfig {
                         .model(openAiModel)
                         .temperature(0.1)  // Low temperature for consistent comparisons
                         .maxCompletionTokens(4096)
+                        .webSearchOptions(new WebSearchOptions(
+                                SearchContextSize.MEDIUM,  // LOW, MEDIUM, HIGH - balance between thoroughness and cost
+                                null  // userLocation - not needed for company verification
+                        ))
                         .build())
                 .retryTemplate(retryTemplate)
                 .observationRegistry(observationRegistry)
@@ -331,6 +337,53 @@ public class ComparisonChatClientConfig {
             - "close": Minor differences (formatting, typos, abbreviations, brand vs legal name)
             - "mismatch": Significant difference requiring attention
 
+            ## VENDOR NAME MATCHING - CRITICAL
+
+            When comparing vendor names, consider these as CLOSE MATCHES (not blocking):
+
+            1. **Brand vs Legal Entity**: Product/brand name vs parent company
+               - "GitHub" ↔ "Microsoft Corporation"
+               - "AWS" ↔ "Amazon Web Services" ↔ "Amazon.com, Inc."
+               - "Google Cloud" ↔ "Google LLC" ↔ "Alphabet Inc."
+
+            2. **Abbreviations & Variations**:
+               - "Inc." ↔ "Incorporated" ↔ omitted
+               - "LLC" ↔ "L.L.C." ↔ omitted
+               - "Corp." ↔ "Corporation"
+               - "Co." ↔ "Company"
+
+            3. **DBA (Doing Business As)**:
+               - Company operating under a different trade name
+
+            4. **Subsidiaries**:
+               - Child company invoicing on behalf of parent
+
+            ## VENDOR NAME VERIFICATION (WEB SEARCH)
+
+            When vendor names differ between PO and document:
+            1. Use your web search capability to verify if they're related
+            2. Search for: "[vendor1] [vendor2] same company" or "[vendor1] parent company"
+            3. If search confirms ANY relationship (brand/product, subsidiary, DBA, acquisition):
+               - match: "close" (ALWAYS close, never mismatch)
+               - isBlocking: false
+               - severity: "info" or "warning"
+               - explanation: MUST explain the relationship found. Examples:
+                 - "Cursor is the AI code editor product developed by Anysphere, Inc. The invoice uses the product name while the PO uses the legal entity name."
+                 - "GitHub was acquired by Microsoft in 2018. The invoice is from GitHub Inc., which is a subsidiary of Microsoft Corporation listed on the PO."
+                 - "AWS (Amazon Web Services) is a subsidiary of Amazon.com, Inc."
+            4. If search finds NO plausible relationship:
+               - match: "mismatch"
+               - isBlocking: true
+               - explanation: "Web search found no relationship between '[X]' and '[Y]'. These appear to be different companies."
+
+            **Decision Rule**: If vendor names COULD plausibly be the same entity (brand/product relationship, DBA, subsidiary), mark as:
+            - match: "close"
+            - isBlocking: false
+            - severity: "warning" (not blocking)
+            - explanation: "The invoice shows '[Brand]' which appears to be the product/brand name of '[Legal Entity]' on the purchase order."
+
+            IMPORTANT: When in doubt, mark as "close" with explanation. Only block when clearly unrelated.
+
             ## STATUS RULES (based on matchScore)
 
             - "matched": matchScore > 0.9 (almost everything matches)
@@ -359,9 +412,11 @@ public class ComparisonChatClientConfig {
                → Field: "Quantity", isBlocking: true
                → Explanation: "The invoice quantity of X units does not match the purchase order quantity of Y units."
 
-            4. Wrong company: vendor name completely different (not brand vs legal name)
+            4. Wrong company: ONLY when names are clearly unrelated entities with NO plausible relationship
+               - NOT blocking if: brand vs legal name, DBA, subsidiary, abbreviation
+               - Use web search to verify relationships when vendor names differ
                → Field: "Name", isBlocking: true
-               → Explanation: "The vendor name on the invoice does not match the vendor on the purchase order. These appear to be different companies."
+               → Explanation: "The vendor '[X]' on the invoice appears to be a different company from '[Y]' on the purchase order with no apparent relationship."
 
             5. Item NOT in PO: document has item that doesn't exist in PO
                → Field: "Description", isBlocking: true
