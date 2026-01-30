@@ -5,8 +5,8 @@ spring:
     # - /tosspaper/{env}/config/  - String (plain text config)
     # For local dev, set: SPRING_CLOUD_AWS_PARAMETERSTORE_ENDPOINT=http://localhost:4566
     import:
-      - optional:aws-parameterstore:/tosspaper/${ENV:local}/secrets/
-      - optional:aws-parameterstore:/tosspaper/${ENV:local}/config/
+      - aws-parameterstore:/tosspaper/${ENV:local}/secrets/
+      - aws-parameterstore:/tosspaper/${ENV:local}/config/
   cloud:
     aws:
       region:

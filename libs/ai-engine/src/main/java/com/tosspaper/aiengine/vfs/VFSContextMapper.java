@@ -1,12 +1,15 @@
 package com.tosspaper.aiengine.vfs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tosspaper.models.domain.DocumentType;
-import com.tosspaper.models.domain.ExtractionTask;
-import com.tosspaper.models.domain.PurchaseOrder;
+import com.tosspaper.models.domain.*;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -25,14 +28,104 @@ public class VFSContextMapper {
                 .build();
     }
 
+    /**
+     * Create context from PurchaseOrder with stripped metadata.
+     * Removes sync/provider fields to reduce token usage (~1,000 tokens saved).
+     */
     @SneakyThrows
     public VfsDocumentContext from(PurchaseOrder po) {
+        // Build stripped-down PO map with only comparison-relevant fields
+        Map<String, Object> strippedPo = stripPurchaseOrder(po);
+
         return VfsDocumentContext.builder()
                 .companyId(po.getCompanyId())
                 .poNumber(po.getDisplayId())
                 .documentId("po")
                 .documentType(DocumentType.PURCHASE_ORDER)
-                .content(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(po))
+                .content(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(strippedPo))
                 .build();
+    }
+
+    /**
+     * Strip unnecessary metadata from PurchaseOrder for AI comparison.
+     * Keeps only fields needed for document matching.
+     */
+    private Map<String, Object> stripPurchaseOrder(PurchaseOrder po) {
+        Map<String, Object> stripped = new LinkedHashMap<>();
+
+        // Keep essential identifiers
+        stripped.put("displayId", po.getDisplayId());
+
+        // Keep dates for context
+        if (po.getOrderDate() != null) stripped.put("orderDate", po.getOrderDate().toString());
+        if (po.getDueDate() != null) stripped.put("dueDate", po.getDueDate().toString());
+
+        // Keep currency
+        if (po.getCurrencyCode() != null) stripped.put("currencyCode", po.getCurrencyCode().name());
+
+        // Keep contacts with stripped metadata
+        if (po.getVendorContact() != null) {
+            stripped.put("vendorContact", stripParty(po.getVendorContact()));
+        }
+        if (po.getShipToContact() != null) {
+            stripped.put("shipToContact", stripParty(po.getShipToContact()));
+        }
+
+        // Keep items with stripped metadata
+        if (po.getItems() != null && !po.getItems().isEmpty()) {
+            List<Map<String, Object>> strippedItems = po.getItems().stream()
+                    .map(this::stripPurchaseOrderItem)
+                    .collect(Collectors.toList());
+            stripped.put("items", strippedItems);
+        }
+
+        return stripped;
+    }
+
+    /**
+     * Strip unnecessary fields from Party (vendor/shipTo contact).
+     */
+    private Map<String, Object> stripParty(Party party) {
+        Map<String, Object> stripped = new LinkedHashMap<>();
+
+        // Keep only comparison-relevant fields
+        if (party.getName() != null) stripped.put("name", party.getName());
+        if (party.getEmail() != null) stripped.put("email", party.getEmail());
+        if (party.getPhone() != null) stripped.put("phone", party.getPhone());
+
+        // Keep address details
+        Address address = party.getAddress();
+        if (address != null) {
+            Map<String, Object> strippedAddress = new LinkedHashMap<>();
+            if (address.getAddress() != null) strippedAddress.put("address", address.getAddress());
+            if (address.getCity() != null) strippedAddress.put("city", address.getCity());
+            if (address.getStateOrProvince() != null) strippedAddress.put("stateOrProvince", address.getStateOrProvince());
+            if (address.getPostalCode() != null) strippedAddress.put("postalCode", address.getPostalCode());
+            if (address.getCountry() != null) strippedAddress.put("country", address.getCountry());
+            if (!strippedAddress.isEmpty()) {
+                stripped.put("address", strippedAddress);
+            }
+        }
+
+        return stripped;
+    }
+
+    /**
+     * Strip unnecessary fields from PurchaseOrderItem.
+     */
+    private Map<String, Object> stripPurchaseOrderItem(PurchaseOrderItem item) {
+        Map<String, Object> stripped = new LinkedHashMap<>();
+
+        // Keep only comparison-relevant fields
+        if (item.getName() != null) stripped.put("name", item.getName());
+        if (item.getQuantity() != null) stripped.put("quantity", item.getQuantity());
+        if (item.getUnit() != null) stripped.put("unit", item.getUnit());
+        if (item.getUnitPrice() != null) stripped.put("unitPrice", item.getUnitPrice());
+        if (item.getTotalPrice() != null) stripped.put("totalPrice", item.getTotalPrice());
+
+        // Omit: id, taxable, expectedDeliveryDate, deliveryStatus, notes, metadata,
+        // itemId, accountId, externalItemId, externalAccountId
+
+        return stripped;
     }
 }

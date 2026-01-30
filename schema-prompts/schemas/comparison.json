@@ -97,6 +97,14 @@
           "type": ["integer", "null"],
           "description": "Zero-based index of the matching line item in the PO, or null if no match found (only for type='line_item')"
         },
+        "exactFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Field names with exact matches (no comparison details needed). List only the field names, not full comparison objects. This reduces output size.",
+          "examples": [["Description", "Quantity"], ["Name", "Address", "City"]]
+        },
         "comparisons": {
           "type": "array",
           "description": "Field-by-field comparisons with human-readable values and explanations. Each entry shows exactly what was compared and why.",
