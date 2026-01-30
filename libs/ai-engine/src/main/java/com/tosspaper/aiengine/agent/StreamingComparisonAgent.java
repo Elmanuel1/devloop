@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -134,8 +135,9 @@ public class StreamingComparisonAgent {
         // Create a sink for emitting events
         Sinks.Many<ComparisonEvent> sink = Sinks.many().multicast().onBackpressureBuffer();
 
-        // Execute comparison in background
+        // Execute comparison on a separate thread so events can be delivered immediately
         executeComparisonAsync(context, sink)
+                .subscribeOn(Schedulers.boundedElastic())
                 .doOnError(error -> {
                     log.error("Streaming comparison failed", error);
                     sink.tryEmitNext(ComparisonEvent.Error.of(error.getMessage()));
