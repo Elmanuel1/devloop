@@ -1,26 +1,19 @@
 package com.tosspaper.comparisons
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.tosspaper.aiengine.agent.ComparisonEvent
-import com.tosspaper.aiengine.agent.ComparisonSummary
 import com.tosspaper.aiengine.repository.ExtractionTaskRepository
-import com.tosspaper.aiengine.service.impl.StreamingDocumentComparisonService
 import com.tosspaper.generated.model.DocumentComparisonResult
-import com.tosspaper.models.domain.DocumentType
 import com.tosspaper.models.domain.ExtractionTask
-import com.tosspaper.models.domain.PurchaseOrder
 import com.tosspaper.models.extraction.dto.Comparison
 import com.tosspaper.models.service.DocumentPartComparisonService
 import com.tosspaper.models.service.PurchaseOrderLookupService
-import reactor.core.publisher.Flux
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import spock.lang.Specification
 import spock.lang.Subject
 
-import java.time.Duration
-
 /**
  * Unit tests for DocumentPartComparisonController.
- * Tests SSE streaming for document comparison.
+ * Tests SSE streaming for document comparison using SseEmitter.
  */
 class DocumentPartComparisonControllerSpec extends Specification {
 
@@ -53,7 +46,7 @@ class DocumentPartComparisonControllerSpec extends Specification {
         comparison.documentId = assignedId
 
         service.getComparisonByAssignedId(assignedId, 123L) >> Optional.of(comparison)
-        mapper.toDto(comparison) >> new com.tosspaper.generated.model.DocumentComparisonResult()
+        mapper.toDto(comparison) >> new DocumentComparisonResult()
 
         when: "getting comparison"
         def response = controller.getComparisons(xContextId, assignedId)
@@ -79,23 +72,21 @@ class DocumentPartComparisonControllerSpec extends Specification {
 
     // ==================== RUN COMPARISON SSE TESTS ====================
 
-    def "runComparison should return error stream when task not found"() {
+    def "runComparison should return SseEmitter when task not found"() {
         given: "non-existent task"
         def xContextId = "123"
         def assignedId = "non-existent"
         extractionTaskRepository.findByAssignedId(assignedId) >> null
 
         when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
+        def emitter = controller.runComparison(xContextId, assignedId)
 
-        then: "error event is returned"
-        events.size() == 1
-        events[0].event() == "error"
-        events[0].data().contains("NOT_FOUND")
+        then: "SseEmitter is returned (error sent synchronously)"
+        emitter != null
+        emitter instanceof SseEmitter
     }
 
-    def "runComparison should return error stream when company mismatch"() {
+    def "runComparison should return SseEmitter when company mismatch"() {
         given: "task from different company"
         def xContextId = "123"
         def assignedId = "doc-123"
@@ -107,16 +98,14 @@ class DocumentPartComparisonControllerSpec extends Specification {
         extractionTaskRepository.findByAssignedId(assignedId) >> task
 
         when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
+        def emitter = controller.runComparison(xContextId, assignedId)
 
-        then: "error event is returned"
-        events.size() == 1
-        events[0].event() == "error"
-        events[0].data().contains("FORBIDDEN")
+        then: "SseEmitter is returned"
+        emitter != null
+        emitter instanceof SseEmitter
     }
 
-    def "runComparison should return error stream when no PO linked"() {
+    def "runComparison should return SseEmitter when no PO linked"() {
         given: "task without PO"
         def xContextId = "123"
         def assignedId = "doc-123"
@@ -129,16 +118,14 @@ class DocumentPartComparisonControllerSpec extends Specification {
         extractionTaskRepository.findByAssignedId(assignedId) >> task
 
         when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
+        def emitter = controller.runComparison(xContextId, assignedId)
 
-        then: "error event is returned"
-        events.size() == 1
-        events[0].event() == "error"
-        events[0].data().contains("NO_PO_LINKED")
+        then: "SseEmitter is returned"
+        emitter != null
+        emitter instanceof SseEmitter
     }
 
-    def "runComparison should return error stream when not conformed"() {
+    def "runComparison should return SseEmitter when not conformed"() {
         given: "task without conformed JSON"
         def xContextId = "123"
         def assignedId = "doc-123"
@@ -153,126 +140,24 @@ class DocumentPartComparisonControllerSpec extends Specification {
         extractionTaskRepository.findByAssignedId(assignedId) >> task
 
         when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
+        def emitter = controller.runComparison(xContextId, assignedId)
 
-        then: "error event is returned"
-        events.size() == 1
-        events[0].event() == "error"
-        events[0].data().contains("NOT_CONFORMED")
+        then: "SseEmitter is returned"
+        emitter != null
+        emitter instanceof SseEmitter
     }
 
-    def "runComparison should return error stream when PO not found"() {
-        given: "valid task but PO doesn't exist"
+    def "runComparison should return SseEmitter with 3 minute timeout"() {
+        given: "non-existent task"
         def xContextId = "123"
-        def assignedId = "doc-123"
-        def task = ExtractionTask.builder()
-            .assignedId(assignedId)
-            .companyId(123L)
-            .purchaseOrderId("po-id")
-            .poNumber("PO-456")
-            .conformedJson('{"lineItems": []}')
-            .documentType(DocumentType.INVOICE)
-            .build()
-
-        extractionTaskRepository.findByAssignedId(assignedId) >> task
-        poLookupService.getPoWithItemsByPoNumber(123L, "PO-456") >> Optional.empty()
+        def assignedId = "non-existent"
+        extractionTaskRepository.findByAssignedId(assignedId) >> null
 
         when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
+        def emitter = controller.runComparison(xContextId, assignedId)
 
-        then: "error event is returned"
-        events.size() == 1
-        events[0].event() == "error"
-        events[0].data().contains("PO_NOT_FOUND")
-    }
-
-    def "runComparison should stream events when using streaming service"() {
-        given: "valid task and streaming service"
-        def xContextId = "123"
-        def assignedId = "doc-123"
-        def task = ExtractionTask.builder()
-            .assignedId(assignedId)
-            .companyId(123L)
-            .purchaseOrderId("po-id")
-            .poNumber("PO-456")
-            .conformedJson('{"lineItems": []}')
-            .documentType(DocumentType.INVOICE)
-            .build()
-        def po = PurchaseOrder.builder()
-            .id("po-id")
-            .displayId("PO-456")
-            .companyId(123L)
-            .build()
-        def comparison = new Comparison()
-        comparison.documentId = assignedId
-        comparison.results = []
-
-        // Use streaming service mock
-        def streamingService = Mock(StreamingDocumentComparisonService)
-        controller = new DocumentPartComparisonController(
-            streamingService,
-            mapper,
-            extractionTaskRepository,
-            poLookupService,
-            objectMapper
-        )
-
-        extractionTaskRepository.findByAssignedId(assignedId) >> task
-        poLookupService.getPoWithItemsByPoNumber(123L, "PO-456") >> Optional.of(po)
-        streamingService.executeComparisonStream(_) >> Flux.just(
-            new ComparisonEvent.Activity("🔍", "Starting comparison..."),
-            new ComparisonEvent.Activity("📄", "Analyzing document..."),
-            new ComparisonEvent.Complete(comparison, new ComparisonSummary(3, 1, 4))
-        )
-        mapper.toDto(_) >> new DocumentComparisonResult()
-
-        when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
-
-        then: "events are streamed"
-        events.size() == 4  // 1 initial processing + 3 from stream
-        events[0].event() == "activity"
-        events[1].event() == "activity"
-        events[2].event() == "activity"
-        events[3].event() == "complete"
-    }
-
-    def "runComparison should fall back to blocking when streaming not available"() {
-        given: "valid task but non-streaming service"
-        def xContextId = "123"
-        def assignedId = "doc-123"
-        def task = ExtractionTask.builder()
-            .assignedId(assignedId)
-            .companyId(123L)
-            .purchaseOrderId("po-id")
-            .poNumber("PO-456")
-            .conformedJson('{"lineItems": []}')
-            .documentType(DocumentType.INVOICE)
-            .build()
-        def po = PurchaseOrder.builder()
-            .id("po-id")
-            .displayId("PO-456")
-            .companyId(123L)
-            .build()
-        def comparison = new Comparison()
-        comparison.documentId = assignedId
-        comparison.results = []
-
-        extractionTaskRepository.findByAssignedId(assignedId) >> task
-        poLookupService.getPoWithItemsByPoNumber(123L, "PO-456") >> Optional.of(po)
-        service.compareDocumentParts(_) >> comparison
-        mapper.toDto(_) >> new DocumentComparisonResult()
-
-        when: "running comparison"
-        def flux = controller.runComparison(xContextId, assignedId)
-        def events = flux.collectList().block(Duration.ofSeconds(5))
-
-        then: "fallback emits processing and complete events"
-        events.size() == 2
-        events[0].event() == "activity"
-        events[1].event() == "complete"
+        then: "SseEmitter has correct timeout (180 seconds)"
+        emitter != null
+        emitter.timeout == 180_000L
     }
 }

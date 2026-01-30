@@ -1,6 +1,5 @@
 package com.tosspaper.comparisons;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.aiengine.agent.ComparisonEvent;
 import com.tosspaper.aiengine.repository.ExtractionTaskRepository;
@@ -16,10 +15,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Controller for document part comparison operations.
@@ -53,6 +55,8 @@ public class DocumentPartComparisonController {
     private final PurchaseOrderLookupService poLookupService;
     private final ObjectMapper objectMapper;
 
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+
     /**
      * Get comparison results for a document.
      */
@@ -82,11 +86,7 @@ public class DocumentPartComparisonController {
      * Run comparison with SSE streaming progress.
      *
      * <p>Returns a Server-Sent Events stream with real-time progress updates.
-     * The comparison runs synchronously on the server, but progress events are
-     * streamed to provide feedback during the ~10-30 second operation.
-     *
-     * <p>If the client disconnects, the comparison continues running and the
-     * result is saved to the database. The client can fetch results later via GET.
+     * Uses SseEmitter for proper flushing in Spring MVC.
      *
      * @param xContextId Company context header
      * @param assignedId Extraction task assigned ID
@@ -94,11 +94,14 @@ public class DocumentPartComparisonController {
      */
     @PostMapping(value = "/{assignedId}/", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @PreAuthorize("hasPermission(#xContextId, 'company', 'documents:edit')")
-    public Flux<ServerSentEvent<String>> runComparison(
+    public SseEmitter runComparison(
             @RequestHeader("X-Context-Id") String xContextId,
             @PathVariable String assignedId) {
 
         log.info("POST /v1/comparisons/{}/  (SSE stream)", assignedId);
+
+        // 3 minute timeout for long AI comparisons
+        SseEmitter emitter = new SseEmitter(180_000L);
 
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
 
@@ -106,134 +109,157 @@ public class DocumentPartComparisonController {
         ExtractionTask task = extractionTaskRepository.findByAssignedId(assignedId);
         if (task == null) {
             log.warn("Extraction task not found: {}", assignedId);
-            return errorStream("NOT_FOUND", "Document not found");
+            sendErrorAndComplete(emitter, "NOT_FOUND", "Document not found");
+            return emitter;
         }
 
         if (!task.getCompanyId().equals(companyId)) {
             log.warn("Company mismatch for task: {} (expected={}, actual={})",
                     assignedId, companyId, task.getCompanyId());
-            return errorStream("FORBIDDEN", "Access denied");
+            sendErrorAndComplete(emitter, "FORBIDDEN", "Access denied");
+            return emitter;
         }
 
         if (task.getPurchaseOrderId() == null || task.getPurchaseOrderId().isBlank()) {
             log.warn("No PO linked for task: {}", assignedId);
-            return errorStream("NO_PO_LINKED", "No purchase order linked to this document");
+            sendErrorAndComplete(emitter, "NO_PO_LINKED", "No purchase order linked to this document");
+            return emitter;
         }
 
         if (task.getConformedJson() == null || task.getConformedJson().isBlank()) {
             log.warn("Document not conformed: {}", assignedId);
-            return errorStream("NOT_CONFORMED", "Document has not been conformed yet");
+            sendErrorAndComplete(emitter, "NOT_CONFORMED", "Document has not been conformed yet");
+            return emitter;
         }
 
-        // Check if service is streaming-capable
-        if (!(service instanceof StreamingDocumentComparisonService streamingService)) {
-            log.info("Streaming not enabled, falling back to blocking comparison");
-            return executeBlockingComparison(task, companyId);
-        }
+        // Execute comparison in background thread
+        executor.execute(() -> {
+            try {
+                // Send immediate feedback
+                sendEvent(emitter, "activity", ComparisonEvent.Activity.processing());
 
-        // Look up PO and execute streaming comparison
-        return poLookupService.getPoWithItemsByPoNumber(companyId, task.getPoNumber())
-                .map(po -> {
-                    ComparisonContext context = new ComparisonContext(po, task);
+                // Check if service is streaming-capable
+                if (service instanceof StreamingDocumentComparisonService streamingService) {
+                    executeStreamingComparison(emitter, streamingService, task, companyId, assignedId);
+                } else {
+                    executeBlockingComparison(emitter, task, companyId);
+                }
+            } catch (Exception e) {
+                log.error("Comparison failed: assignedId={}", assignedId, e);
+                sendErrorAndComplete(emitter, "COMPARISON_FAILED", e.getMessage());
+            }
+        });
 
-                    return Flux.concat(
-                            // Immediate feedback
-                            Flux.just(toServerSentEvent(
-                                    ComparisonEvent.Activity.processing())),
+        // Handle client disconnect
+        emitter.onCompletion(() -> log.debug("SSE completed: assignedId={}", assignedId));
+        emitter.onTimeout(() -> log.warn("SSE timeout: assignedId={}", assignedId));
+        emitter.onError(e -> log.error("SSE error: assignedId={}", assignedId, e));
 
-                            // Stream comparison events
+        return emitter;
+    }
+
+    /**
+     * Execute streaming comparison and emit events.
+     */
+    private void executeStreamingComparison(
+            SseEmitter emitter,
+            StreamingDocumentComparisonService streamingService,
+            ExtractionTask task,
+            Long companyId,
+            String assignedId) {
+
+        poLookupService.getPoWithItemsByPoNumber(companyId, task.getPoNumber())
+                .ifPresentOrElse(
+                        po -> {
+                            ComparisonContext context = new ComparisonContext(po, task);
+
                             streamingService.executeComparisonStream(context)
-                                    .map(this::toServerSentEvent)
-                                    .doOnError(error -> log.error(
-                                            "Streaming comparison error: assignedId={}",
-                                            assignedId, error))
-                                    .doOnComplete(() -> log.info(
-                                            "Streaming comparison completed: assignedId={}",
-                                            assignedId))
-                    );
-                })
-                .orElseGet(() -> {
-                    log.error("PO not found for task: {} (poNumber={})", assignedId, task.getPoNumber());
-                    return errorStream("PO_NOT_FOUND", "Purchase order not found: " + task.getPoNumber());
-                });
+                                    .doOnNext(event -> sendEvent(emitter, event))
+                                    .doOnError(error -> {
+                                        log.error("Streaming comparison error: assignedId={}", assignedId, error);
+                                        sendErrorAndComplete(emitter, "COMPARISON_FAILED", error.getMessage());
+                                    })
+                                    .doOnComplete(() -> {
+                                        log.info("Streaming comparison completed: assignedId={}", assignedId);
+                                        emitter.complete();
+                                    })
+                                    .subscribe();
+                        },
+                        () -> {
+                            log.error("PO not found for task: {} (poNumber={})", assignedId, task.getPoNumber());
+                            sendErrorAndComplete(emitter, "PO_NOT_FOUND", "Purchase order not found: " + task.getPoNumber());
+                        }
+                );
     }
 
     /**
-     * Fallback for non-streaming service: run blocking comparison and emit complete event.
+     * Execute blocking comparison and emit complete event.
      */
-    private Flux<ServerSentEvent<String>> executeBlockingComparison(
-            ExtractionTask task, Long companyId) {
-
-        return poLookupService.getPoWithItemsByPoNumber(companyId, task.getPoNumber())
-                .map(po -> {
-                    ComparisonContext context = new ComparisonContext(po, task);
-
-                    return Flux.concat(
-                            Flux.just(toServerSentEvent(
-                                    ComparisonEvent.Activity.processing())),
-
-                            Flux.<ComparisonEvent>create(sink -> {
-                                try {
-                                    Comparison result = service.compareDocumentParts(context);
-                                    sink.next(ComparisonEvent.Complete.of(result));
-                                    sink.complete();
-                                } catch (Exception e) {
-                                    log.error("Blocking comparison failed", e);
-                                    sink.next(ComparisonEvent.Error.of(e.getMessage()));
-                                    sink.complete();
-                                }
-                            }).map(this::toServerSentEvent)
-                    );
-                })
-                .orElseGet(() -> errorStream("PO_NOT_FOUND", "Purchase order not found"));
+    private void executeBlockingComparison(SseEmitter emitter, ExtractionTask task, Long companyId) {
+        poLookupService.getPoWithItemsByPoNumber(companyId, task.getPoNumber())
+                .ifPresentOrElse(
+                        po -> {
+                            try {
+                                ComparisonContext context = new ComparisonContext(po, task);
+                                Comparison result = service.compareDocumentParts(context);
+                                sendEvent(emitter, ComparisonEvent.Complete.of(result));
+                                emitter.complete();
+                            } catch (Exception e) {
+                                log.error("Blocking comparison failed", e);
+                                sendErrorAndComplete(emitter, "COMPARISON_FAILED", e.getMessage());
+                            }
+                        },
+                        () -> sendErrorAndComplete(emitter, "PO_NOT_FOUND", "Purchase order not found")
+                );
     }
 
     /**
-     * Create an error SSE stream.
+     * Send an event through the SSE emitter.
      */
-    private Flux<ServerSentEvent<String>> errorStream(String code, String message) {
-        String json = String.format("{\"message\":\"%s\",\"code\":\"%s\"}",
-                message.replace("\"", "\\\""), code);
-        return Flux.just(ServerSentEvent.<String>builder()
-                .event("error")
-                .data(json)
-                .build());
+    private void sendEvent(SseEmitter emitter, ComparisonEvent event) {
+        String eventType = switch (event) {
+            case ComparisonEvent.Activity a -> "activity";
+            case ComparisonEvent.Thinking t -> "thinking";
+            case ComparisonEvent.Finding f -> "finding";
+            case ComparisonEvent.Complete c -> "complete";
+            case ComparisonEvent.Error e -> "error";
+        };
+
+        Object data = event instanceof ComparisonEvent.Complete c
+                ? mapper.toDto(c.result())
+                : event;
+
+        sendEvent(emitter, eventType, data);
     }
 
     /**
-     * Convert a ComparisonEvent to a ServerSentEvent with the appropriate event type.
-     * For Complete events, sends JSON string of DocumentComparisonResult (same as GET endpoint).
+     * Send a typed event through the SSE emitter.
      */
-    private ServerSentEvent<String> toServerSentEvent(ComparisonEvent event) {
+    private void sendEvent(SseEmitter emitter, String eventType, Object data) {
         try {
-            return switch (event) {
-                case ComparisonEvent.Activity a -> ServerSentEvent.<String>builder()
-                        .event("activity")
-                        .data(objectMapper.writeValueAsString(a))
-                        .build();
-                case ComparisonEvent.Thinking t -> ServerSentEvent.<String>builder()
-                        .event("thinking")
-                        .data(objectMapper.writeValueAsString(t))
-                        .build();
-                case ComparisonEvent.Finding f -> ServerSentEvent.<String>builder()
-                        .event("finding")
-                        .data(objectMapper.writeValueAsString(f))
-                        .build();
-                case ComparisonEvent.Complete c -> ServerSentEvent.<String>builder()
-                        .event("complete")
-                        .data(objectMapper.writeValueAsString(mapper.toDto(c.result())))
-                        .build();
-                case ComparisonEvent.Error e -> ServerSentEvent.<String>builder()
-                        .event("error")
-                        .data(objectMapper.writeValueAsString(e))
-                        .build();
-            };
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize SSE event", e);
-            return ServerSentEvent.<String>builder()
-                    .event("error")
-                    .data("{\"message\":\"Serialization error\",\"code\":\"SERIALIZATION_ERROR\"}")
-                    .build();
+            String json = objectMapper.writeValueAsString(data);
+            emitter.send(SseEmitter.event()
+                    .name(eventType)
+                    .data(json, MediaType.APPLICATION_JSON));
+        } catch (IOException e) {
+            log.warn("Failed to send SSE event: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Send an error event and complete the emitter.
+     */
+    private void sendErrorAndComplete(SseEmitter emitter, String code, String message) {
+        try {
+            String json = String.format("{\"message\":\"%s\",\"code\":\"%s\"}",
+                    message.replace("\"", "\\\""), code);
+            emitter.send(SseEmitter.event()
+                    .name("error")
+                    .data(json, MediaType.APPLICATION_JSON));
+            emitter.complete();
+        } catch (IOException e) {
+            log.warn("Failed to send error SSE event: {}", e.getMessage());
+            emitter.completeWithError(e);
         }
     }
 }
