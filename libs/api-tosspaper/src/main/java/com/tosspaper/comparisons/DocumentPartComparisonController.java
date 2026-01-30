@@ -22,6 +22,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Controller for document part comparison operations.
@@ -102,6 +103,7 @@ public class DocumentPartComparisonController {
 
         // 3 minute timeout for long AI comparisons
         SseEmitter emitter = new SseEmitter(180_000L);
+        AtomicBoolean emitterActive = new AtomicBoolean(true);
 
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
 
@@ -109,26 +111,26 @@ public class DocumentPartComparisonController {
         ExtractionTask task = extractionTaskRepository.findByAssignedId(assignedId);
         if (task == null) {
             log.warn("Extraction task not found: {}", assignedId);
-            sendErrorAndComplete(emitter, "NOT_FOUND", "Document not found");
+            sendErrorAndComplete(emitter, emitterActive, "NOT_FOUND", "Document not found");
             return emitter;
         }
 
         if (!task.getCompanyId().equals(companyId)) {
             log.warn("Company mismatch for task: {} (expected={}, actual={})",
                     assignedId, companyId, task.getCompanyId());
-            sendErrorAndComplete(emitter, "FORBIDDEN", "Access denied");
+            sendErrorAndComplete(emitter, emitterActive, "FORBIDDEN", "Access denied");
             return emitter;
         }
 
         if (task.getPurchaseOrderId() == null || task.getPurchaseOrderId().isBlank()) {
             log.warn("No PO linked for task: {}", assignedId);
-            sendErrorAndComplete(emitter, "NO_PO_LINKED", "No purchase order linked to this document");
+            sendErrorAndComplete(emitter, emitterActive, "NO_PO_LINKED", "No purchase order linked to this document");
             return emitter;
         }
 
         if (task.getConformedJson() == null || task.getConformedJson().isBlank()) {
             log.warn("Document not conformed: {}", assignedId);
-            sendErrorAndComplete(emitter, "NOT_CONFORMED", "Document has not been conformed yet");
+            sendErrorAndComplete(emitter, emitterActive, "NOT_CONFORMED", "Document has not been conformed yet");
             return emitter;
         }
 
@@ -136,24 +138,33 @@ public class DocumentPartComparisonController {
         executor.execute(() -> {
             try {
                 // Send immediate feedback
-                sendEvent(emitter, "activity", ComparisonEvent.Activity.processing());
+                sendEvent(emitter, emitterActive, "activity", ComparisonEvent.Activity.processing());
 
                 // Check if service is streaming-capable
                 if (service instanceof StreamingDocumentComparisonService streamingService) {
-                    executeStreamingComparison(emitter, streamingService, task, companyId, assignedId);
+                    executeStreamingComparison(emitter, emitterActive, streamingService, task, companyId, assignedId);
                 } else {
-                    executeBlockingComparison(emitter, task, companyId);
+                    executeBlockingComparison(emitter, emitterActive, task, companyId);
                 }
             } catch (Exception e) {
                 log.error("Comparison failed: assignedId={}", assignedId, e);
-                sendErrorAndComplete(emitter, "COMPARISON_FAILED", e.getMessage());
+                sendErrorAndComplete(emitter, emitterActive, "COMPARISON_FAILED", e.getMessage());
             }
         });
 
-        // Handle client disconnect
-        emitter.onCompletion(() -> log.debug("SSE completed: assignedId={}", assignedId));
-        emitter.onTimeout(() -> log.warn("SSE timeout: assignedId={}", assignedId));
-        emitter.onError(e -> log.error("SSE error: assignedId={}", assignedId, e));
+        // Handle client disconnect - mark emitter as inactive
+        emitter.onCompletion(() -> {
+            emitterActive.set(false);
+            log.debug("SSE completed: assignedId={}", assignedId);
+        });
+        emitter.onTimeout(() -> {
+            emitterActive.set(false);
+            log.warn("SSE timeout: assignedId={}", assignedId);
+        });
+        emitter.onError(e -> {
+            emitterActive.set(false);
+            log.debug("SSE client disconnected: assignedId={}", assignedId);
+        });
 
         return emitter;
     }
@@ -163,6 +174,7 @@ public class DocumentPartComparisonController {
      */
     private void executeStreamingComparison(
             SseEmitter emitter,
+            AtomicBoolean emitterActive,
             StreamingDocumentComparisonService streamingService,
             ExtractionTask task,
             Long companyId,
@@ -174,20 +186,20 @@ public class DocumentPartComparisonController {
                             ComparisonContext context = new ComparisonContext(po, task);
 
                             streamingService.executeComparisonStream(context)
-                                    .doOnNext(event -> sendEvent(emitter, event))
+                                    .doOnNext(event -> sendEvent(emitter, emitterActive, event))
                                     .doOnError(error -> {
                                         log.error("Streaming comparison error: assignedId={}", assignedId, error);
-                                        sendErrorAndComplete(emitter, "COMPARISON_FAILED", error.getMessage());
+                                        sendErrorAndComplete(emitter, emitterActive, "COMPARISON_FAILED", error.getMessage());
                                     })
                                     .doOnComplete(() -> {
                                         log.info("Streaming comparison completed: assignedId={}", assignedId);
-                                        emitter.complete();
+                                        completeEmitter(emitter, emitterActive);
                                     })
                                     .subscribe();
                         },
                         () -> {
                             log.error("PO not found for task: {} (poNumber={})", assignedId, task.getPoNumber());
-                            sendErrorAndComplete(emitter, "PO_NOT_FOUND", "Purchase order not found: " + task.getPoNumber());
+                            sendErrorAndComplete(emitter, emitterActive, "PO_NOT_FOUND", "Purchase order not found: " + task.getPoNumber());
                         }
                 );
     }
@@ -195,28 +207,28 @@ public class DocumentPartComparisonController {
     /**
      * Execute blocking comparison and emit complete event.
      */
-    private void executeBlockingComparison(SseEmitter emitter, ExtractionTask task, Long companyId) {
+    private void executeBlockingComparison(SseEmitter emitter, AtomicBoolean emitterActive, ExtractionTask task, Long companyId) {
         poLookupService.getPoWithItemsByPoNumber(companyId, task.getPoNumber())
                 .ifPresentOrElse(
                         po -> {
                             try {
                                 ComparisonContext context = new ComparisonContext(po, task);
                                 Comparison result = service.compareDocumentParts(context);
-                                sendEvent(emitter, ComparisonEvent.Complete.of(result));
-                                emitter.complete();
+                                sendEvent(emitter, emitterActive, ComparisonEvent.Complete.of(result));
+                                completeEmitter(emitter, emitterActive);
                             } catch (Exception e) {
                                 log.error("Blocking comparison failed", e);
-                                sendErrorAndComplete(emitter, "COMPARISON_FAILED", e.getMessage());
+                                sendErrorAndComplete(emitter, emitterActive, "COMPARISON_FAILED", e.getMessage());
                             }
                         },
-                        () -> sendErrorAndComplete(emitter, "PO_NOT_FOUND", "Purchase order not found")
+                        () -> sendErrorAndComplete(emitter, emitterActive, "PO_NOT_FOUND", "Purchase order not found")
                 );
     }
 
     /**
      * Send an event through the SSE emitter.
      */
-    private void sendEvent(SseEmitter emitter, ComparisonEvent event) {
+    private void sendEvent(SseEmitter emitter, AtomicBoolean emitterActive, ComparisonEvent event) {
         String eventType = switch (event) {
             case ComparisonEvent.Activity a -> "activity";
             case ComparisonEvent.Thinking t -> "thinking";
@@ -229,27 +241,36 @@ public class DocumentPartComparisonController {
                 ? mapper.toDto(c.result())
                 : event;
 
-        sendEvent(emitter, eventType, data);
+        sendEvent(emitter, emitterActive, eventType, data);
     }
 
     /**
      * Send a typed event through the SSE emitter.
      */
-    private void sendEvent(SseEmitter emitter, String eventType, Object data) {
+    private void sendEvent(SseEmitter emitter, AtomicBoolean emitterActive, String eventType, Object data) {
+        if (!emitterActive.get()) {
+            log.debug("Skipping SSE event (client disconnected): {}", eventType);
+            return;
+        }
         try {
             String json = objectMapper.writeValueAsString(data);
             emitter.send(SseEmitter.event()
                     .name(eventType)
                     .data(json, MediaType.APPLICATION_JSON));
-        } catch (IOException e) {
-            log.warn("Failed to send SSE event: {}", e.getMessage());
+        } catch (IOException | IllegalStateException e) {
+            emitterActive.set(false);
+            log.debug("Client disconnected during SSE send: {}", e.getMessage());
         }
     }
 
     /**
      * Send an error event and complete the emitter.
      */
-    private void sendErrorAndComplete(SseEmitter emitter, String code, String message) {
+    private void sendErrorAndComplete(SseEmitter emitter, AtomicBoolean emitterActive, String code, String message) {
+        if (!emitterActive.get()) {
+            log.debug("Skipping error event (client disconnected): {}", code);
+            return;
+        }
         try {
             String json = String.format("{\"message\":\"%s\",\"code\":\"%s\"}",
                     message.replace("\"", "\\\""), code);
@@ -257,9 +278,26 @@ public class DocumentPartComparisonController {
                     .name("error")
                     .data(json, MediaType.APPLICATION_JSON));
             emitter.complete();
-        } catch (IOException e) {
-            log.warn("Failed to send error SSE event: {}", e.getMessage());
-            emitter.completeWithError(e);
+            emitterActive.set(false);
+        } catch (IOException | IllegalStateException e) {
+            emitterActive.set(false);
+            log.debug("Client disconnected during error send: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Complete the emitter safely.
+     */
+    private void completeEmitter(SseEmitter emitter, AtomicBoolean emitterActive) {
+        if (!emitterActive.get()) {
+            return;
+        }
+        try {
+            emitter.complete();
+            emitterActive.set(false);
+        } catch (IllegalStateException e) {
+            emitterActive.set(false);
+            log.debug("Emitter already completed: {}", e.getMessage());
         }
     }
 }
