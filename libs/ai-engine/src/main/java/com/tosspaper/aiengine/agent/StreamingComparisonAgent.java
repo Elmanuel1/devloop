@@ -25,6 +25,10 @@ import reactor.core.scheduler.Schedulers;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Streaming comparison agent using Spring AI ChatClient.
@@ -178,13 +182,29 @@ public class StreamingComparisonAgent {
 
             log.debug("Executing ChatClient with prompt length: {}", prompt.length());
 
-            // Get raw content and normalize enum values (AI returns MATCHED, schema expects matched)
-            // Pass working directory to advisor for audit logging
-            String rawJson = chatClient.prompt()
-                    .user(prompt)
-                    .advisors(advisor -> advisor.param(ComparisonAuditAdvisor.WORKING_DIR_KEY, workingDir))
-                    .call()
-                    .content();
+            // Start keepalive scheduler - sends activity events every 30s to prevent ALB timeout
+            AtomicBoolean aiComplete = new AtomicBoolean(false);
+            String rawJson;
+
+            try (ScheduledExecutorService keepalive = Executors.newSingleThreadScheduledExecutor()) {
+                keepalive.scheduleAtFixedRate(() -> {
+                    if (!aiComplete.get()) {
+                        log.debug("Sending keepalive ping during AI analysis");
+                        sink.tryEmitNext(new ComparisonEvent.Activity("⏳", "Waiting for comparison report..."));
+                    }
+                }, 30, 30, TimeUnit.SECONDS);
+
+                // Get raw content and normalize enum values (AI returns MATCHED, schema expects matched)
+                // Pass working directory to advisor for audit logging
+                // BLOCKING AI CALL (60-90s)
+                rawJson = chatClient.prompt()
+                        .user(prompt)
+                        .advisors(advisor -> advisor.param(ComparisonAuditAdvisor.WORKING_DIR_KEY, workingDir))
+                        .call()
+                        .content();
+
+                aiComplete.set(true);
+            }
 
             // Extract JSON from response (may be wrapped in markdown code blocks)
             String json = extractJson(rawJson);
