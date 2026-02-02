@@ -69,13 +69,53 @@ public class ComparisonChatClientConfig {
     @Value("${ai.comparison.anthropic.model:claude-sonnet-4-20250514}")
     private String anthropicModel;
 
+    @Value("${ai.comparison.validation.model:gpt-4o-mini}")
+    private String validationModel;
+
+    /**
+     * Small/fast model for validation checks.
+     * Uses gpt-4o-mini by default for cost efficiency.
+     */
+    @Bean
+    @Qualifier("validationChatModel")
+    public OpenAiChatModel validationChatModel(ObservationRegistry observationRegistry) {
+        log.info("Creating validation ChatModel: model={}", validationModel);
+
+        OpenAiApi api = OpenAiApi.builder()
+                .baseUrl("https://api.openai.com")
+                .apiKey(new SimpleApiKey(openAiApiKey))
+                .build();
+
+        return OpenAiChatModel.builder()
+                .openAiApi(api)
+                .defaultOptions(OpenAiChatOptions.builder()
+                        .model(validationModel)
+                        .temperature(0.0)
+                        .maxCompletionTokens(100)
+                        .build())
+                .observationRegistry(observationRegistry)
+                .build();
+    }
+
+    /**
+     * ChatClient for validation using smaller model.
+     */
+    @Bean
+    @Qualifier("validationChatClient")
+    public ChatClient validationChatClient(@Qualifier("validationChatModel") OpenAiChatModel chatModel) {
+        log.info("Creating validation ChatClient");
+        return ChatClient.builder(chatModel).build();
+    }
+
     /**
      * Create FileTools bean for AI to read/write files.
      */
     @Bean
-    public FileTools comparisonFileTools(VirtualFilesystemService vfs) {
-        log.info("Creating FileTools for document comparison");
-        return new FileTools(vfs);
+    public FileTools comparisonFileTools(
+            VirtualFilesystemService vfs,
+            @Qualifier("validationChatClient") ChatClient validationChatClient) {
+        log.info("Creating FileTools for document comparison with validation model");
+        return new FileTools(vfs, validationChatClient);
     }
 
     /**
@@ -275,7 +315,8 @@ public class ComparisonChatClientConfig {
 
     /**
      * Build the system prompt for document comparison.
-     * Compressed version (~1,500 tokens vs ~4,000 tokens) with exactFields optimization.
+     * Simplified version for post-hoc validation flow.
+     * Main AI generates comparison freely - validation happens afterwards.
      */
     private String buildSystemPrompt() {
         return """
@@ -285,13 +326,40 @@ public class ComparisonChatClientConfig {
             - readFile(path): Read file contents
             - listDirectory(path): List directory files
             - tavily_search(query): Web search to verify vendor relationships
+            - listPoMatches(): List all recorded PO matches (for reference)
 
             ## WORKFLOW
             1. readFile("po.json") - read purchase order
             2. Check existing docs: listDirectory("invoice"), listDirectory("delivery_slip"), listDirectory("delivery_note")
             3. Read current document (ID in user prompt)
-            4. Compare document vs PO, match line items by description/quantity
+            4. Compare all fields and line items
             5. Output JSON (ONLY - no explanations, no markdown)
+
+            ## LINE ITEM MATCHING
+            Use 0-based indexing (first item = index 0, matching JSON array indices).
+
+            MATCHING CRITERIA - ALL must align for a valid match:
+            1. Item Code: MUST match exactly (if both have item codes)
+            2. Description: MUST be the same product (not just similar text)
+            3. Quantity: Prioritize PO lines with matching or sufficient quantity
+
+            STRICT MATCHING RULES:
+            - If item codes match but descriptions are DIFFERENT PRODUCTS → NOT a match
+              Example: "MONOBASE" vs "HOOP STEEL RISER" = different products, even with same item code
+            - Same item code + same product type + quantity available = VALID match
+            - If no valid match found → poIndex = null (item not in PO = BLOCKING)
+
+            For each document line item:
+            1. Count PO items: poItemCount = po.items.length (valid indices: 0 to N-1)
+            2. Find PO line with matching itemCode AND same product description
+            3. Set poIndex to the matched PO line index (0-based)
+            4. If no match found → poIndex = null
+
+            IMPORTANT:
+            - Each PO line can only match ONE document line
+            - Use 0-based indices (0 to N-1, NOT 1 to N)
+            - Item code match alone is NOT sufficient - description must confirm same product
+            - The system will validate your matches afterwards and correct if needed
 
             ## OUTPUT FORMAT
             {
@@ -308,19 +376,20 @@ public class ComparisonChatClientConfig {
                   "severity": "info|warning|blocking",
                   "extractedIndex": <number, line_item only>,
                   "poIndex": <number|null, line_item only>,
-                  "exactFields": ["Description", "Quantity"],
                   "comparisons": [
+                    { "field": "Description", "poValue": "Widget A", "documentValue": "Widget A", "match": "exact", "isBlocking": false, "explanation": "Descriptions match" },
+                    { "field": "Quantity", "poValue": "10", "documentValue": "10", "match": "exact", "isBlocking": false, "explanation": "Quantities match" },
                     { "field": "Unit Price", "poValue": "USD $28.00", "documentValue": "CAD $28.00", "match": "mismatch", "isBlocking": true, "explanation": "Currency differs" }
                   ]
                 }
               ]
             }
 
-            ## OUTPUT OPTIMIZATION
+            ## OUTPUT REQUIREMENTS
             - Keep ALL results with extractedIndex/poIndex for line item mapping
-            - For each result, list exact-match field names in `exactFields` array (names only)
-            - Only include full comparison objects in `comparisons` for close/mismatch fields
-            - This reduces output size while preserving all needed information
+            - ALWAYS include full comparison objects in `comparisons` for ALL fields (exact, close, mismatch)
+            - Each comparison MUST have: field, poValue, documentValue, match, isBlocking, explanation
+            - Do NOT skip fields or use exactFields shorthand - frontend needs all values
 
             ## BLOCKING RULES
 
@@ -364,7 +433,9 @@ public class ComparisonChatClientConfig {
             ## STATUS/SEVERITY RULES
             - matched: matchScore > 0.9, partial: 0.5-0.9, unmatched: < 0.5
             - info: Cosmetic only, warning: Notable but OK, blocking: Must block approval
-            - blockingIssues = count of RESULTS (not fields) with severity=blocking
+            - blockingIssues = count of RESULTS that have ANY comparison with isBlocking=true
+            - If a line_item has a comparison with isBlocking=true, that result is blocking
+            - Count each blocking RESULT once, not each blocking field
 
             ## FIELDS TO COMPARE
             - VENDOR/SHIP_TO: Name, Address, City, State, Country, Postal, Email, Phone

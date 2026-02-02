@@ -120,11 +120,14 @@ public class VFSContextMapper {
         if (item.getName() != null) stripped.put("name", item.getName());
         if (item.getQuantity() != null) stripped.put("quantity", item.getQuantity());
         if (item.getUnit() != null) stripped.put("unit", item.getUnit());
+        if (item.getUnitCode() != null) stripped.put("unitCode", item.getUnitCode());
         if (item.getUnitPrice() != null) stripped.put("unitPrice", item.getUnitPrice());
         if (item.getTotalPrice() != null) stripped.put("totalPrice", item.getTotalPrice());
 
+        if (item.getItemCode() != null) stripped.put("itemCode", item.getItemCode());
+
         // Omit: id, taxable, expectedDeliveryDate, deliveryStatus, notes, metadata,
-        // itemId, accountId, externalItemId, externalAccountId
+        // itemId, accountId, externalAccountId
 
         return stripped;
     }

@@ -1,7 +1,7 @@
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Install minimal packages needed
-RUN apk add --no-cache curl tini nodejs npm
+RUN apk add --no-cache curl tini nodejs npm python3
 
 # Install Claude CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -19,7 +19,7 @@ RUN curl -sSL -o middleware-javaagent.jar \
 
 # Copy application jar
 COPY --chown=tosspaper:tosspaper services/everything/build/libs/app.jar app.jar
-COPY --chown=tosspaper:tosspaper ./schema-prompts/ schema-prompts
+COPY --chown=tosspaper:tosspaper ./schema-prompts/ schema-prompts/
 COPY --chown=tosspaper:tosspaper disposable_email_blocklist.txt disposable_email_blocklist.txt
 
 # Switch to non-root user

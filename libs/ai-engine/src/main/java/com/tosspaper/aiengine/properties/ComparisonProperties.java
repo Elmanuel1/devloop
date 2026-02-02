@@ -70,7 +70,7 @@ public class ComparisonProperties {
          * When false, uses existing CLI-based implementation.
          * When true, uses new ChatClient-based streaming implementation.
          */
-        private boolean enabled = false;
+        private boolean enabled = true;
 
         /**
          * Timeout for streaming connections in seconds.
