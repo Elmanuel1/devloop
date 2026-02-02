@@ -549,7 +549,7 @@ public class StreamingComparisonAgent {
         log.info("========================================");
 
         // 1. Validate all line_items
-        ValidationBatch batch = lineItemValidator.validateLineItems(comparison, workingDir);
+        ValidationBatch batch = lineItemValidator.validateLineItems(comparison);
 
         log.info("=== VALIDATION SUMMARY === valid={} failed={} usedIndices={}",
                 batch.validated().size(), batch.failed().size(), batch.usedPoIndices());

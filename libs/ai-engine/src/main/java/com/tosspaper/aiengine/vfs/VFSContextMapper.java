@@ -1,9 +1,10 @@
 package com.tosspaper.aiengine.vfs;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.models.domain.*;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class VFSContextMapper {
@@ -32,17 +34,26 @@ public class VFSContextMapper {
      * Create context from PurchaseOrder with stripped metadata.
      * Removes sync/provider fields to reduce token usage (~1,000 tokens saved).
      */
-    @SneakyThrows
     public VfsDocumentContext from(PurchaseOrder po) {
         // Build stripped-down PO map with only comparison-relevant fields
         Map<String, Object> strippedPo = stripPurchaseOrder(po);
+
+        String content;
+        try {
+            content = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(strippedPo);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize PO for VFS context. companyId={}, poDisplayId={}",
+                    po.getCompanyId(), po.getDisplayId(), e);
+            throw new IllegalStateException(
+                    "Unable to build VFS context for purchase order " + po.getDisplayId(), e);
+        }
 
         return VfsDocumentContext.builder()
                 .companyId(po.getCompanyId())
                 .poNumber(po.getDisplayId())
                 .documentId("po")
                 .documentType(DocumentType.PURCHASE_ORDER)
-                .content(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(strippedPo))
+                .content(content)
                 .build();
     }
 

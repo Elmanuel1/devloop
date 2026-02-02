@@ -211,7 +211,7 @@ public class ComparisonChatClientConfig {
         // Add MCP tools (Tavily) using toolCallbacks if available
         if (mcpToolCallbackProvider != null) {
             var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
-            if (mcpTools.length > 0) {
+            if (mcpTools != null && mcpTools.length > 0) {
                 var toolNames = java.util.Arrays.stream(mcpTools)
                         .map(tool -> tool.getToolDefinition().name())
                         .toList();

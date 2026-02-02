@@ -165,6 +165,7 @@ public class StreamingDocumentComparisonService extends AbstractDocumentPartComp
             });
         } catch (Exception e) {
             log.error("Failed to save comparison for assignedId: {}", assignedId, e);
+            throw new RuntimeException("Failed to save comparison result", e);
         }
     }
 

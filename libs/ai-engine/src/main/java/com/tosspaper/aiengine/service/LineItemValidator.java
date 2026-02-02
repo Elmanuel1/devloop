@@ -13,7 +13,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -76,7 +75,7 @@ public class LineItemValidator {
      * Validate all line_items from comparison result.
      * Returns two lists: validated and failed (with original results for correction).
      */
-    public ValidationBatch validateLineItems(Comparison comparison, Path workingDir) {
+    public ValidationBatch validateLineItems(Comparison comparison) {
         List<ValidationResult> validated = new ArrayList<>();
         List<FailedValidation> failed = new ArrayList<>();
         Set<Integer> usedPoIndices = new HashSet<>();

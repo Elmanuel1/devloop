@@ -211,8 +211,8 @@ public class DocumentPartComparisonController {
             return;
         }
         try {
-            String json = String.format("{\"message\":\"%s\",\"code\":\"%s\"}",
-                    message.replace("\"", "\\\""), code);
+            String json = objectMapper.writeValueAsString(
+                    java.util.Map.of("message", message, "code", code));
             emitter.send(SseEmitter.event()
                     .name("error")
                     .data(json, MediaType.APPLICATION_JSON));
