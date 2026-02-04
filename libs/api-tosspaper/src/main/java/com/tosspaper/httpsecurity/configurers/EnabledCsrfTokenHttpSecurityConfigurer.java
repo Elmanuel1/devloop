@@ -35,6 +35,7 @@ public class EnabledCsrfTokenHttpSecurityConfigurer implements HttpSecurityConfi
                     configurer.ignoringRequestMatchers(PathPatternRequestMatcher.withDefaults().matcher(path));
                 });
             });
+
         } catch (Exception e) {
             throw new HttpSecurityConfigurationException("Error configuring csrf token http security", e);
         }

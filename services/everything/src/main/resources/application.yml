@@ -520,6 +520,10 @@ logging:
     # MCP Client debugging
     io.modelcontextprotocol: DEBUG
     org.springframework.ai.mcp: DEBUG
+    # Spring Security - set to DEBUG for troubleshooting
+    org.springframework.security: WARN
+    org.springframework.security.web: WARN
+    org.springframework.security.oauth2: WARN
 # Application Info
 info:
   app:
