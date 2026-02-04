@@ -1436,6 +1436,12 @@ components:
           type: integer
           nullable: true
           description: 0-based index of the matched PO line item (null if no match or for vendor/ship_to)
+        exactFields:
+          type: array
+          items:
+            type: string
+          description: Field names with exact matches (no comparison details needed)
+          example: ["Description", "Quantity"]
         comparisons:
           type: array
           description: Field-by-field comparisons with human-readable values and explanations
@@ -5942,12 +5948,72 @@ paths:
   /v1/comparisons/{assignedId}/:
     post:
       tags: [comparisons]
-      summary: "Manually trigger AI comparison for a document"
-      operationId: "runComparison"
+      summary: "Manually trigger AI comparison for a document (SSE stream)"
+      operationId: "runComparisonStream"
       description: |
         Manually triggers AI-based comparison between an extracted document and its linked purchase order.
-        This is used when a PO is manually linked and no automatic comparison has been run.
-        The comparison matches line items, vendor contact, and ship-to contact semantically.
+        Returns a Server-Sent Events (SSE) stream with real-time progress updates.
+
+        **Event Types:**
+        - `activity`: User-friendly progress messages (icon, message)
+        - `thinking`: AI reasoning content
+        - `finding`: Individual comparison findings
+        - `complete`: Final result with summary
+        - `error`: Error information
+
+        **Event Examples:**
+        ```
+        event: activity
+        data: {"icon": "🔍", "message": "Starting comparison..."}
+
+        event: activity
+        data: {"icon": "📄", "message": "Analyzing document against purchase order..."}
+
+        event: thinking
+        data: {"content": "Comparing line item quantities..."}
+
+        event: finding
+        data: {"icon": "✓", "item": "Vendor Name", "status": "matched", "detail": "Exact match"}
+
+        event: finding
+        data: {"icon": "⚠", "item": "Line Item 1", "status": "partial", "detail": "Price differs: $50 vs $55"}
+
+        event: complete
+        data: {"result": {...}, "summary": {"matches": 5, "discrepancies": 2, "total": 7}}
+
+        event: error
+        data: {"message": "Purchase order not found", "code": "PO_NOT_FOUND"}
+        ```
+
+        **Frontend Example:**
+        ```javascript
+        const response = await fetch(`/v1/comparisons/${assignedId}/`, {
+          method: 'POST',
+          headers: { 'Accept': 'text/event-stream' }
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const lines = decoder.decode(value).split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const event = JSON.parse(line.slice(5));
+              if (event.message) showProgress(event.message);
+              if (event.result) showResult(event.result);
+            }
+          }
+        }
+        ```
+
+        **Navigation Handling:**
+        If user navigates away during comparison, the SSE connection drops but the backend
+        continues processing. The result is saved to the database and can be fetched later
+        via `GET /v1/comparisons?assignedId=`.
       parameters:
         - name: X-Context-Id
           in: header
@@ -5963,7 +6029,15 @@ paths:
             type: string
       responses:
         "200":
-          description: Comparison completed successfully
+          description: SSE stream of comparison events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event has format:
+                  event: <type>
+                  data: <json>
         "400":
           description: Bad request (no PO linked or invalid extraction)
         "404":

@@ -21,6 +21,7 @@ public class PurchaseOrderItem {
 
     private String id;
     private String name;
+    private String itemCode;        // SKU, product code, material code
     private Integer quantity;
     private String unit;
     private String unitCode;

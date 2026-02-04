@@ -11,5 +11,5 @@ spring:
         region: us-west-2
   config:
     import:
-      - optional:aws-parameterstore:/tosspaper/local/secrets/
-      - optional:aws-parameterstore:/tosspaper/local/config/
+      - aws-parameterstore:/tosspaper/local/secrets/
+      - aws-parameterstore:/tosspaper/local/config/

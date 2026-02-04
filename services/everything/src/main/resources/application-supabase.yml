@@ -24,19 +24,23 @@ http:
         maximum-size: ${HTTP_SECURITY_JWT_JWKS_CACHE_MAXIMUM_SIZE:100}
     insecure:
       # Paths that do NOT require authentication (email engine webhooks, AI webhooks, Supabase auth hooks, QuickBooks webhooks)
-      paths: /**/email-messages,/reducto/webhook,/actuator/**,/api/auth/hooks/**,/v1/quickbooks/events
+      paths: /*/email-messages,/reducto/webhook,/actuator/**,/auth/hooks/**,/v1/quickbooks/events
     authenticated:
       # Paths that require authentication (api-tosspaper endpoints only)
       # Email engine APIs remain unauthenticated
       paths: /v1/companies/**,/v1/projects/**,/v1/contacts/**,/v1/purchase-orders/**
     csrf:
-      ignored-path: /**/email-messages,/reducto/webhook,/actuator/**,/v1/quickbooks/events
+      # CSRF disabled - Bearer token APIs are not vulnerable to CSRF since
+      # browsers don't auto-attach Authorization headers like they do cookies
       enabled: ${HTTP_SECURITY_CSRF_ENABLED:false}
       cookie:
-        name: XSRF-TOKEN
+        name: X-CSRF-TOKEN
         http-only: false
-        secure: true
-        same-site: None
+        secure: ${HTTP_SECURITY_CSRF_COOKIE_SECURE:false}
+        same-site: ${HTTP_SECURITY_CSRF_COOKIE_SAME_SITE:Lax}
         domain: ${CSRF_COOKIE_DOMAIN:localhost}
+    csrf-ignored:
+      # Paths exempt from CSRF validation (must match insecure paths)
+      paths: /*/email-messages,/reducto/webhook,/actuator/**,/auth/hooks/**,/v1/quickbooks/events
     cors:
       domains: ${HTTP_SECURITY_CORS_DOMAINS:http://localhost:3000}

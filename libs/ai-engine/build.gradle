@@ -30,6 +30,9 @@ dependencies {
     // Spring AI Anthropic (Claude agent for filesystem comparison)
     implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
 
+    // Spring AI MCP Client (for Tavily web search via remote SSE)
+    implementation 'org.springframework.ai:spring-ai-starter-mcp-client'
+
     // Spring AI Agents - Claude starter (includes AgentClient, ClaudeAgentModel, SDK)
     implementation('org.springaicommunity.agents:spring-ai-starter-agent-claude:0.1.0-SNAPSHOT') {
         exclude group: 'org.springframework.ai'

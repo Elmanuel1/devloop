@@ -30,6 +30,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.retry.backoff.ExponentialBackOffPolicy;
 import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.lang.Nullable;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
@@ -61,19 +63,59 @@ public class ComparisonChatClientConfig {
     @Value("${spring.ai.anthropic.api-key:}")
     private String anthropicApiKey;
 
-    @Value("${ai.comparison.openai.model:gpt-4o}")
+    @Value("${ai.comparison.openai.model:gpt-5.1}")
     private String openAiModel;
 
     @Value("${ai.comparison.anthropic.model:claude-sonnet-4-20250514}")
     private String anthropicModel;
 
+    @Value("${ai.comparison.validation.model:gpt-4o-mini}")
+    private String validationModel;
+
+    /**
+     * Small/fast model for validation checks.
+     * Uses gpt-4o-mini by default for cost efficiency.
+     */
+    @Bean
+    @Qualifier("validationChatModel")
+    public OpenAiChatModel validationChatModel(ObservationRegistry observationRegistry) {
+        log.info("Creating validation ChatModel: model={}", validationModel);
+
+        OpenAiApi api = OpenAiApi.builder()
+                .baseUrl("https://api.openai.com")
+                .apiKey(new SimpleApiKey(openAiApiKey))
+                .build();
+
+        return OpenAiChatModel.builder()
+                .openAiApi(api)
+                .defaultOptions(OpenAiChatOptions.builder()
+                        .model(validationModel)
+                        .temperature(0.0)
+                        .maxCompletionTokens(100)
+                        .build())
+                .observationRegistry(observationRegistry)
+                .build();
+    }
+
+    /**
+     * ChatClient for validation using smaller model.
+     */
+    @Bean
+    @Qualifier("validationChatClient")
+    public ChatClient validationChatClient(@Qualifier("validationChatModel") OpenAiChatModel chatModel) {
+        log.info("Creating validation ChatClient");
+        return ChatClient.builder(chatModel).build();
+    }
+
     /**
      * Create FileTools bean for AI to read/write files.
      */
     @Bean
-    public FileTools comparisonFileTools(VirtualFilesystemService vfs) {
-        log.info("Creating FileTools for document comparison");
-        return new FileTools(vfs);
+    public FileTools comparisonFileTools(
+            VirtualFilesystemService vfs,
+            @Qualifier("validationChatClient") ChatClient validationChatClient) {
+        log.info("Creating FileTools for document comparison with validation model");
+        return new FileTools(vfs, validationChatClient);
     }
 
     /**
@@ -140,7 +182,7 @@ public class ComparisonChatClientConfig {
                 .defaultOptions(OpenAiChatOptions.builder()
                         .model(openAiModel)
                         .temperature(0.1)  // Low temperature for consistent comparisons
-                        .maxCompletionTokens(4096)
+                        .maxCompletionTokens(100000)
                         .build())
                 .retryTemplate(retryTemplate)
                 .observationRegistry(observationRegistry)
@@ -150,6 +192,7 @@ public class ComparisonChatClientConfig {
     /**
      * ChatClient for document comparison using OpenAI.
      * Created when ai.comparison.provider=openai.
+     * Includes MCP tools (Tavily web search) when available.
      */
     @Bean
     @Qualifier("comparisonChatClient")
@@ -157,14 +200,29 @@ public class ComparisonChatClientConfig {
     public ChatClient openAiComparisonChatClient(
             @Qualifier("comparisonOpenAiChatModel") OpenAiChatModel chatModel,
             FileTools fileTools,
-            ComparisonAuditAdvisor auditAdvisor) {
-        log.info("Creating OpenAI ChatClient for document comparison with file tools and audit");
+            ComparisonAuditAdvisor auditAdvisor,
+            @Nullable ToolCallbackProvider mcpToolCallbackProvider) {
 
-        return ChatClient.builder(chatModel)
-                .defaultTools(fileTools)
+        var builder = ChatClient.builder(chatModel)
+                .defaultTools(fileTools)  // @Tool annotated methods
                 .defaultAdvisors(auditAdvisor)
-                .defaultSystem(buildSystemPrompt())
-                .build();
+                .defaultSystem(buildSystemPrompt());
+
+        // Add MCP tools (Tavily) using toolCallbacks if available
+        if (mcpToolCallbackProvider != null) {
+            var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
+            if (mcpTools != null && mcpTools.length > 0) {
+                var toolNames = java.util.Arrays.stream(mcpTools)
+                        .map(tool -> tool.getToolDefinition().name())
+                        .toList();
+                log.info("Creating OpenAI ChatClient with MCP tools: {}", toolNames);
+                builder.defaultToolCallbacks(mcpTools);
+            }
+        } else {
+            log.info("Creating OpenAI ChatClient for document comparison (no MCP tools)");
+        }
+
+        return builder.build();
     }
 
     /**
@@ -223,6 +281,7 @@ public class ComparisonChatClientConfig {
     /**
      * ChatClient for document comparison using Anthropic Claude.
      * Created when ai.comparison.provider=anthropic.
+     * Includes MCP tools (Tavily web search) when available.
      */
     @Bean
     @Qualifier("comparisonChatClient")
@@ -230,254 +289,173 @@ public class ComparisonChatClientConfig {
     public ChatClient anthropicComparisonChatClient(
             @Qualifier("comparisonAnthropicChatModel") AnthropicChatModel chatModel,
             FileTools fileTools,
-            ComparisonAuditAdvisor auditAdvisor) {
-        log.info("Creating Anthropic ChatClient for document comparison with file tools and audit (extended thinking: {})",
-                properties.isExtendedThinking());
+            ComparisonAuditAdvisor auditAdvisor,
+            @Nullable ToolCallbackProvider mcpToolCallbackProvider) {
 
-        return ChatClient.builder(chatModel)
-                .defaultTools(fileTools)
+        var builder = ChatClient.builder(chatModel)
+                .defaultTools(fileTools)  // @Tool annotated methods
                 .defaultAdvisors(auditAdvisor)
-                .defaultSystem(buildSystemPrompt())
-                .build();
+                .defaultSystem(buildSystemPrompt());
+
+        // Add MCP tools (Tavily) using toolCallbacks if available
+        if (mcpToolCallbackProvider != null) {
+            var mcpTools = mcpToolCallbackProvider.getToolCallbacks();
+            if (mcpTools != null && mcpTools.length > 0) {
+                log.info("Creating Anthropic ChatClient with {} MCP tools (Tavily web search enabled), extended thinking: {}",
+                        mcpTools.length, properties.isExtendedThinking());
+                builder.defaultToolCallbacks(mcpTools);  // ToolCallback objects
+            }
+        } else {
+            log.info("Creating Anthropic ChatClient for document comparison (no MCP tools), extended thinking: {}",
+                    properties.isExtendedThinking());
+        }
+
+        return builder.build();
     }
 
     /**
      * Build the system prompt for document comparison.
-     * Instructs the AI to return JSON directly with detailed field-by-field comparisons.
+     * Simplified version for post-hoc validation flow.
+     * Main AI generates comparison freely - validation happens afterwards.
      */
     private String buildSystemPrompt() {
         return """
-            You are a document comparison agent with file tools. Use tools to read files and perform THOROUGH field-by-field comparison.
+            You are a document comparison agent. Use tools to read files, compare field-by-field, output JSON.
 
-            ## AVAILABLE TOOLS
-
-            - readFile(path): Read a file's contents
-            - listDirectory(path): List files in a directory
-            - grep(pattern, path): Search for text in files
+            ## TOOLS
+            - readFile(path): Read file contents
+            - listDirectory(path): List directory files
+            - tavily_search(query): Web search to verify vendor relationships
+            - listPoMatches(): List all recorded PO matches (for reference)
 
             ## WORKFLOW
+            1. readFile("po.json") - read purchase order
+            2. Check existing docs: listDirectory("invoice"), listDirectory("delivery_slip"), listDirectory("delivery_note")
+            3. Read current document (ID in user prompt)
+            4. Compare all fields and line items
+            5. Output JSON (ONLY - no explanations, no markdown)
 
-            1. Use readFile("_schema/comparison.json") to understand the output format
-            2. Use readFile("po.json") to read the purchase order
-            3. Check ALL document types to understand what's already been received:
-               - listDirectory("invoice") - read all invoice JSONs
-               - listDirectory("delivery_slip") - read all delivery slip JSONs
-               - listDirectory("delivery_note") - read all delivery note JSONs
-            4. For each PO line item, calculate: totalSupplied = sum of quantities from all documents
-            5. Read the CURRENT document being compared (identified by Document ID in prompt)
-            6. Compare the current document against PO field-by-field
-            7. Return your comparison result as JSON matching the schema
+            ## LINE ITEM MATCHING
+            Use 0-based indexing (first item = index 0, matching JSON array indices).
 
-            ## OUTPUT RULES
+            MATCHING CRITERIA - ALL must align for a valid match:
+            1. Item Code: MUST match exactly (if both have item codes)
+            2. Description: MUST be the same product (not just similar text)
+            3. Quantity: Prioritize PO lines with matching or sufficient quantity
 
-            After reading and comparing, respond with ONLY valid JSON - no explanations, no markdown.
-            Start with { and end with }
+            STRICT MATCHING RULES:
+            - If item codes match but descriptions are DIFFERENT PRODUCTS → NOT a match
+              Example: "MONOBASE" vs "HOOP STEEL RISER" = different products, even with same item code
+            - Same item code + same product type + quantity available = VALID match
+            - If no valid match found → poIndex = null (item not in PO = BLOCKING)
 
-            ## JSON SCHEMA
+            For each document line item:
+            1. Count PO items: poItemCount = po.items.length (valid indices: 0 to N-1)
+            2. Find PO line with matching itemCode AND same product description
+            3. Set poIndex to the matched PO line index (0-based)
+            4. If no match found → poIndex = null
 
+            IMPORTANT:
+            - Each PO line can only match ONE document line
+            - Use 0-based indices (0 to N-1, NOT 1 to N)
+            - Item code match alone is NOT sufficient - description must confirm same product
+            - The system will validate your matches afterwards and correct if needed
+
+            ## OUTPUT FORMAT
             {
-              "documentId": "<string - the document's assigned ID>",
-              "poId": "<string - the PO display ID>",
+              "documentId": "<doc ID>",
+              "poId": "<PO display ID>",
               "overallStatus": "matched|partial|unmatched",
               "confidence": <0.0-1.0>,
-              "blockingIssues": <count of results with severity=blocking>,
+              "blockingIssues": <count of blocking results>,
               "results": [
                 {
                   "type": "vendor|ship_to|line_item",
                   "status": "matched|partial|unmatched",
                   "matchScore": <0.0-1.0>,
                   "severity": "info|warning|blocking",
-                  "extractedIndex": <number, only for line_item>,
-                  "poIndex": <number or null, only for line_item>,
+                  "extractedIndex": <number, line_item only>,
+                  "poIndex": <number|null, line_item only>,
                   "comparisons": [
-                    {
-                      "field": "<Human-readable field name>",
-                      "poValue": "<Value from PO, human-readable format>",
-                      "documentValue": "<Value from document, human-readable format>",
-                      "match": "exact|close|mismatch",
-                      "isBlocking": <true if this field causes blocking>,
-                      "explanation": "<Human-readable explanation of comparison>"
-                    }
+                    { "field": "Description", "poValue": "Widget A", "documentValue": "Widget A", "match": "exact", "isBlocking": false, "explanation": "Descriptions match" },
+                    { "field": "Quantity", "poValue": "10", "documentValue": "10", "match": "exact", "isBlocking": false, "explanation": "Quantities match" },
+                    { "field": "Unit Price", "poValue": "USD $28.00", "documentValue": "CAD $28.00", "match": "mismatch", "isBlocking": true, "explanation": "Currency differs" }
                   ]
                 }
               ]
             }
 
-            ## COMPARISONS ARRAY - THE SINGLE SOURCE OF TRUTH
+            ## OUTPUT REQUIREMENTS
+            - Keep ALL results with extractedIndex/poIndex for line item mapping
+            - ALWAYS include full comparison objects in `comparisons` for ALL fields (exact, close, mismatch)
+            - Each comparison MUST have: field, poValue, documentValue, match, isBlocking, explanation
+            - Do NOT skip fields or use exactFields shorthand - frontend needs all values
 
-            Each result MUST have a "comparisons" array with field-by-field breakdown.
-            This is the ONLY place to report differences - no separate reasons/signals/discrepancies.
+            ## BLOCKING RULES
 
-            For VENDOR type, include comparisons for:
-            - Name, Address, City, State/Province, Country, Postal Code, Email, Phone
+            LINE_ITEM blocking issues (isBlocking=true, severity="blocking"):
+            - Price differs at all (even $0.01)
+            - Currency mismatch (USD vs CAD)
+            - Quantity mismatch
+            - Item not in PO (unordered item)
+            - Oversupply (total supplied > PO qty)
 
-            For SHIP_TO type, include comparisons for:
-            - Name, Address, City, State/Province, Country, Postal Code, Email, Phone
+            VENDOR blocking issue:
+            - Wrong company (truly different legal entities) - USE WEB SEARCH TO VERIFY
 
-            For LINE_ITEM type, include comparisons for:
-            - Description, Quantity, Unit Price, Currency, Item Code (if present)
+            ## VENDOR NAME MATCHING - MUST USE WEB SEARCH
 
-            ## FIELD VALUE FORMATTING
+            When vendor names differ, ALWAYS use tavily_search to verify:
+            - Search: "[name1] [name2] same company subsidiary product"
 
-            Format values for human readability:
-            - Prices: Include currency symbol and code (e.g., "USD $28.00", "CAD $28.00")
-            - Quantities: Plain numbers (e.g., "1", "10")
-            - Empty fields: Use "Not specified"
-            - Addresses: Full formatted address
+            **NOT blocking** (same entity, different name format):
+            - "Anysphere" vs "Anysphere, Inc." - just suffix difference
+            - "Cursor" vs "Anysphere" - Cursor is Anysphere's product
+            - Inc./LLC/Corp suffixes added or omitted
+
+            **BLOCKING** (different legal entities after web search confirms):
+            - GitHub vs Microsoft - separate billing entities
+            - AWS vs Amazon.com - separate billing entities
+            - Unrelated companies with no relationship found
+
+            ## NOT BLOCKING (info only)
+            - Email: If domain matches and is corporate, it's fine (hi@cursor.com vs hIOi@cursor.com = OK)
+            - Phone: Minor digit differences are just data entry issues
+            - Address formatting (CA ↔ California)
+            - PO item missing from doc (may come in future delivery)
+            - Abbreviations (LLC ↔ L.L.C., Inc. ↔ Incorporated)
 
             ## MATCH CLASSIFICATION
-
-            - "exact": Values are identical or semantically equivalent
-            - "close": Minor differences (formatting, typos, abbreviations, brand vs legal name)
+            - "exact": Identical or semantically equivalent
+            - "close": Minor differences (formatting, typos, abbreviations)
             - "mismatch": Significant difference requiring attention
 
-            ## STATUS RULES (based on matchScore)
+            ## STATUS/SEVERITY RULES
+            - matched: matchScore > 0.9, partial: 0.5-0.9, unmatched: < 0.5
+            - info: Cosmetic only, warning: Notable but OK, blocking: Must block approval
+            - blockingIssues = count of RESULTS that have ANY comparison with isBlocking=true
+            - If a line_item has a comparison with isBlocking=true, that result is blocking
+            - Count each blocking RESULT once, not each blocking field
 
-            - "matched": matchScore > 0.9 (almost everything matches)
-            - "partial": matchScore 0.5-0.9 (some differences)
-            - "unmatched": matchScore < 0.5 (significant mismatches)
+            ## FIELDS TO COMPARE
+            - VENDOR/SHIP_TO: Name, Address, City, State, Country, Postal, Email, Phone
+            - LINE_ITEM: Description, Quantity, Unit Price, Currency, Item Code (if present)
 
-            ## SEVERITY RULES
+            ## EXPLANATION STYLE - WRITE LIKE A HUMAN REVIEWER
 
-            - "info": Cosmetic differences only (formatting, abbreviations)
-            - "warning": Notable differences that don't block approval (typos, name variations)
-            - "blocking": Critical mismatches - approval MUST be blocked
+            Write explanations as a helpful colleague would, not a robot. Be conversational and clear.
 
-            ## AUTOMATIC BLOCKING ISSUES (isBlocking=true, severity="blocking")
+            BAD (robotic):
+            - "Legal suffix 'Inc.' added; same entity"
+            - "Different local parts; PO email appears to contain typos"
 
-            These are ALWAYS blocking - no exceptions. Set isBlocking=true for the specific field:
+            GOOD (human):
+            - "Same company - the invoice just includes 'Inc.' in the legal name."
+            - "Looks like there's a typo in the PO email (hIOi vs hi). The invoice has the correct address."
+            - "The invoice shows a $20.35 credit, but the PO expected a $9.00 charge. This needs review before approval."
+            - "Phone numbers are slightly different - the PO has an extra digit at the end. Probably a data entry error."
 
-            1. ANY price discrepancy: if unitPrice differs AT ALL (20.00 vs 20.35, 20 vs -20)
-               → Field: "Unit Price", isBlocking: true
-               → Explanation: "The unit price on the invoice is $X.XX different from the purchase order amount."
-
-            2. Currency mismatch: if currencies differ (USD vs CAD)
-               → Field: "Currency", isBlocking: true
-               → Explanation: "The purchase order specifies USD currency but the invoice is billed in CAD. This requires review as currency conversion may affect the final amount."
-
-            3. Quantity mismatch: document qty differs from PO qty
-               → Field: "Quantity", isBlocking: true
-               → Explanation: "The invoice quantity of X units does not match the purchase order quantity of Y units."
-
-            4. Wrong company: vendor name completely different (not brand vs legal name)
-               → Field: "Name", isBlocking: true
-               → Explanation: "The vendor name on the invoice does not match the vendor on the purchase order. These appear to be different companies."
-
-            5. Item NOT in PO: document has item that doesn't exist in PO
-               → Field: "Description", isBlocking: true
-               → Explanation: "This line item appears on the invoice but was not included in the original purchase order."
-
-            6. OVERSUPPLY: (previously supplied + this document) > PO quantity
-               → Field: "Quantity", isBlocking: true
-               → Explanation: "The invoice quantity of X units, combined with Y units already supplied, exceeds the purchase order quantity of Z units by N units."
-
-            ## NOT BLOCKING (severity = "info")
-
-            PO item missing from document is NOT blocking:
-            - If already supplied: explanation = "Already fulfilled by previous documents"
-            - If not yet supplied: explanation = "May appear in future documents"
-            Do NOT create blocking issues for PO items missing from the current document.
-
-            ## CALCULATING matchScore
-
-            matchScore = (fields with match=exact or close) / (total fields compared)
-            If ANY field has isBlocking=true, matchScore should be < 0.5
-
-            ## blockingIssues COUNT
-
-            blockingIssues = count of results where severity = "blocking"
-            NOT the count of fields, but the count of RESULTS (vendor/ship_to/line_item) that have blocking severity.
-
-            ## EXPLANATION GUIDELINES
-
-            For EXACT matches (match="exact"):
-            - Use empty string "" or brief "Exact match"
-            - No detailed explanation needed
-
-            For CLOSE or MISMATCH (match="close" or match="mismatch"):
-            - Provide a complete, detailed human-readable sentence
-            - Easy to read and understand by non-technical users
-            - Specific about what differs and why it matters
-            - Do NOT include "BLOCKING:" prefix or match scores
-
-            Good examples for close/mismatch:
-            - "The address uses a slightly different format but refers to the same location."
-            - "The purchase order specifies USD currency but the invoice is billed in CAD. This requires review as currency conversion may affect the final amount."
-            - "The unit price on the invoice is $5.00 higher than what was agreed on the purchase order."
-
-            Bad examples (avoid these):
-            - "BLOCKING: Currency mismatch" (don't use BLOCKING prefix)
-            - "score: 0.8" (don't include scores)
-
-            ## EXAMPLE OUTPUT
-
-            {
-              "documentId": "mg-1769309498742-ceee7536",
-              "poId": "2505007",
-              "overallStatus": "partial",
-              "confidence": 0.85,
-              "blockingIssues": 1,
-              "results": [
-                {
-                  "type": "vendor",
-                  "status": "matched",
-                  "matchScore": 0.95,
-                  "severity": "info",
-                  "comparisons": [
-                    {
-                      "field": "Name",
-                      "poValue": "Anthropic, PBC",
-                      "documentValue": "Anthropic, PBC",
-                      "match": "exact",
-                      "isBlocking": false,
-                      "explanation": ""
-                    },
-                    {
-                      "field": "Address",
-                      "poValue": "548 Market Street, PMB 90375, San Francisco, CA 94104",
-                      "documentValue": "548 Market Street, PMB 90375, San Francisco, California 94104",
-                      "match": "close",
-                      "isBlocking": false,
-                      "explanation": "The address uses 'California' instead of 'CA' but refers to the same location."
-                    }
-                  ]
-                },
-                {
-                  "type": "line_item",
-                  "status": "unmatched",
-                  "matchScore": 0.4,
-                  "severity": "blocking",
-                  "extractedIndex": 0,
-                  "poIndex": 0,
-                  "comparisons": [
-                    {
-                      "field": "Description",
-                      "poValue": "Claude Pro (Dec 5, 2025 – Jan 5, 2026)",
-                      "documentValue": "Claude Pro (Dec 5, 2025 – Jan 5, 2026)",
-                      "match": "exact",
-                      "isBlocking": false,
-                      "explanation": ""
-                    },
-                    {
-                      "field": "Quantity",
-                      "poValue": "1",
-                      "documentValue": "1",
-                      "match": "exact",
-                      "isBlocking": false,
-                      "explanation": ""
-                    },
-                    {
-                      "field": "Unit Price",
-                      "poValue": "USD $28.00",
-                      "documentValue": "CAD $28.00",
-                      "match": "mismatch",
-                      "isBlocking": true,
-                      "explanation": "The purchase order specifies USD $28.00 but the invoice is billed in CAD $28.00. While the numeric amount is the same, the currencies differ which may affect the final payment amount."
-                    }
-                  ]
-                }
-              ]
-            }
+            Be specific, explain the impact, and guide the reviewer on what matters.
             """;
     }
 }

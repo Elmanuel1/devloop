@@ -311,9 +311,10 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     }
     
     /**
-     * Validate that the total price of all items is not zero.
+     * Validate that the total price of all items is not negative.
      * Total price is calculated as: unitPrice * quantity for each item.
      * Items without both unitPrice and quantity contribute 0 to the total.
+     * Zero total is allowed (e.g., free samples, promotional items).
      */
     private void validateTotalPrice(List<com.tosspaper.generated.model.PurchaseOrderItem> items) {
         if (items == null || items.isEmpty()) {
@@ -330,10 +331,10 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             total = total.add(itemTotal);
         }
 
-        if (total.compareTo(BigDecimal.ZERO) == 0) {
+        if (total.compareTo(BigDecimal.ZERO) < 0) {
             throw new BadRequestException(
                     "invalid_total_price",
-                    "Total price of all items must not be zero"
+                    "Total price of all items must not be negative"
             );
         }
     }

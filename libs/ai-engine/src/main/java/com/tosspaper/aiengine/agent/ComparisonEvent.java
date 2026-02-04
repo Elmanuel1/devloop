@@ -18,6 +18,11 @@ import com.tosspaper.models.extraction.dto.Comparison;
 public sealed interface ComparisonEvent {
 
     /**
+     * SSE event type name for this event.
+     */
+    String eventType();
+
+    /**
      * User-friendly activity message abstracted from internal tool calls.
      * Maps tool operations to readable descriptions.
      *
@@ -32,6 +37,9 @@ public sealed interface ComparisonEvent {
      * @param message Human-readable description of the activity
      */
     record Activity(String icon, String message) implements ComparisonEvent {
+        @Override
+        public String eventType() { return "activity"; }
+
         public static Activity reviewing(String documentType, String id) {
             return new Activity(getIcon(documentType), String.format("Reviewing %s %s...", documentType, id));
         }
@@ -74,6 +82,9 @@ public sealed interface ComparisonEvent {
      * @param content The thinking text
      */
     record Thinking(String content) implements ComparisonEvent {
+        @Override
+        public String eventType() { return "thinking"; }
+
         public static Thinking of(String content) {
             return new Thinking(content);
         }
@@ -96,6 +107,9 @@ public sealed interface ComparisonEvent {
      * @param detail Human-readable description of the finding
      */
     record Finding(String icon, String item, String status, String detail) implements ComparisonEvent {
+        @Override
+        public String eventType() { return "finding"; }
+
         public static Finding match(String item, String detail) {
             return new Finding("✓", item, "matched", detail);
         }
@@ -112,11 +126,15 @@ public sealed interface ComparisonEvent {
     /**
      * Comparison complete with final results.
      *
-     * @param result  The full Comparison object with all results
-     * @param summary Summary statistics
+     * @param result       The full Comparison object with all results
+     * @param summary      Summary statistics
+     * @param comparisonId Unique ID for this comparison session (for result lookup)
      */
-    record Complete(Comparison result, ComparisonSummary summary) implements ComparisonEvent {
-        public static Complete of(Comparison result) {
+    record Complete(Comparison result, ComparisonSummary summary, String comparisonId) implements ComparisonEvent {
+        @Override
+        public String eventType() { return "complete"; }
+
+        public static Complete of(Comparison result, String comparisonId) {
             int matches = 0;
             int discrepancies = 0;
             int total = 0;
@@ -132,7 +150,7 @@ public sealed interface ComparisonEvent {
                 }
             }
 
-            return new Complete(result, new ComparisonSummary(matches, discrepancies, total));
+            return new Complete(result, new ComparisonSummary(matches, discrepancies, total), comparisonId);
         }
     }
 
@@ -143,6 +161,9 @@ public sealed interface ComparisonEvent {
      * @param code    Optional error code for programmatic handling
      */
     record Error(String message, String code) implements ComparisonEvent {
+        @Override
+        public String eventType() { return "error"; }
+
         public Error(String message) {
             this(message, null);
         }

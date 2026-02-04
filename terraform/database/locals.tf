@@ -28,7 +28,7 @@ locals {
       backup_retention_period = 14
       deletion_protection     = true
       skip_final_snapshot     = false
-      multi_az                = true
+      multi_az                = false  # Single-AZ for cost savings (~$53/mo vs ~$104/mo)
       # Point-in-time recovery enabled (1-hour RPO)
       backup_window      = "03:00-04:00" # UTC
       maintenance_window = "Mon:04:00-Mon:05:00"

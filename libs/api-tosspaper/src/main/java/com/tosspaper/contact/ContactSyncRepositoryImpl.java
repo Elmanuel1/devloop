@@ -94,6 +94,10 @@ public class ContactSyncRepositoryImpl implements ContactSyncRepository {
                                 .and(CONTACTS.PHONE.eq(contactPhone))
                                 .and(CONTACTS.TAG.eq(tag))
                                 .and(CONTACTS.PHONE.isNotNull()))
+                            // OR fourth condition: (company_id, name) - matches by unique name constraint
+                            .or(CONTACTS.COMPANY_ID.eq(companyId)
+                                .and(lower(trim(CONTACTS.NAME)).eq(lower(trim(val(contactName)))))
+                                .and(CONTACTS.NAME.isNotNull()))
                         )
                         .returning())
                     .insertInto(CONTACTS,

@@ -5,8 +5,8 @@ spring:
     # - /tosspaper/{env}/config/  - String (plain text config)
     # For local dev, set: SPRING_CLOUD_AWS_PARAMETERSTORE_ENDPOINT=http://localhost:4566
     import:
-      - optional:aws-parameterstore:/tosspaper/${ENV:local}/secrets/
-      - optional:aws-parameterstore:/tosspaper/${ENV:local}/config/
+      - aws-parameterstore:/tosspaper/${ENV:local}/secrets/
+      - aws-parameterstore:/tosspaper/${ENV:local}/config/
   cloud:
     aws:
       region:
@@ -142,6 +142,15 @@ spring:
         initialize-schema: false
         schema-validation: true
         max-document-batch-size: 1000
+    # MCP Client for Tavily web search (vendor verification)
+    mcp:
+      client:
+        enabled: ${TAVILY_ENABLED:false}
+        streamable-http:
+          connections:
+            tavily:
+              url: https://mcp.tavily.com
+              endpoint: /mcp/?tavilyApiKey=${TAVILY_API_KEY:}
 
 servlet:
   multipart:
@@ -469,8 +478,8 @@ ai:
     logging-level: ${AI_HTTP_LOGGING_LEVEL:WARN}
   # Document comparison settings
   comparison:
-    # AI provider for comparison: openai (lower cost) or anthropic (better analysis)
-    provider: ${AI_COMPARISON_PROVIDER:anthropic}
+    # AI provider for comparison: openai (default, with web search) or anthropic (better analysis)
+    provider: ${AI_COMPARISON_PROVIDER:openai}
     # Extended thinking (Claude only) - shows AI reasoning
     extended-thinking: ${AI_COMPARISON_EXTENDED_THINKING:true}
     # Stream thinking tokens to client
@@ -508,6 +517,13 @@ logging:
     software.amazon.awssdk: WARN
     org.jooq: WARN
     org.springframework.jdbc: WARN
+    # MCP Client debugging
+    io.modelcontextprotocol: DEBUG
+    org.springframework.ai.mcp: DEBUG
+    # Spring Security - set to DEBUG for troubleshooting
+    org.springframework.security: WARN
+    org.springframework.security.web: WARN
+    org.springframework.security.oauth2: WARN
 # Application Info
 info:
   app:
