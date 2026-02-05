@@ -16,6 +16,7 @@ import com.tosspaper.aiengine.service.LineItemValidator.ValidationBatch;
 import com.tosspaper.aiengine.tools.FileTools.PoItemInfo;
 import com.tosspaper.models.domain.ComparisonContext;
 import com.tosspaper.models.domain.ExtractionTask;
+import com.tosspaper.models.domain.Party;
 import com.tosspaper.models.domain.PurchaseOrder;
 import com.tosspaper.models.extraction.dto.Comparison;
 import com.tosspaper.models.extraction.dto.ComparisonResult;
@@ -82,6 +83,7 @@ public class StreamingComparisonAgent {
 
         Document ID: %s
         PO ID: %s
+        %s
 
         ## CRITICAL: Match Classification Rules
 
@@ -402,14 +404,24 @@ public class StreamingComparisonAgent {
      */
     private String buildPrompt(ComparisonContext context, Path workingDir) {
         ExtractionTask task = context.extractionTask();
+        PurchaseOrder po = context.purchaseOrder();
 
         // Get document type folder name (invoice, delivery_slip, delivery_note)
         String docTypeFolder = task.getDocumentType().name().toLowerCase();
 
+        // Build currency context line — use PO currency, fall back to vendor currency
+        String currencyLine = Optional.ofNullable(po.getCurrencyCode())
+                .or(() -> Optional.ofNullable(po.getVendorContact()).map(Party::getCurrencyCode))
+                .map(c -> "PO Currency: " + c.getCode()
+                        + " — All prices in this order are expected in " + c.getCode()
+                        + ". Flag any document line item or total in a different currency as MISMATCH + BLOCKING.")
+                .orElse("");
+
         return String.format(COMPARISON_PROMPT_TEMPLATE,
                 docTypeFolder,
                 task.getAssignedId(),
-                task.getPoNumber()
+                task.getPoNumber(),
+                currencyLine
         );
     }
 

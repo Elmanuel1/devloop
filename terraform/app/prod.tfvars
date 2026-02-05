@@ -21,4 +21,4 @@ db_resource_id       = "db-LBWWFBSF6A34PKBIMFJN63M6XM"
 alert_email = "aribooluwatoba@gmail.com"
 
 # S3 CORS allowed origins
-s3_cors_allowed_origins = ["https://app.tosspaper.com", "https://tosspaper.com"]
+s3_cors_allowed_origins = ["https://app.tosspaper.com", "https://www.tosspaper.com", "https://tosspaper.com"]

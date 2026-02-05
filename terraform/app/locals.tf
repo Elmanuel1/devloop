@@ -21,7 +21,7 @@ locals {
       use_spot             = false        # On-Demand for reliability
       ebs_volume_size      = 50
       s3_force_destroy     = false # Prevent accidental data loss
-      use_elb_health_check = true  # Replace unhealthy instances
+      use_elb_health_check = false # EC2 only - alert on app errors, don't terminate
     }
   }
 

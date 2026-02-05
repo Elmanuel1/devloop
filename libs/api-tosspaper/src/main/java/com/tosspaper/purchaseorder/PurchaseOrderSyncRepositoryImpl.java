@@ -346,6 +346,7 @@ public class PurchaseOrderSyncRepositoryImpl implements PurchaseOrderSyncReposit
             po.setProviderLastUpdatedAt(poRecord.getProviderLastUpdatedAt());
             po.setCreatedAt(poRecord.getCreatedAt());
             po.setUpdatedAt(poRecord.getUpdatedAt());
+            po.setCurrencyCode(com.tosspaper.models.domain.Currency.fromCode(poRecord.getCurrencyCode()));
 
             // Set retry tracking fields
             po.setPushRetryCount(poRecord.getPushRetryCount());
@@ -454,6 +455,7 @@ public class PurchaseOrderSyncRepositoryImpl implements PurchaseOrderSyncReposit
         po.setProviderLastUpdatedAt(poRecord.getProviderLastUpdatedAt());
         po.setCreatedAt(poRecord.getCreatedAt());
         po.setUpdatedAt(poRecord.getUpdatedAt());
+        po.setCurrencyCode(com.tosspaper.models.domain.Currency.fromCode(poRecord.getCurrencyCode()));
 
         // Parse ship-to contact from JSONB
         if (poRecord.getShipToContact() != null) {
@@ -558,7 +560,17 @@ public class PurchaseOrderSyncRepositoryImpl implements PurchaseOrderSyncReposit
             po.setProviderLastUpdatedAt(poRecord.getProviderLastUpdatedAt());
             po.setCreatedAt(poRecord.getCreatedAt());
             po.setUpdatedAt(poRecord.getUpdatedAt());
+            po.setCurrencyCode(com.tosspaper.models.domain.Currency.fromCode(poRecord.getCurrencyCode()));
             po.setItems(new ArrayList<>());
+
+            // Parse status
+            if (poRecord.getStatus() != null) {
+                try {
+                    po.setStatus(PurchaseOrderStatus.fromValue(poRecord.getStatus()));
+                } catch (Exception e) {
+                    log.warn("Failed to parse status for PO {}: {}", poId, poRecord.getStatus());
+                }
+            }
 
             // Parse vendor contact from JSONB
             if (poRecord.getVendorContact() != null) {
@@ -658,6 +670,7 @@ public class PurchaseOrderSyncRepositoryImpl implements PurchaseOrderSyncReposit
         po.setProviderLastUpdatedAt(poRecord.getProviderLastUpdatedAt());
         po.setCreatedAt(poRecord.getCreatedAt());
         po.setUpdatedAt(poRecord.getUpdatedAt());
+        po.setCurrencyCode(com.tosspaper.models.domain.Currency.fromCode(poRecord.getCurrencyCode()));
 
         // Set retry tracking fields
         po.setPushRetryCount(poRecord.getPushRetryCount());
