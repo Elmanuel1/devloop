@@ -38,6 +38,7 @@ public class ReductoClient {
     private final String apiKey;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final String webhookChannel;
     
     /**
      * Request a presigned URL for file upload.
@@ -130,7 +131,7 @@ public class ReductoClient {
                 .metadata(Map.of("assignedId", fileId)) // Include assignedId in metadata
                 .webhook(ReductoWebhookConfig.builder()
                     .mode("svix")
-                    .channels(new String[]{"default"})
+                    .channels(new String[]{webhookChannel})
                     .build())
                 .build())
             .input(fileId) // fileId is already the correct format

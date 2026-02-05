@@ -15,6 +15,6 @@ public class ReductoConfig {
     
     @Bean
     public ReductoClient reductoClient(AIProperties aiProperties, OkHttpClient httpClient, ObjectMapper objectMapper) {
-        return new ReductoClient(aiProperties.getApiKey(), httpClient, objectMapper);
+        return new ReductoClient(aiProperties.getApiKey(), httpClient, objectMapper, aiProperties.getWebhookChannel());
     }
 }

@@ -33,12 +33,6 @@ http:
       # CSRF disabled - Bearer token APIs are not vulnerable to CSRF since
       # browsers don't auto-attach Authorization headers like they do cookies
       enabled: ${HTTP_SECURITY_CSRF_ENABLED:false}
-      cookie:
-        name: X-CSRF-TOKEN
-        http-only: false
-        secure: ${HTTP_SECURITY_CSRF_COOKIE_SECURE:false}
-        same-site: ${HTTP_SECURITY_CSRF_COOKIE_SAME_SITE:Lax}
-        domain: ${CSRF_COOKIE_DOMAIN:localhost}
     csrf-ignored:
       # Paths exempt from CSRF validation (must match insecure paths)
       paths: /*/email-messages,/reducto/webhook,/actuator/**,/auth/hooks/**,/v1/quickbooks/events
