@@ -325,8 +325,7 @@ public class ComparisonChatClientConfig {
             ## TOOLS
             - readFile(path): Read file contents
             - listDirectory(path): List directory files
-            - tavily_search(query): Web search to verify vendor relationships
-            - listPoMatches(): List all recorded PO matches (for reference)
+            - tavily_search(query): Web search to verify vendor relationships (ONLY when names differ)
 
             ## WORKFLOW
             1. readFile("po.json") - read purchase order
@@ -403,15 +402,19 @@ public class ComparisonChatClientConfig {
             VENDOR blocking issue:
             - Wrong company (truly different legal entities) - USE WEB SEARCH TO VERIFY
 
-            ## VENDOR NAME MATCHING - MUST USE WEB SEARCH
+            ## VENDOR NAME MATCHING
 
-            When vendor names differ, ALWAYS use tavily_search to verify:
+            If vendor names are IDENTICAL or differ only by suffix (Inc., LLC, Corp) → "exact", NO web search needed.
+
+            ONLY when vendor names look like DIFFERENT companies, use tavily_search to verify:
             - Search: "[name1] [name2] same company subsidiary product"
 
-            **NOT blocking** (same entity, different name format):
+            **NOT blocking** (same entity, different name format — no web search needed):
             - "Anysphere" vs "Anysphere, Inc." - just suffix difference
-            - "Cursor" vs "Anysphere" - Cursor is Anysphere's product
             - Inc./LLC/Corp suffixes added or omitted
+
+            **Needs web search** (different names — verify relationship):
+            - "Cursor" vs "Anysphere" - search to confirm Cursor is Anysphere's product
 
             **BLOCKING** (different legal entities after web search confirms):
             - GitHub vs Microsoft - separate billing entities

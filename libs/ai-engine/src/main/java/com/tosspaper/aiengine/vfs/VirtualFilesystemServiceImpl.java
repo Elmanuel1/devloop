@@ -71,6 +71,16 @@ public class VirtualFilesystemServiceImpl implements VirtualFilesystemService {
     }
 
     @Override
+    public Path getSessionDirectory(long companyId, String comparisonId) {
+        validatePathComponents(comparisonId);
+        return root
+            .resolve("companies")
+            .resolve(String.valueOf(companyId))
+            .resolve("sessions")
+            .resolve(sanitize(comparisonId));
+    }
+
+    @Override
     @SneakyThrows
     public String readFile(Path path) {
         validatePathWithinRoot(path);

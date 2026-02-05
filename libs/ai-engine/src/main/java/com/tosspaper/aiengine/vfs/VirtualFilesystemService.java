@@ -46,6 +46,16 @@ public interface VirtualFilesystemService {
     Path getAuditDirectory(long companyId, String poNumber);
 
     /**
+     * Get an isolated session directory for a comparison.
+     * Each comparison gets its own directory to prevent stale data across retries.
+     *
+     * @param companyId    Company identifier
+     * @param comparisonId Unique comparison session identifier
+     * @return Path to the session directory: {root}/companies/{companyId}/sessions/{comparisonId}/
+     */
+    Path getSessionDirectory(long companyId, String comparisonId);
+
+    /**
      * Read file content from VFS.
      *
      * @param path Path to the file

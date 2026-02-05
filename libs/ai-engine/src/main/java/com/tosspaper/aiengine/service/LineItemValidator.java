@@ -104,6 +104,23 @@ public class LineItemValidator {
             }
         }
 
+        // Dedup line items with the same extractedIndex (AI sometimes emits duplicates)
+        Set<Long> seenExtractedIndices = new HashSet<>();
+        int beforeDedup = comparison.getResults().size();
+        comparison.getResults().removeIf(r -> {
+            if (r.getType() == null || !"line_item".equals(r.getType().value())) {
+                return false; // keep non-line-item results
+            }
+            if (r.getExtractedIndex() == null) {
+                return true; // remove line items with no extractedIndex
+            }
+            return !seenExtractedIndices.add(r.getExtractedIndex()); // remove duplicate indices
+        });
+        int deduped = beforeDedup - comparison.getResults().size();
+        if (deduped > 0) {
+            log.warn("[DEDUP] Removed {} duplicate line items by extractedIndex", deduped);
+        }
+
         int lineItemCount = 0;
         for (ComparisonResult result : comparison.getResults()) {
             if (result.getType() == null || !"line_item".equals(result.getType().value())) {

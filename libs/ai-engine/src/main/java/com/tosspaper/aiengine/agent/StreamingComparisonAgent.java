@@ -83,7 +83,8 @@ public class StreamingComparisonAgent {
 
         Document ID: %s
         PO ID: %s
-        Document line items: %d (DO NOT create more line_item results than this count)
+        Document line items: %d
+        CRITICAL: Produce EXACTLY one line_item result per document line. No duplicates, no extras.
         %s
 
         ## CRITICAL: Match Classification Rules
@@ -279,19 +280,19 @@ public class StreamingComparisonAgent {
                 log.info("Using comparisonId from context: {}", comparisonId);
             }
 
-            // 2. Prepare files in VFS
+            // 2. Create session-isolated directory (fresh per comparison, no stale data)
+            Path sessionDir = vfsService.getSessionDirectory(task.getCompanyId(), comparisonId);
+            log.info("Session directory (isolated): {}", sessionDir);
+
+            // 3. Prepare files directly into session directory
             sink.tryEmitNext(new ComparisonEvent.Activity("📁", "Preparing files..."));
-            Path workingDir = prepareFiles(context);
+            prepareFiles(context, sessionDir);
 
-            // 3. Create session-specific output directory for isolation
-            Path sessionDir = workingDir.resolve("comparisons").resolve(comparisonId);
-            log.debug("Session output directory: {}", sessionDir);
-
-            // 4. Configure FileTools with working directory (for reading PO/docs)
-            fileTools.setWorkingDirectory(workingDir);
+            // 4. Configure FileTools with session directory (all reads/writes scoped here)
+            fileTools.setWorkingDirectory(sessionDir);
 
             // 5. Build the prompt
-            String prompt = buildPrompt(context, workingDir);
+            String prompt = buildPrompt(context, sessionDir);
 
             // 6. Execute ChatClient and get response
             sink.tryEmitNext(new ComparisonEvent.Activity("🤖", "Starting AI analysis..."));
@@ -340,7 +341,7 @@ public class StreamingComparisonAgent {
             sink.tryEmitNext(new ComparisonEvent.Activity("🔍", "Validating line items..."));
             comparison = validateAndCorrectLineItems(comparison, sessionDir, sink, docLineItemCount);
 
-            // 8. Save results to session directory for isolation
+            // 8. Save results to session directory
             sink.tryEmitNext(new ComparisonEvent.Activity("📊", "Saving results..."));
             Path resultsPath = sessionDir.resolve("_results.json");
             String resultJson = objectMapper.writeValueAsString(comparison);
@@ -359,46 +360,43 @@ public class StreamingComparisonAgent {
     }
 
     /**
-     * Prepare files in VFS for comparison.
-     * PO and document files are saved to shared working directory.
-     * Session-specific outputs (results, audits) go to separate session directory.
+     * Prepare files in the session-isolated directory for comparison.
+     * Each session gets fresh copies of PO, document, and schema — no shared state.
      *
-     * @param context Comparison context
-     * @return Working directory path (shared for PO/docs)
+     * @param context    Comparison context
+     * @param sessionDir Isolated session directory for this comparison
      */
-    private Path prepareFiles(ComparisonContext context) {
+    private void prepareFiles(ComparisonContext context, Path sessionDir) {
         ExtractionTask task = context.extractionTask();
         PurchaseOrder po = context.purchaseOrder();
 
-        // Get working directory for PO and documents (shared, read-only during comparison)
-        Path workingDir = vfsService.getWorkingDirectory(task.getCompanyId(), task.getPoNumber());
-
-        // Save PO to VFS (idempotent - same content overwrites safely)
+        // Write stripped PO content directly to session dir
         VfsDocumentContext poContext = contextMapper.from(po);
-        vfsService.save(poContext);
-        log.debug("Saved PO to VFS: {}", vfsService.getPath(poContext));
+        Path poPath = sessionDir.resolve("po.json");
+        vfsService.writeFile(poPath, poContext.content());
+        log.debug("Saved PO to session dir: {}", poPath);
 
         // Set PO item count for index validation in FileTools
         int poItemCount = po.getItems() != null ? po.getItems().size() : 0;
         fileTools.setPoItemCount(poItemCount);
         log.debug("Set PO item count to {} (valid indices: 0 to {})", poItemCount, poItemCount - 1);
 
-        // Save document to VFS (idempotent)
-        VfsDocumentContext docContext = contextMapper.from(task);
-        vfsService.save(docContext);
-        log.debug("Saved document to VFS: {}", vfsService.getPath(docContext));
+        // Write document content directly to session dir
+        VfsDocumentContext docContext = VFSContextMapper.from(task);
+        String docTypeFolder = task.getDocumentType().getFilePrefix();
+        Path docPath = sessionDir.resolve(docTypeFolder).resolve(task.getAssignedId() + ".json");
+        vfsService.writeFile(docPath, docContext.content());
+        log.debug("Saved document to session dir: {}", docPath);
 
-        // Copy comparison schema to _schema folder for AI to read
+        // Write comparison schema to session dir
         try {
-            Path schemaPath = workingDir.resolve("_schema/comparison.json");
+            Path schemaPath = sessionDir.resolve("_schema/comparison.json");
             String schemaContent = schemaLoader.loadSchema("comparison");
             vfsService.writeFile(schemaPath, schemaContent);
-            log.debug("Saved comparison schema to: {}", schemaPath);
+            log.debug("Saved comparison schema to session dir: {}", schemaPath);
         } catch (Exception e) {
             log.warn("Failed to save comparison schema, AI will use embedded instructions", e);
         }
-
-        return workingDir;
     }
 
     /**
