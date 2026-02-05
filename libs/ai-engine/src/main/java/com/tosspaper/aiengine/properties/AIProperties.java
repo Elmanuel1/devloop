@@ -30,6 +30,12 @@ public class AIProperties {
      * Common base URL for AI provider API endpoints.
      */
     private String baseUrl;
-    
+
+    /**
+     * Webhook channel for Reducto Svix webhooks.
+     * Use different channels per environment (e.g., "prod", "dev", "stage").
+     */
+    private String webhookChannel = "default";
+
 }
 
