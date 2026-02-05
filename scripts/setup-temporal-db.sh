@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Setup Temporal User on RDS (Idempotent)
+# Setup Temporal User and Databases on RDS (Idempotent)
 # =============================================================================
-# Creates temporal user with CREATEDB privilege. Temporal auto-setup will
-# create the databases (temporal, temporal_visibility) on first run.
-#
+# Creates temporal user and databases (temporal, temporal_visibility).
 # This script is idempotent - safe to run multiple times.
 #
 # Usage:
@@ -75,7 +73,7 @@ run_sql() {
         -c "$sql"
 }
 
-echo "--- Creating temporal user with CREATEDB privilege (idempotent) ---"
+echo "--- Step 1: Creating temporal user (idempotent) ---"
 run_sql postgres "
 DO \$\$
 BEGIN
@@ -91,18 +89,32 @@ END
 "
 
 echo ""
+echo "--- Step 2: Creating databases (idempotent) ---"
+
+# Create databases - ignore errors if they already exist
+run_sql postgres "CREATE DATABASE temporal;" 2>&1 || echo "  (temporal database may already exist)"
+run_sql postgres "CREATE DATABASE temporal_visibility;" 2>&1 || echo "  (temporal_visibility database may already exist)"
+
+echo ""
+echo "--- Step 3: Setting database ownership and privileges ---"
+run_sql postgres "ALTER DATABASE temporal OWNER TO temporal;"
+run_sql postgres "ALTER DATABASE temporal_visibility OWNER TO temporal;"
+run_sql postgres "GRANT ALL PRIVILEGES ON DATABASE temporal TO temporal;"
+run_sql postgres "GRANT ALL PRIVILEGES ON DATABASE temporal_visibility TO temporal;"
+
+echo ""
+echo "--- Verifying setup ---"
+run_sql postgres "SELECT datname, pg_catalog.pg_get_userbyid(datdba) as owner FROM pg_database WHERE datname LIKE 'temporal%';"
+
+echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "User: temporal"
-echo "Privileges: CREATEDB (can create temporal, temporal_visibility databases)"
-echo ""
-echo "Temporal auto-setup will create these databases on first deploy:"
-echo "  - temporal"
-echo "  - temporal_visibility"
+echo "Databases: temporal, temporal_visibility"
 echo ""
 echo "Next steps:"
 echo "  1. Add TEMPORAL_DB_PASSWORD to SSM Parameter Store:"
 echo "     aws ssm put-parameter --name '/tosspaper/${ENV}/secrets/TEMPORAL_DB_PASSWORD' \\"
-echo "         --value '${TEMPORAL_PASSWORD}' --type SecureString --region ${REGION}"
+echo "         --value '${TEMPORAL_PASSWORD}' --type SecureString --overwrite --region ${REGION}"
 echo ""
-echo "  2. Deploy the application - Temporal will auto-create and migrate databases"
+echo "  2. Deploy the application - Temporal will auto-migrate the databases"

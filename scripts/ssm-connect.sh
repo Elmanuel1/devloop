@@ -19,7 +19,7 @@ fi
 get_account_id() {
   case "$1" in
     stage) echo "318724431231" ;;
-    prod)  echo "YOUR_PROD_ACCOUNT_ID" ;;
+    prod)  echo "306950916532" ;;
     *)     echo "" ;;
   esac
 }
