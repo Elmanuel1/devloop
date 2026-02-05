@@ -33,7 +33,11 @@ fi
 
 # Configuration
 REGION="${AWS_REGION:-us-west-2}"
-RDS_HOST="tosspaper-${ENV}-postgres.cdak8uywcr2c.us-west-2.rds.amazonaws.com"
+if [[ "$ENV" == "prod" ]]; then
+    RDS_HOST="tosspaper-prod-postgres.cl8agukk4g2s.us-west-2.rds.amazonaws.com"
+else
+    RDS_HOST="tosspaper-stage-postgres.cdak8uywcr2c.us-west-2.rds.amazonaws.com"
+fi
 SECRET_ID="tosspaper-${ENV}/database/credentials"
 
 echo "=== Temporal User Setup for ${ENV} ==="

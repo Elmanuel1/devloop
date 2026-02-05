@@ -17,10 +17,6 @@ public_subnet_ids = [
 db_security_group_id = "sg-01dbf57fb62032657"
 db_resource_id       = "db-LBWWFBSF6A34PKBIMFJN63M6XM"
 
-# SSH access (disabled for prod)
-# ssh_key_name      = ""
-# ssh_allowed_cidrs = []
-
 # Alerting
 alert_email = "aribooluwatoba@gmail.com"
 

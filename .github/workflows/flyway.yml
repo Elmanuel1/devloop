@@ -245,9 +245,26 @@ jobs:
             echo "$STDERR"
           fi
 
+          # Write to Job Summary (visible in GitHub Actions summary view)
+          echo "## Flyway ${{ env.FLYWAY_ACTION }} - ${{ env.TARGET_ENV }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           if [[ "$STATUS" != "Success" ]]; then
+            echo "### ❌ Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "$STDOUT" >> $GITHUB_STEP_SUMMARY
+            if [[ -n "$STDERR" && "$STDERR" != "null" ]]; then
+              echo "$STDERR" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
             echo "::error::SSM command failed with status: $STATUS"
             exit 1
+          else
+            echo "### ✅ Success" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "$STDOUT" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "Flyway ${{ env.FLYWAY_ACTION }} completed successfully"
