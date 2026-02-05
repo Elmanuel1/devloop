@@ -74,17 +74,34 @@ public class LineItemValidator {
     /**
      * Validate all line_items from comparison result.
      * Returns two lists: validated and failed (with original results for correction).
+     *
+     * @param comparison the comparison result from AI
+     * @param docLineItemCount actual number of line items in the document (0 to skip phantom check)
      */
-    public ValidationBatch validateLineItems(Comparison comparison) {
+    public ValidationBatch validateLineItems(Comparison comparison, int docLineItemCount) {
         List<ValidationResult> validated = new ArrayList<>();
         List<FailedValidation> failed = new ArrayList<>();
         Set<Integer> usedPoIndices = new HashSet<>();
 
-        log.info("=== POST-HOC VALIDATION START === Total results: {}",
-                comparison.getResults() != null ? comparison.getResults().size() : 0);
+        log.info("=== POST-HOC VALIDATION START === Total results: {}, docLineItemCount: {}",
+                comparison.getResults() != null ? comparison.getResults().size() : 0, docLineItemCount);
 
         if (comparison.getResults() == null) {
             return new ValidationBatch(validated, failed, usedPoIndices);
+        }
+
+        // Strip phantom line items the AI hallucinated beyond actual document count
+        if (docLineItemCount > 0) {
+            int before = comparison.getResults().size();
+            comparison.getResults().removeIf(r ->
+                    r.getType() != null
+                    && "line_item".equals(r.getType().value())
+                    && r.getExtractedIndex() != null
+                    && r.getExtractedIndex() >= docLineItemCount);
+            int removed = before - comparison.getResults().size();
+            if (removed > 0) {
+                log.warn("[PHANTOM] Removed {} hallucinated line items (document has {} actual)", removed, docLineItemCount);
+            }
         }
 
         int lineItemCount = 0;

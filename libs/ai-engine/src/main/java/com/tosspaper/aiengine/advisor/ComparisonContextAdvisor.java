@@ -147,6 +147,18 @@ public class ComparisonContextAdvisor implements AgentCallAdvisor {
             if (lineItems.isArray()) {
                 return lineItems.size();
             }
+            // Count charges across all deliveryTransactions
+            JsonNode transactions = root.path("deliveryTransactions");
+            if (transactions.isArray()) {
+                int total = 0;
+                for (JsonNode txn : transactions) {
+                    JsonNode charges = txn.path("charges");
+                    if (charges.isArray()) {
+                        total += charges.size();
+                    }
+                }
+                if (total > 0) return total;
+            }
             return 0;
         } catch (Exception e) {
             log.warn("Failed to count line items: {}", e.getMessage());

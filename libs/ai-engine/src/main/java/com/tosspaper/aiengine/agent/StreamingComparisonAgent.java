@@ -83,6 +83,7 @@ public class StreamingComparisonAgent {
 
         Document ID: %s
         PO ID: %s
+        Document line items: %d (DO NOT create more line_item results than this count)
         %s
 
         ## CRITICAL: Match Classification Rules
@@ -334,9 +335,10 @@ public class StreamingComparisonAgent {
 
             log.debug("ChatClient response received with structured output");
 
-            // 7. POST-HOC VALIDATION: Validate and correct line item matches
+            // 7. POST-HOC VALIDATION: Strip phantoms + validate and correct line item matches
+            int docLineItemCount = countLineItems(task);
             sink.tryEmitNext(new ComparisonEvent.Activity("🔍", "Validating line items..."));
-            comparison = validateAndCorrectLineItems(comparison, sessionDir, sink);
+            comparison = validateAndCorrectLineItems(comparison, sessionDir, sink, docLineItemCount);
 
             // 8. Save results to session directory for isolation
             sink.tryEmitNext(new ComparisonEvent.Activity("📊", "Saving results..."));
@@ -417,10 +419,13 @@ public class StreamingComparisonAgent {
                         + ". Flag any document line item or total in a different currency as MISMATCH + BLOCKING.")
                 .orElse("");
 
+        int docLineItemCount = countLineItems(task);
+
         return String.format(COMPARISON_PROMPT_TEMPLATE,
                 docTypeFolder,
                 task.getAssignedId(),
                 task.getPoNumber(),
+                docLineItemCount,
                 currencyLine
         );
     }
@@ -452,6 +457,19 @@ public class StreamingComparisonAgent {
             lineItems = root.path("items");
             if (lineItems.isArray()) {
                 return lineItems.size();
+            }
+
+            // Count charges across all deliveryTransactions
+            JsonNode transactions = root.path("deliveryTransactions");
+            if (transactions.isArray()) {
+                int total = 0;
+                for (JsonNode txn : transactions) {
+                    JsonNode charges = txn.path("charges");
+                    if (charges.isArray()) {
+                        total += charges.size();
+                    }
+                }
+                if (total > 0) return total;
             }
 
             return 0;
@@ -554,14 +572,15 @@ public class StreamingComparisonAgent {
     private Comparison validateAndCorrectLineItems(
             Comparison comparison,
             Path workingDir,
-            Sinks.Many<ComparisonEvent> sink) {
+            Sinks.Many<ComparisonEvent> sink,
+            int docLineItemCount) {
 
         log.info("========================================");
         log.info("=== LINE ITEM VALIDATION PHASE START ===");
         log.info("========================================");
 
-        // 1. Validate all line_items
-        ValidationBatch batch = lineItemValidator.validateLineItems(comparison);
+        // 1. Validate all line_items (also strips phantom items beyond docLineItemCount)
+        ValidationBatch batch = lineItemValidator.validateLineItems(comparison, docLineItemCount);
 
         log.info("=== VALIDATION SUMMARY === valid={} failed={} usedIndices={}",
                 batch.validated().size(), batch.failed().size(), batch.usedPoIndices());
