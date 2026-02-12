@@ -20,6 +20,10 @@
       "env": {
         "FASTMCP_LOG_LEVEL": "INFO"
       }
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/"
     }
   }
 }
