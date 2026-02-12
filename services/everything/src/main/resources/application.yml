@@ -84,6 +84,14 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 50MB
+      file-size-threshold: 2MB
+      max-file-count: 1000
+
   data:
     redis:
       database: ${REDIS_DATABASE:0}
@@ -151,14 +159,6 @@ spring:
             tavily:
               url: https://mcp.tavily.com
               endpoint: /mcp/?tavilyApiKey=${TAVILY_API_KEY:}
-
-servlet:
-  multipart:
-    enabled: true
-    max-file-size: 50MB
-    max-request-size: 50MB
-    file-size-threshold: 2MB
-    max-file-count: 1000 
 
 otel:
   service:
