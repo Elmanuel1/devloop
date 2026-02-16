@@ -9,7 +9,7 @@ jooq-plugin = "9.0"
 flyway = "11.1.0"
 mapstruct = "1.5.5.Final"
 lombok = "1.18.36"
-postgresql = "42.7.4"
+postgresql = "42.7.7"
 testcontainers = "1.21.4"
 aws-sdk = "2.29.45"
 spock = "2.4-M1-groovy-4.0"
@@ -21,7 +21,7 @@ jackson-databind-nullable = "0.2.6"
 jackson = "2.20.1"
 spring-security = "6.4.2"
 auth0 = "2.12.0"
-commons-lang3 = "3.14.0"
+commons-lang3 = "3.18.0"
 guava = "33.3.1-jre"
 vavr = "0.10.4"
 redisson = "3.35.0"
@@ -83,7 +83,7 @@ aws-s3 = { module = "software.amazon.awssdk:s3", version.ref = "aws-sdk" }
 aws-sqs = { module = "software.amazon.awssdk:sqs", version.ref = "aws-sdk" }
 aws-sts = { module = "software.amazon.awssdk:sts", version.ref = "aws-sdk" }
 aws-rds = { module = "software.amazon.awssdk:rds", version.ref = "aws-sdk" }
-aws-jdbc-wrapper = { module = "software.amazon.jdbc:aws-advanced-jdbc-wrapper", version = "2.5.4" }
+aws-jdbc-wrapper = { module = "software.amazon.jdbc:aws-advanced-jdbc-wrapper", version = "2.6.5" }
 
 # Apache Commons
 commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commons-lang3" }
