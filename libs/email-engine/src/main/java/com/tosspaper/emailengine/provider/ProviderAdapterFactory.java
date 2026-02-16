@@ -1,7 +1,6 @@
 package com.tosspaper.emailengine.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tosspaper.emailengine.provider.impl.CloudflareAdapterImpl;
 import com.tosspaper.emailengine.provider.impl.MailGunAdapterImpl;
 import lombok.Getter;
 import org.springframework.stereotype.Component;
@@ -14,7 +13,6 @@ public class ProviderAdapterFactory {
 
     @Getter
     public enum InboundEmailProvider {
-        CLOUDFLARE("cloudflare"),
         MAILGUN("mailgun");
 
         private final String name;
@@ -34,15 +32,14 @@ public class ProviderAdapterFactory {
 
     public ProviderAdapterFactory(ObjectMapper objectMapper) {
         this.adapterMap = Map.of(
-                InboundEmailProvider.CLOUDFLARE, new CloudflareAdapterImpl(objectMapper),
                 InboundEmailProvider.MAILGUN, new MailGunAdapterImpl(objectMapper)
         );
     }
 
     /**
      * Get the appropriate provider adapter for the given provider name
-     * 
-     * @param provider the provider name (e.g., "postmark", "cloudflare", "mailgun)
+     *
+     * @param provider the provider name (e.g., "mailgun")
      * @return the corresponding ProviderAdapter
      * @throws IllegalArgumentException if no adapter is found for the provider
      */
@@ -52,7 +49,7 @@ public class ProviderAdapterFactory {
         if (adapter == null) {
             throw new IllegalArgumentException("No adapter found for provider: " + provider);
         }
-        
+
         return adapter;
     }
 }

@@ -12,7 +12,7 @@ public interface ProviderAdapter {
     /**
      * Get the provider name this adapter handles.
      * 
-     * @return the provider name (e.g., "postmark", "sendgrid", "cloudflare")
+     * @return the provider name (e.g., "mailgun")
      */
     String getProviderName();
     

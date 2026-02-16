@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import spock.lang.Unroll
 
 import java.time.OffsetDateTime
+import java.time.temporal.ChronoUnit
 
 import static com.tosspaper.models.jooq.Tables.*
 
@@ -389,8 +390,8 @@ class ApprovedSenderRepositoryTest extends BaseRepositoryTest {
 
         def thread = createThreadForSender(email)
 
-        and: "scheduled deletion time"
-        def scheduledDeletion = OffsetDateTime.now().plusDays(30)
+        and: "scheduled deletion time (truncated to micros to match DB precision)"
+        def scheduledDeletion = OffsetDateTime.now().plusDays(30).truncatedTo(ChronoUnit.MICROS)
 
         when: "rejecting the email"
         def threadsDeleted = approvedSenderRepository.rejectEmailAndSoftDeleteThreads(
@@ -452,8 +453,8 @@ class ApprovedSenderRepositoryTest extends BaseRepositoryTest {
         def thread1 = createThreadForSender(email1)
         def thread2 = createThreadForSender(email2)
 
-        and: "scheduled deletion time"
-        def scheduledDeletion = OffsetDateTime.now().plusDays(30)
+        and: "scheduled deletion time (truncated to micros to match DB precision)"
+        def scheduledDeletion = OffsetDateTime.now().plusDays(30).truncatedTo(ChronoUnit.MICROS)
 
         when: "rejecting the domain"
         def threadsDeleted = approvedSenderRepository.rejectDomainAndSoftDeleteThreads(

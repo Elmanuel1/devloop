@@ -15,15 +15,6 @@ class ProviderAdapterFactorySpec extends Specification {
         factory = new ProviderAdapterFactory(objectMapper)
     }
 
-    def "should return CloudflareAdapterImpl for cloudflare provider"() {
-        when:
-        def adapter = factory.getAdapter("cloudflare")
-
-        then:
-        adapter != null
-        adapter.getProviderName() == "cloudflare"
-    }
-
     def "should return MailGunAdapterImpl for mailgun provider"() {
         when:
         def adapter = factory.getAdapter("mailgun")
@@ -44,7 +35,7 @@ class ProviderAdapterFactorySpec extends Specification {
 
     def "should be case sensitive for provider names"() {
         when:
-        factory.getAdapter("CLOUDFLARE")
+        factory.getAdapter("MAILGUN")
 
         then:
         thrown(IllegalArgumentException)
@@ -52,16 +43,15 @@ class ProviderAdapterFactorySpec extends Specification {
 
     def "InboundEmailProvider enum should have correct values"() {
         expect:
-        ProviderAdapterFactory.InboundEmailProvider.CLOUDFLARE.getName() == "cloudflare"
         ProviderAdapterFactory.InboundEmailProvider.MAILGUN.getName() == "mailgun"
     }
 
     def "InboundEmailProvider.from should return correct enum for valid provider"() {
         when:
-        def provider = ProviderAdapterFactory.InboundEmailProvider.from("cloudflare")
+        def provider = ProviderAdapterFactory.InboundEmailProvider.from("mailgun")
 
         then:
-        provider == ProviderAdapterFactory.InboundEmailProvider.CLOUDFLARE
+        provider == ProviderAdapterFactory.InboundEmailProvider.MAILGUN
     }
 
     def "InboundEmailProvider.from should throw exception for invalid provider"() {
