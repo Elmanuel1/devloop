@@ -1,6 +1,6 @@
 package com.tosspaper.rbac
 
-import com.tosspaper.common.ForbiddenException
+import com.tosspaper.models.exception.ForbiddenException
 import com.tosspaper.generated.model.AuthorizedUser as GeneratedAuthorizedUser
 import com.tosspaper.models.domain.AuthorizedUser
 import com.tosspaper.models.domain.AuthorizedUser.UserStatus

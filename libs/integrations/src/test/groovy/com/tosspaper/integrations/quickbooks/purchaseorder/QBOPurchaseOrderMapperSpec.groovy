@@ -518,4 +518,1038 @@ class QBOPurchaseOrderMapperSpec extends Specification {
         mapper.combineNotes(null, "Memo") == "Memo"
         mapper.combineNotes(null, null) == null
     }
+
+    // ==================== mapReference Tests ====================
+
+    def "should map reference with value and name"() {
+        given:
+            def ref = new com.intuit.ipp.data.ReferenceType()
+            ref.value = "42"
+            ref.name = "Test Ref"
+
+        when:
+            def result = mapper.mapReference(ref)
+
+        then:
+            result != null
+            result.value == "42"
+            result.name == "Test Ref"
+    }
+
+    def "should map reference with value only"() {
+        given:
+            def ref = new com.intuit.ipp.data.ReferenceType()
+            ref.value = "42"
+
+        when:
+            def result = mapper.mapReference(ref)
+
+        then:
+            result != null
+            result.value == "42"
+            !result.containsKey("name")
+    }
+
+    def "should return null for null reference"() {
+        expect:
+            mapper.mapReference(null) == null
+    }
+
+    def "should return null for empty reference"() {
+        given:
+            def ref = new com.intuit.ipp.data.ReferenceType()
+
+        expect:
+            mapper.mapReference(ref) == null
+    }
+
+    // ==================== dateToLocalDate / dateToOffsetDateTime Tests ====================
+
+    def "should convert Date to OffsetDateTime"() {
+        given:
+            def date = new Date(1704067200000L) // 2024-01-01T00:00:00Z
+
+        when:
+            def result = mapper.dateToLocalDate(date)
+
+        then:
+            result != null
+    }
+
+    def "should return null for null Date in dateToLocalDate"() {
+        expect:
+            mapper.dateToLocalDate(null) == null
+    }
+
+    def "should convert Date to LocalDate"() {
+        given:
+            def date = new Date(1704067200000L)
+
+        when:
+            def result = mapper.dateToOffsetDateTime(date)
+
+        then:
+            result != null
+            result == LocalDate.of(2024, 1, 1)
+    }
+
+    def "should return null for null Date in dateToOffsetDateTime"() {
+        expect:
+            mapper.dateToOffsetDateTime(null) == null
+    }
+
+    // ==================== mapPhysicalAddressToAddress Tests ====================
+
+    def "should map PhysicalAddress with all fields"() {
+        given:
+            def physAddr = new com.intuit.ipp.data.PhysicalAddress()
+            physAddr.line1 = "123 Main St"
+            physAddr.line2 = "Suite 100"
+            physAddr.city = "Austin"
+            physAddr.countrySubDivisionCode = "TX"
+            physAddr.postalCode = "78701"
+            physAddr.country = "US"
+
+        when:
+            def result = mapper.mapPhysicalAddressToAddress(physAddr)
+
+        then:
+            result != null
+            result.address == "123 Main St, Suite 100"
+            result.city == "Austin"
+            result.stateOrProvince == "TX"
+            result.postalCode == "78701"
+            result.country == "US"
+    }
+
+    def "should map PhysicalAddress with only Line1"() {
+        given:
+            def physAddr = new com.intuit.ipp.data.PhysicalAddress()
+            physAddr.line1 = "123 Main St"
+
+        when:
+            def result = mapper.mapPhysicalAddressToAddress(physAddr)
+
+        then:
+            result != null
+            result.address == "123 Main St"
+    }
+
+    def "should return null for null PhysicalAddress"() {
+        expect:
+            mapper.mapPhysicalAddressToAddress(null) == null
+    }
+
+    // ==================== mapAddressToPhysicalAddress Tests ====================
+
+    def "should map Address to PhysicalAddress"() {
+        given:
+            def address = Address.builder()
+                .address("456 Oak Ave")
+                .city("Dallas")
+                .stateOrProvince("TX")
+                .postalCode("75201")
+                .country("US")
+                .build()
+
+        when:
+            def result = mapper.mapAddressToPhysicalAddress(address)
+
+        then:
+            result != null
+            result.line1 == "456 Oak Ave"
+            result.city == "Dallas"
+            result.countrySubDivisionCode == "TX"
+            result.postalCode == "75201"
+            result.country == "US"
+    }
+
+    def "should return null for null Address"() {
+        expect:
+            mapper.mapAddressToPhysicalAddress(null) == null
+    }
+
+    // ==================== toQboPurchaseOrder - null input ====================
+
+    def "should return null when domain PO is null"() {
+        expect:
+            mapper.toQboPurchaseOrder(null) == null
+    }
+
+    // ==================== deserializeStoredQboPurchaseOrder Tests ====================
+
+    def "should return empty PO when externalMetadata is null"() {
+        given:
+            def po = PurchaseOrder.builder().build()
+
+        when:
+            def result = mapper.deserializeStoredQboPurchaseOrder(po)
+
+        then:
+            result != null
+            result.id == null
+    }
+
+    def "should return empty PO when qboEntity key is missing"() {
+        given:
+            def po = PurchaseOrder.builder().build()
+            po.externalMetadata = [someOtherKey: "value"]
+
+        when:
+            def result = mapper.deserializeStoredQboPurchaseOrder(po)
+
+        then:
+            result != null
+            result.id == null
+    }
+
+    def "should return empty PO when qboEntity is invalid JSON"() {
+        given:
+            def po = PurchaseOrder.builder().build()
+            po.externalMetadata = [qboEntity: "not valid json"]
+
+        when:
+            def result = mapper.deserializeStoredQboPurchaseOrder(po)
+
+        then:
+            result != null
+            result.id == null
+    }
+
+    // ==================== deserializeStoredQboLine Tests ====================
+
+    def "should return empty Line when metadata is null"() {
+        given:
+            def item = PurchaseOrderItem.builder().build()
+
+        when:
+            def result = mapper.deserializeStoredQboLine(item)
+
+        then:
+            result != null
+    }
+
+    def "should throw when metadata has no qboLine and no external references"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .metadata([someKey: "value"])
+                .build()
+
+        when:
+            mapper.deserializeStoredQboLine(item)
+
+        then:
+            thrown(IllegalStateException)
+    }
+
+    def "should restore line from externalItemId when qboLine is missing"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .externalItemId("item-42")
+                .metadata([someKey: "value"])
+                .build()
+
+        when:
+            def result = mapper.deserializeStoredQboLine(item)
+
+        then:
+            result != null
+            result.detailType == com.intuit.ipp.data.LineDetailTypeEnum.ITEM_BASED_EXPENSE_LINE_DETAIL
+            result.itemBasedExpenseLineDetail != null
+            result.itemBasedExpenseLineDetail.itemRef.value == "item-42"
+    }
+
+    def "should restore line from externalAccountId when qboLine is missing"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .externalAccountId("acct-99")
+                .metadata([someKey: "value"])
+                .build()
+
+        when:
+            def result = mapper.deserializeStoredQboLine(item)
+
+        then:
+            result != null
+            result.detailType == com.intuit.ipp.data.LineDetailTypeEnum.ACCOUNT_BASED_EXPENSE_LINE_DETAIL
+            result.accountBasedExpenseLineDetail != null
+            result.accountBasedExpenseLineDetail.accountRef.value == "acct-99"
+    }
+
+    def "should return empty Line when qboLine is invalid JSON"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .externalItemId("item-42")
+                .metadata([qboLine: "invalid json"])
+                .build()
+
+        when:
+            def result = mapper.deserializeStoredQboLine(item)
+
+        then:
+            result != null
+            result.detailType == com.intuit.ipp.data.LineDetailTypeEnum.ITEM_BASED_EXPENSE_LINE_DETAIL
+    }
+
+    // ==================== mapToQboLine Tests ====================
+
+    def "should map PurchaseOrderItem to line with totalPrice"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .name("Test Item")
+                .totalPrice(new BigDecimal("500.00"))
+                .externalItemId("item-1")
+                .metadata([someKey: "value"])
+                .build()
+
+        when:
+            def result = mapper.mapToQboLine(item)
+
+        then:
+            result != null
+            result.description == "Test Item"
+            result.amount == new BigDecimal("500.00")
+    }
+
+    def "should compute amount from unitPrice and quantity when totalPrice is null"() {
+        given:
+            def item = PurchaseOrderItem.builder()
+                .name("Calculated Item")
+                .unitPrice(new BigDecimal("25.00"))
+                .quantity(4)
+                .externalItemId("item-2")
+                .metadata([someKey: "value"])
+                .build()
+
+        when:
+            def result = mapper.mapToQboLine(item)
+
+        then:
+            result != null
+            result.amount == new BigDecimal("100.00")
+    }
+
+    // ==================== mapToQboLines Tests ====================
+
+    def "should map list of PurchaseOrderItems to lines"() {
+        given:
+            def items = [
+                PurchaseOrderItem.builder()
+                    .name("Item A")
+                    .totalPrice(new BigDecimal("100.00"))
+                    .externalItemId("a")
+                    .metadata([someKey: "value"])
+                    .build(),
+                PurchaseOrderItem.builder()
+                    .name("Item B")
+                    .totalPrice(new BigDecimal("200.00"))
+                    .externalItemId("b")
+                    .metadata([someKey: "value"])
+                    .build()
+            ]
+
+        when:
+            def result = mapper.mapToQboLines(items)
+
+        then:
+            result.size() == 2
+            result[0].description == "Item A"
+            result[1].description == "Item B"
+    }
+
+    // ==================== mapCustomFieldsToMetadata Tests ====================
+
+    def "should map custom fields with name and string value"() {
+        given:
+            def cf = new com.intuit.ipp.data.CustomField()
+            cf.definitionId = "1"
+            cf.name = "Project"
+            cf.stringValue = "PRJ-001"
+
+        when:
+            def result = mapper.mapCustomFieldsToMetadata([cf])
+
+        then:
+            result != null
+            result.Project == "PRJ-001"
+    }
+
+    def "should use field_id as key when name is null"() {
+        given:
+            def cf = new com.intuit.ipp.data.CustomField()
+            cf.definitionId = "2"
+            cf.stringValue = "Some Value"
+
+        when:
+            def result = mapper.mapCustomFieldsToMetadata([cf])
+
+        then:
+            result != null
+            result["field_2"] == "Some Value"
+    }
+
+    def "should return null for empty custom fields list"() {
+        expect:
+            mapper.mapCustomFieldsToMetadata([]) == null
+    }
+
+    def "should return null for null custom fields list"() {
+        expect:
+            mapper.mapCustomFieldsToMetadata(null) == null
+    }
+
+    def "should skip custom fields without definitionId"() {
+        given:
+            def cf = new com.intuit.ipp.data.CustomField()
+            cf.stringValue = "value"
+
+        when:
+            def result = mapper.mapCustomFieldsToMetadata([cf])
+
+        then:
+            result == null
+    }
+
+    // ==================== buildMetadata Tests ====================
+
+    def "should build metadata from QBO PO with all ref fields"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+            qboPo.totalAmt = new BigDecimal("5000.00")
+            qboPo.syncToken = "7"
+
+            def apRef = new com.intuit.ipp.data.ReferenceType()
+            apRef.value = "33"
+            apRef.name = "AP"
+            qboPo.APAccountRef = apRef
+
+            def currRef = new com.intuit.ipp.data.ReferenceType()
+            currRef.value = "USD"
+            qboPo.currencyRef = currRef
+
+            def salesTermRef = new com.intuit.ipp.data.ReferenceType()
+            salesTermRef.value = "3"
+            qboPo.salesTermRef = salesTermRef
+
+            def shipMethodRef = new com.intuit.ipp.data.ReferenceType()
+            shipMethodRef.value = "1"
+            qboPo.shipMethodRef = shipMethodRef
+
+            def classRef = new com.intuit.ipp.data.ReferenceType()
+            classRef.value = "5"
+            qboPo.classRef = classRef
+
+            def email = new com.intuit.ipp.data.EmailAddress()
+            email.address = "test@test.com"
+            qboPo.POEmail = email
+
+            qboPo.docNumber = "PO-100"
+
+        when:
+            def metadata = mapper.buildMetadata(qboPo)
+
+        then:
+            metadata != null
+            metadata.totalAmount == new BigDecimal("5000.00")
+            metadata.syncToken == "7"
+            metadata.apAccountRef != null
+            metadata.currencyRef != null
+            metadata.salesTermRef != null
+            metadata.shipMethodRef != null
+            metadata.classRef != null
+            metadata.poEmail == "test@test.com"
+            metadata.docNumber == "PO-100"
+    }
+
+    def "should return null metadata for empty QBO PO"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+
+        when:
+            def metadata = mapper.buildMetadata(qboPo)
+
+        then:
+            metadata == null
+    }
+
+    // ==================== toDeletedPurchaseOrder Tests ====================
+
+    def "should create deleted purchase order"() {
+        given:
+            def deletedAt = java.time.OffsetDateTime.now()
+
+        when:
+            def po = mapper.toDeletedPurchaseOrder("ext-999", deletedAt)
+
+        then:
+            po != null
+            po.externalId == "ext-999"
+            po.provider == IntegrationProvider.QUICKBOOKS.value
+            po.status == PurchaseOrderStatus.CANCELLED
+            po.deletedAt == deletedAt
+    }
+
+    // ==================== mapVendorContact Tests ====================
+
+    def "should return null when vendorRef is null"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+
+        expect:
+            mapper.mapVendorContact(qboPo) == null
+    }
+
+    def "should map vendor contact with address"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+            def vendorRef = new com.intuit.ipp.data.ReferenceType()
+            vendorRef.value = "56"
+            vendorRef.name = "Test Vendor"
+            qboPo.vendorRef = vendorRef
+
+            def vendorAddr = new com.intuit.ipp.data.PhysicalAddress()
+            vendorAddr.line1 = "123 Vendor St"
+            vendorAddr.city = "Houston"
+            qboPo.vendorAddr = vendorAddr
+
+        when:
+            def result = mapper.mapVendorContact(qboPo)
+
+        then:
+            result != null
+            result.externalId == "56"
+            result.name == "Test Vendor"
+            result.tag == PartyTag.SUPPLIER
+            result.address != null
+            result.address.city == "Houston"
+    }
+
+    // ==================== mapShipToContact Tests ====================
+
+    def "should return null when shipTo and shipAddr are null"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+
+        expect:
+            mapper.mapShipToContact(qboPo) == null
+    }
+
+    def "should strip Job Location prefix from ship-to name"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+            def shipTo = new com.intuit.ipp.data.ReferenceType()
+            shipTo.value = "123"
+            shipTo.name = "[Job Location] Downtown Office"
+            qboPo.shipTo = shipTo
+
+        when:
+            def result = mapper.mapShipToContact(qboPo)
+
+        then:
+            result != null
+            result.name == "Downtown Office"
+            result.tag == PartyTag.SHIP_TO
+            result.externalId == "123"
+    }
+
+    def "should map ship-to with address only (no shipTo ref)"() {
+        given:
+            def qboPo = new com.intuit.ipp.data.PurchaseOrder()
+            def shipAddr = new com.intuit.ipp.data.PhysicalAddress()
+            shipAddr.line1 = "789 Ship St"
+            shipAddr.city = "Phoenix"
+            qboPo.shipAddr = shipAddr
+
+        when:
+            def result = mapper.mapShipToContact(qboPo)
+
+        then:
+            result != null
+            result.tag == PartyTag.SHIP_TO
+            result.address != null
+            result.address.city == "Phoenix"
+    }
+
+    // ==================== mapLineItems Tests ====================
+
+    def "should return null for null lines"() {
+        expect:
+            mapper.mapLineItems(null, CONNECTION_ID) == null
+    }
+
+    def "should return null for empty lines"() {
+        expect:
+            mapper.mapLineItems([], CONNECTION_ID) == null
+    }
+
+    def "should filter out null results from line mapping"() {
+        given:
+            def line = new com.intuit.ipp.data.Line()
+            line.id = "1"
+            line.description = "Test Line"
+            line.amount = new BigDecimal("100.00")
+            line.detailType = com.intuit.ipp.data.LineDetailTypeEnum.ITEM_BASED_EXPENSE_LINE_DETAIL
+            def detail = new com.intuit.ipp.data.ItemBasedExpenseLineDetail()
+            def itemRef = new com.intuit.ipp.data.ReferenceType()
+            itemRef.value = "21"
+            detail.itemRef = itemRef
+            detail.qty = new BigDecimal("5")
+            detail.unitPrice = new BigDecimal("20.00")
+            line.itemBasedExpenseLineDetail = detail
+
+        when:
+            def result = mapper.mapLineItems([line, null], CONNECTION_ID)
+
+        then:
+            result != null
+            result.size() == 1
+    }
+
+    // ==================== mapLineToPurchaseOrderItem Tests ====================
+
+    def "should return null for null line"() {
+        expect:
+            mapper.mapLineToPurchaseOrderItem(null, CONNECTION_ID) == null
+    }
+
+    def "should map ItemBasedExpenseLineDetail with taxable TaxCodeRef"() {
+        given:
+            def line = new com.intuit.ipp.data.Line()
+            line.id = "1"
+            line.description = "Taxable Item"
+            line.amount = new BigDecimal("500.00")
+            line.detailType = com.intuit.ipp.data.LineDetailTypeEnum.ITEM_BASED_EXPENSE_LINE_DETAIL
+
+            def detail = new com.intuit.ipp.data.ItemBasedExpenseLineDetail()
+            detail.qty = new BigDecimal("10")
+            detail.unitPrice = new BigDecimal("50.00")
+
+            def itemRef = new com.intuit.ipp.data.ReferenceType()
+            itemRef.value = "21"
+            detail.itemRef = itemRef
+
+            def taxRef = new com.intuit.ipp.data.ReferenceType()
+            taxRef.value = "TAX"
+            detail.taxCodeRef = taxRef
+
+            line.itemBasedExpenseLineDetail = detail
+
+        when:
+            def item = mapper.mapLineToPurchaseOrderItem(line, CONNECTION_ID)
+
+        then:
+            item != null
+            item.id == "1"
+            item.name == "Taxable Item"
+            item.totalPrice == new BigDecimal("500.00")
+            item.quantity == 10
+            item.unitPrice == new BigDecimal("50.00")
+            item.externalItemId == "21"
+            item.taxable == true
+    }
+
+    def "should map AccountBasedExpenseLineDetail with NON TaxCodeRef"() {
+        given:
+            def line = new com.intuit.ipp.data.Line()
+            line.id = "2"
+            line.description = "Account Line"
+            line.amount = new BigDecimal("1000.00")
+            line.detailType = com.intuit.ipp.data.LineDetailTypeEnum.ACCOUNT_BASED_EXPENSE_LINE_DETAIL
+
+            def detail = new com.intuit.ipp.data.AccountBasedExpenseLineDetail()
+            def acctRef = new com.intuit.ipp.data.ReferenceType()
+            acctRef.value = "95"
+            detail.accountRef = acctRef
+
+            def taxRef = new com.intuit.ipp.data.ReferenceType()
+            taxRef.value = "NON"
+            detail.taxCodeRef = taxRef
+
+            line.accountBasedExpenseLineDetail = detail
+
+        when:
+            def item = mapper.mapLineToPurchaseOrderItem(line, CONNECTION_ID)
+
+        then:
+            item != null
+            item.quantity == 0
+            item.unitPrice == BigDecimal.ZERO
+            item.externalAccountId == "95"
+            item.taxable == false
+    }
+
+    // ==================== JSON (CDC) Mapping Tests ====================
+
+    def "should map JSON status correctly"() {
+        expect:
+            mapper.mapJsonStatus(null) == PurchaseOrderStatus.OPEN
+            mapper.mapJsonStatus("Open") == PurchaseOrderStatus.OPEN
+            mapper.mapJsonStatus("Closed") == PurchaseOrderStatus.CLOSED
+            mapper.mapJsonStatus("closed") == PurchaseOrderStatus.CLOSED
+            mapper.mapJsonStatus("Other") == PurchaseOrderStatus.OPEN
+    }
+
+    def "should parse JSON date correctly"() {
+        when:
+            def result = mapper.parseJsonDate("2025-11-07")
+
+        then:
+            result != null
+            result.year == 2025
+            result.monthValue == 11
+            result.dayOfMonth == 7
+    }
+
+    def "should return null for null date string"() {
+        expect:
+            mapper.parseJsonDate(null) == null
+    }
+
+    def "should return null for invalid date string"() {
+        expect:
+            mapper.parseJsonDate("not-a-date") == null
+    }
+
+    def "should parse JSON datetime correctly"() {
+        when:
+            def result = mapper.parseJsonDateTime("2025-11-07T13:10:14-08:00")
+
+        then:
+            result != null
+            result.year == 2025
+    }
+
+    def "should return null for null datetime string"() {
+        expect:
+            mapper.parseJsonDateTime(null) == null
+    }
+
+    def "should return null for invalid datetime string"() {
+        expect:
+            mapper.parseJsonDateTime("bad-datetime") == null
+    }
+
+    // ==================== getTextOrNull Tests ====================
+
+    def "should return null for null node"() {
+        expect:
+            mapper.getTextOrNull(null, "anyField") == null
+    }
+
+    def "should return text for existing field"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{"name": "Test"}')
+
+        when:
+            def result = mapper.getTextOrNull(node, "name")
+
+        then:
+            result == "Test"
+    }
+
+    def "should return null for missing field"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{"name": "Test"}')
+
+        when:
+            def result = mapper.getTextOrNull(node, "nonExistent")
+
+        then:
+            result == null
+    }
+
+    // ==================== addRefToMetadata Tests ====================
+
+    def "should add reference to metadata map"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{"value": "42", "name": "Test"}')
+            def metadata = [:]
+
+        when:
+            mapper.addRefToMetadata(metadata, "testRef", node)
+
+        then:
+            metadata.testRef != null
+            metadata.testRef.value == "42"
+            metadata.testRef.name == "Test"
+    }
+
+    def "should skip adding null ref node to metadata"() {
+        given:
+            def metadata = [:]
+
+        when:
+            mapper.addRefToMetadata(metadata, "testRef", null)
+
+        then:
+            metadata.isEmpty()
+    }
+
+    // ==================== mapJsonVendorContact Tests ====================
+
+    def "should map JSON vendor contact"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            {
+                "VendorRef": {"value": "56", "name": "ACME"},
+                "VendorAddr": {"Line1": "123 Main", "City": "Austin"}
+            }
+            ''')
+
+        when:
+            def result = mapper.mapJsonVendorContact(node)
+
+        then:
+            result != null
+            result.externalId == "56"
+            result.name == "ACME"
+            result.tag == PartyTag.VENDOR
+            result.address != null
+            result.address.city == "Austin"
+    }
+
+    def "should return null when VendorRef is missing"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{}')
+
+        expect:
+            mapper.mapJsonVendorContact(node) == null
+    }
+
+    // ==================== mapJsonShipToContact Tests ====================
+
+    def "should map JSON ship-to contact with Job Location prefix"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            {
+                "ShipTo": {"value": "123", "name": "[Job Location] Office"},
+                "ShipAddr": {"Line1": "456 Ship St", "City": "Dallas"}
+            }
+            ''')
+
+        when:
+            def result = mapper.mapJsonShipToContact(node)
+
+        then:
+            result != null
+            result.externalId == "123"
+            result.name == "Office"
+            result.tag == PartyTag.SHIP_TO
+            result.address != null
+    }
+
+    def "should return null when ShipTo and ShipAddr are both missing in JSON"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{}')
+
+        expect:
+            mapper.mapJsonShipToContact(node) == null
+    }
+
+    // ==================== mapJsonAddress Tests ====================
+
+    def "should map JSON address with multiple lines"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            {
+                "Line1": "123 Main",
+                "Line2": "Suite 200",
+                "City": "Austin",
+                "CountrySubDivisionCode": "TX",
+                "PostalCode": "78701",
+                "Country": "US"
+            }
+            ''')
+
+        when:
+            def result = mapper.mapJsonAddress(node)
+
+        then:
+            result != null
+            result.address == "123 Main, Suite 200"
+            result.city == "Austin"
+            result.stateOrProvince == "TX"
+            result.postalCode == "78701"
+            result.country == "US"
+    }
+
+    def "should return null for null JSON address"() {
+        expect:
+            mapper.mapJsonAddress(null) == null
+    }
+
+    // ==================== mapJsonLineItems Tests ====================
+
+    def "should return null for null JSON lines node"() {
+        expect:
+            mapper.mapJsonLineItems(null) == null
+    }
+
+    def "should return null for non-array JSON lines node"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('"not an array"')
+
+        expect:
+            mapper.mapJsonLineItems(node) == null
+    }
+
+    def "should map JSON line items with ItemBasedExpenseLineDetail"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            [
+                {
+                    "Id": "1",
+                    "Description": "Widget",
+                    "Amount": "500.00",
+                    "ItemBasedExpenseLineDetail": {
+                        "Qty": "10",
+                        "UnitPrice": "50.00",
+                        "ItemRef": {"value": "21", "name": "Widget"},
+                        "TaxCodeRef": {"value": "TAX"},
+                        "BillableStatus": "NotBillable"
+                    }
+                }
+            ]
+            ''')
+
+        when:
+            def result = mapper.mapJsonLineItems(node)
+
+        then:
+            result != null
+            result.size() == 1
+            result[0].id == "1"
+            result[0].name == "Widget"
+            result[0].totalPrice == new BigDecimal("500.00")
+            result[0].quantity == 10
+            result[0].unitPrice == new BigDecimal("50.00")
+            result[0].externalItemId == "21"
+            result[0].taxable == true
+    }
+
+    def "should map JSON line items with AccountBasedExpenseLineDetail"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            [
+                {
+                    "Id": "2",
+                    "Description": "Consulting",
+                    "Amount": "2000.00",
+                    "AccountBasedExpenseLineDetail": {
+                        "AccountRef": {"value": "95", "name": "Consulting"},
+                        "TaxCodeRef": {"value": "NON"},
+                        "BillableStatus": "Billable"
+                    }
+                }
+            ]
+            ''')
+
+        when:
+            def result = mapper.mapJsonLineItems(node)
+
+        then:
+            result != null
+            result.size() == 1
+            result[0].id == "2"
+            result[0].name == "Consulting"
+            result[0].quantity == 0
+            result[0].unitPrice == BigDecimal.ZERO
+            result[0].externalAccountId == "95"
+            result[0].taxable == false
+    }
+
+    // ==================== mapJsonLineItem null handling ====================
+
+    def "should return null for null JSON line item"() {
+        expect:
+            mapper.mapJsonLineItem(null) == null
+    }
+
+    // ==================== buildJsonMetadata Tests ====================
+
+    def "should build JSON metadata with all fields"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            {
+                "TotalAmt": "5000.00",
+                "SyncToken": "7",
+                "APAccountRef": {"value": "33", "name": "AP"},
+                "CurrencyRef": {"value": "USD"},
+                "SalesTermRef": {"value": "3"},
+                "ShipMethodRef": {"value": "1"},
+                "ClassRef": {"value": "5"},
+                "POEmail": {"Address": "test@test.com"},
+                "EmailStatus": "NeedToSend",
+                "CustomField": [
+                    {"DefinitionId": "1", "Name": "Project", "StringValue": "PRJ-001"}
+                ],
+                "LinkedTxn": [
+                    {"TxnId": "5001", "TxnType": "Bill"}
+                ]
+            }
+            ''')
+
+        when:
+            def metadata = mapper.buildJsonMetadata(node)
+
+        then:
+            metadata != null
+            metadata.totalAmount == new BigDecimal("5000.00")
+            metadata.syncToken == "7"
+            metadata.apAccountRef != null
+            metadata.currencyRef != null
+            metadata.salesTermRef != null
+            metadata.shipMethodRef != null
+            metadata.classRef != null
+            metadata.poEmail == "test@test.com"
+            metadata.emailStatus == "NeedToSend"
+            metadata.customFields != null
+            metadata.customFields.Project == "PRJ-001"
+            metadata.linkedTxn != null
+            metadata.linkedTxn.size() == 1
+            metadata.linkedTxn[0].txnId == "5001"
+    }
+
+    def "should return null metadata for empty JSON node"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('{}')
+
+        when:
+            def metadata = mapper.buildJsonMetadata(node)
+
+        then:
+            metadata == null
+    }
+
+    def "should handle custom field without name using field_id fallback"() {
+        given:
+            def objectMapper = new ObjectMapper()
+            def node = objectMapper.readTree('''
+            {
+                "CustomField": [
+                    {"DefinitionId": "2", "StringValue": "SomeVal"}
+                ]
+            }
+            ''')
+
+        when:
+            def metadata = mapper.buildJsonMetadata(node)
+
+        then:
+            metadata != null
+            metadata.customFields["field_2"] == "SomeVal"
+    }
 }

@@ -318,4 +318,62 @@ class ActivityMapperSpec extends Specification {
         then: "returns generic file read"
         activity.message().contains("file")
     }
+
+    // ==================== ADDITIONAL COVERAGE TESTS ====================
+
+    def "should map analysis write to saving analysis"() {
+        given: "writeFile arguments for generic analysis"
+        def args = [path: "_analysis_output.json"]
+
+        when: "mapping"
+        def activity = mapper.map("writeFile", args, context)
+
+        then: "shows saving analysis"
+        activity.message().contains("Saving")
+        activity.message().contains("analysis")
+    }
+
+    def "should extract filename from path with forward slash"() {
+        given: "readFile arguments with forward slash path"
+        def args = [path: "/some/nested/data.json"]
+
+        when: "mapping"
+        def activity = mapper.map("readFile", args, context)
+
+        then: "shows just the filename"
+        activity.message().contains("data.json")
+    }
+
+    def "should handle readFileChunk with string offset"() {
+        given: "readFileChunk arguments with string offset"
+        def args = [path: "file.txt", offset: "1000"]
+
+        when: "mapping"
+        def activity = mapper.map("readFileChunk", args, context)
+
+        then: "shows reading more content"
+        activity.message().contains("Reading more")
+    }
+
+    def "should handle readFileChunk with non-number offset"() {
+        given: "readFileChunk arguments with non-number offset"
+        def args = [path: "file.txt", offset: "not_a_number"]
+
+        when: "mapping"
+        def activity = mapper.map("readFileChunk", args, context)
+
+        then: "falls back to default offset (0) and acts like first chunk"
+        activity.message().contains("Reading")
+    }
+
+    def "should handle readFileChunk with unsupported offset type"() {
+        given: "readFileChunk arguments with boolean offset"
+        def args = [path: "file.txt", offset: true]
+
+        when: "mapping"
+        def activity = mapper.map("readFileChunk", args, context)
+
+        then: "falls back to default offset (0)"
+        activity.message().contains("Reading")
+    }
 }

@@ -19,7 +19,7 @@ help:
 # Generate JOOQ for all modules
 jooq:
 	@echo "Generating JOOQ classes for all modules..."
-	./gradlew generateJooq
+	./gradlew generateJooq --stacktrace
 	@echo "JOOQ generation completed!"
 
 # Build everything service (includes all dependencies)
@@ -33,7 +33,7 @@ build: jooq
 build-fast:
 	@echo "Quick building everything service (no tests, no JOOQ generation)..."
 	./gradlew openApiGenerate generateJsonSchema2Pojo 
-	./gradlew :services:everything:build -x test -x generateJooq
+	./gradlew :services:everything:build -x test -x generateJooq --stacktrace
 	@echo "Quick build completed!"
 
 # Start all services with docker-compose
@@ -97,7 +97,7 @@ clean:
 # Run all tests
 test:
 	@echo "Running all tests..."
-	./gradlew test
+	./gradlew test --stacktrace
 	@echo "Tests completed!"
 
 # Alias for docker-up

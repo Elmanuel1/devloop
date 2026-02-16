@@ -66,9 +66,7 @@ public class ComparisonProperties {
     public static class Streaming {
 
         /**
-         * Enable streaming implementation.
-         * When false, uses existing CLI-based implementation.
-         * When true, uses new ChatClient-based streaming implementation.
+         * Enable streaming SSE output to the client.
          */
         private boolean enabled = true;
 

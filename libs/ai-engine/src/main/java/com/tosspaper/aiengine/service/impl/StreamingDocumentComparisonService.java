@@ -14,8 +14,6 @@ import com.tosspaper.models.service.PurchaseOrderLookupService;
 import io.micrometer.observation.annotation.Observed;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -23,7 +21,6 @@ import reactor.core.publisher.Flux;
  * Streaming implementation of DocumentPartComparisonService.
  * Uses ChatClient with embedded Java tools instead of CLI-based agent.
  *
- * <p>Activated when {@code ai.comparison.streaming.enabled=true}.
  *
  * <p>Benefits over CLI-based implementation:
  * <ul>
@@ -42,8 +39,6 @@ import reactor.core.publisher.Flux;
  */
 @Slf4j
 @Service
-@Primary
-@ConditionalOnProperty(name = "ai.comparison.streaming.enabled", havingValue = "true")
 public class StreamingDocumentComparisonService extends AbstractDocumentPartComparisonService {
 
     private final StreamingComparisonAgent streamingAgent;

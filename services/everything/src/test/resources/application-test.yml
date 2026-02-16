@@ -1,0 +1,166 @@
+spring:
+  config:
+    import: ""
+  cloud:
+    aws:
+      parameterstore:
+        enabled: false
+  application:
+    name: tosspaper-everything-test
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.anthropic.autoconfigure.AnthropicChatAutoConfiguration
+      - io.temporal.spring.boot.autoconfigure.RootNamespaceAutoConfiguration
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    locations: classpath:flyway
+  batch:
+    jdbc:
+      initialize-schema: always
+  jooq:
+    sql-dialect: POSTGRES
+  temporal:
+    connection:
+      target: localhost:7233
+    namespace: default
+    workers: []
+    workers-auto-discovery:
+      packages: []
+  jpa:
+    hibernate:
+      ddl-auto: none
+  cache:
+    type: redis
+  jackson:
+    time-zone: UTC
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
+    serialization:
+      write-dates-as-timestamps: false
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 50MB
+      file-size-threshold: 2MB
+  ai:
+    anthropic:
+      api-key: "dummy-anthropic-key"
+    openai:
+      api-key: "dummy-openai-key"
+      embedding:
+        model: text-embedding-3-small
+      classifier:
+        model: "gpt-4o-mini"
+        temperature: 0.0
+        max-tokens: 50
+      generator:
+        model: "gpt-4o-mini"
+        temperature: 0.7
+        max-tokens: 2000
+      evaluator:
+        model: "gpt-4o-mini"
+        temperature: 0.0
+        max-tokens: 3000
+    vectorstore:
+      pgvector:
+        table-name: extraction_embeddings
+        schema-name: public
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        remove-existing-vector-store-table: false
+        initialize-schema: false
+        schema-validation: true
+        max-document-batch-size: 1000
+    mcp:
+      client:
+        enabled: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://test-issuer.com
+          jwk-set-uri: https://test-issuer.com/.well-known/jwks.json
+
+messaging:
+  provider: redis
+
+logging:
+  level:
+    com.tosspaper: DEBUG
+    org.springframework.security: DEBUG
+    org.jooq: DEBUG
+
+app:
+  disposable-email:
+    blocklist-file: "/tmp/test-disposable-blocklist.txt"
+    fetch-url: "https://dummy.example.com/blocklist"
+    fetch-interval-hours: 24
+    fetch-enabled: false
+  rejected-documents:
+    retention-hours: 24
+  integrations:
+    encryption:
+      key: "dummy-test-key-32-chars-long-1234"
+    quickbooks:
+      client-id: "dummy-clientId"
+      client-secret: "dummy-clientSecret"
+      redirect-uri: "http://localhost:8080/callback"
+      discovery-document-url: "https://developer.api.intuit.com/.well-known/openid-configuration"
+      api-base-url: "https://sandbox-quickbooks.api.intuit.com/v3/company"
+      webhooks:
+        verifier-token: "dummy-verifier-token"
+  email:
+    allowed-domain: "dev-clientdocs.useassetiq.com"
+  mailgun:
+    api-key: "dummy-key"
+    domain: "dummy-domain"
+    from-email: "test@test.com"
+  frontend:
+    base-url: "http://localhost:3000"
+    integrations-redirect-url: "http://localhost:3000/dashboard/organization?tab=settings&section=integrations"
+
+aws:
+  bucket:
+    region: "us-east-1"
+    name: "tosspaper-email-attachments"
+    path-style-access: true
+  sqs:
+    region: "us-east-1"
+    endpoint: ""
+    queue-prefix: "tosspaper-test"
+
+schema:
+  prompts:
+    path: "./schema-prompts"
+
+file:
+  filesystem-path: "./files"
+
+ai:
+  provider: reducto
+  api-key: "dummy-key"
+  base-url: "https://dummy.reducto.ai"
+
+supabase:
+  url: "https://dummy.supabase.co"
+  service-role-key: "dummy-key"
+
+http:
+  security:
+    jwt:
+      issuer: "localhost"
+      audience: "toss-paper"
+      jwk-set-uri: "https://test-issuer.com/.well-known/jwks.json"
+    csrf:
+      enabled: true
+    cors:
+      allowed-origins: "*"
+
+tosspaper:
+  integration:
+    push:
+      retry:
+        max-attempts: 5

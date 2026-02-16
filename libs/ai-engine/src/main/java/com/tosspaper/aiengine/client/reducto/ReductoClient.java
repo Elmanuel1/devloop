@@ -23,22 +23,40 @@ import java.util.Map;
  * Based on https://platform.reducto.ai/
  */
 @Slf4j
-@RequiredArgsConstructor
 public class ReductoClient {
-    
-    private static final String BASE_URL = "https://platform.reducto.ai";
+
+    private static final String DEFAULT_BASE_URL = "https://platform.reducto.ai";
     private static final String UPLOAD_ENDPOINT = "/upload";
     private static final String EXTRACT_ASYNC_ENDPOINT = "/extract_async";
-    
+
     // HTTP Header constants
     private static final String HEADER_AUTHORIZATION = "Authorization";
     private static final String HEADER_CONTENT_TYPE = "Content-Type";
     private static final String CONTENT_TYPE_JSON = "application/json";
-    
+
     private final String apiKey;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final String webhookChannel;
+    private final String baseUrl;
+
+    /**
+     * Constructor for production use with default Reducto API URL.
+     */
+    public ReductoClient(String apiKey, OkHttpClient httpClient, ObjectMapper objectMapper, String webhookChannel) {
+        this(apiKey, httpClient, objectMapper, webhookChannel, DEFAULT_BASE_URL);
+    }
+
+    /**
+     * Package-private constructor for testing with custom base URL.
+     */
+    ReductoClient(String apiKey, OkHttpClient httpClient, ObjectMapper objectMapper, String webhookChannel, String baseUrl) {
+        this.apiKey = apiKey;
+        this.httpClient = httpClient;
+        this.objectMapper = objectMapper;
+        this.webhookChannel = webhookChannel;
+        this.baseUrl = baseUrl;
+    }
     
     /**
      * Request a presigned URL for file upload.
@@ -50,7 +68,7 @@ public class ReductoClient {
         log.info("Requesting presigned URL from Reducto");
         
         Request request = new Request.Builder()
-            .url(BASE_URL + UPLOAD_ENDPOINT)
+            .url(baseUrl + UPLOAD_ENDPOINT)
             .addHeader(HEADER_AUTHORIZATION, "Bearer " + apiKey)
             .post(RequestBody.create("", MediaType.get(CONTENT_TYPE_JSON)))
             .build();
@@ -187,7 +205,7 @@ public class ReductoClient {
         log.debug("Request body: {}", requestBody);
 
         Request request = new Request.Builder()
-            .url(BASE_URL + EXTRACT_ASYNC_ENDPOINT)
+            .url(baseUrl + EXTRACT_ASYNC_ENDPOINT)
             .addHeader(HEADER_AUTHORIZATION, "Bearer " + apiKey)
             .addHeader(HEADER_CONTENT_TYPE, CONTENT_TYPE_JSON)
             .post(RequestBody.create(requestBody, MediaType.get(CONTENT_TYPE_JSON)))
@@ -224,7 +242,7 @@ public class ReductoClient {
         log.info("Getting job status from Reducto: jobId={}", jobId);
 
         Request request = new Request.Builder()
-            .url(BASE_URL + "/job/" + jobId)
+            .url(baseUrl + "/job/" + jobId)
             .addHeader(HEADER_AUTHORIZATION, "Bearer " + apiKey)
             .get()
             .build();

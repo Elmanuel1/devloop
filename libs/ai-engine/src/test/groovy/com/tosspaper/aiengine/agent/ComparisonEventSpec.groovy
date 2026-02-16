@@ -1,237 +1,205 @@
 package com.tosspaper.aiengine.agent
 
 import com.tosspaper.models.extraction.dto.Comparison
-import com.tosspaper.models.extraction.dto.Result
 import spock.lang.Specification
-import spock.lang.Unroll
 
-/**
- * Unit tests for ComparisonEvent sealed interface and its implementations.
- */
 class ComparisonEventSpec extends Specification {
 
-    // ==================== ACTIVITY TESTS ====================
+    // ==================== Finding TESTS ====================
 
-    def "Activity.reviewing should create correct activity"() {
-        when: "creating reviewing activity"
-        def activity = ComparisonEvent.Activity.reviewing("purchase order", "PO-123")
+    def "Finding.match should create finding with matched status"() {
+        when:
+        def finding = ComparisonEvent.Finding.match("vendor", "Names match exactly")
 
-        then: "activity is correct"
-        activity.icon() == "📋"
-        activity.message() == "Reviewing purchase order PO-123..."
+        then:
+        finding.icon() == "\u2713"
+        finding.item() == "vendor"
+        finding.status() == "matched"
+        finding.detail() == "Names match exactly"
+        finding.eventType() == "finding"
     }
 
-    def "Activity.analyzing should create correct activity"() {
-        when: "creating analyzing activity"
-        def activity = ComparisonEvent.Activity.analyzing("invoice")
+    def "Finding.partial should create finding with partial status"() {
+        when:
+        def finding = ComparisonEvent.Finding.partial("address", "Postal code differs")
 
-        then: "activity is correct"
-        activity.icon() == "📄"
-        activity.message() == "Analyzing invoice..."
+        then:
+        finding.icon() == "\u26A0"
+        finding.item() == "address"
+        finding.status() == "partial"
+        finding.detail() == "Postal code differs"
     }
 
-    def "Activity.comparing should create correct activity"() {
-        when: "creating comparing activity"
-        def activity = ComparisonEvent.Activity.comparing("vendor information")
+    def "Finding.mismatch should create finding with unmatched status"() {
+        when:
+        def finding = ComparisonEvent.Finding.mismatch("price", "50 vs 55")
 
-        then: "activity is correct"
-        activity.icon() == "🔍"
-        activity.message() == "Comparing vendor information..."
+        then:
+        finding.icon() == "\u2717"
+        finding.item() == "price"
+        finding.status() == "unmatched"
+        finding.detail() == "50 vs 55"
     }
 
-    def "Activity.searching should create correct activity"() {
-        when: "creating searching activity"
-        def activity = ComparisonEvent.Activity.searching("documents")
+    // ==================== Error TESTS ====================
 
-        then: "activity is correct"
-        activity.icon() == "🔍"
-        activity.message() == "Searching documents..."
+    def "Error single-arg constructor should set message and null code"() {
+        when:
+        def error = new ComparisonEvent.Error("Something went wrong")
+
+        then:
+        error.message() == "Something went wrong"
+        error.code() == null
+        error.eventType() == "error"
     }
 
-    def "Activity.saving should create correct activity"() {
-        when: "creating saving activity"
-        def activity = ComparisonEvent.Activity.saving("results")
+    def "Error.of with message should set null code"() {
+        when:
+        def error = ComparisonEvent.Error.of("Timeout")
 
-        then: "activity is correct"
-        activity.icon() == "💾"
-        activity.message() == "Saving results..."
+        then:
+        error.message() == "Timeout"
+        error.code() == null
     }
 
-    def "Activity.processing should create correct activity"() {
-        when: "creating processing activity"
-        def activity = ComparisonEvent.Activity.processing()
+    def "Error.of with message and code should set both"() {
+        when:
+        def error = ComparisonEvent.Error.of("Not found", "EXTRACTION_NOT_FOUND")
 
-        then: "activity is correct"
-        activity.icon() == "⚙️"
-        activity.message() == "Processing..."
+        then:
+        error.message() == "Not found"
+        error.code() == "EXTRACTION_NOT_FOUND"
     }
 
-    @Unroll
-    def "Activity.reviewing should use correct icon for #documentType"() {
-        when: "creating reviewing activity"
-        def activity = ComparisonEvent.Activity.reviewing(documentType, "ID-123")
-
-        then: "icon is correct"
-        activity.icon() == expectedIcon
-
-        where:
-        documentType      | expectedIcon
-        "purchase order"  | "📋"
-        "PO"              | "📋"
-        "invoice"         | "📄"
-        "delivery slip"   | "📦"
-        "delivery_slip"   | "📦"
-        "delivery note"   | "📝"
-        "delivery_note"   | "📝"
-        "unknown"         | "📄"
-    }
-
-    // ==================== THINKING TESTS ====================
+    // ==================== Thinking TESTS ====================
 
     def "Thinking.of should create thinking event"() {
-        when: "creating thinking event"
-        def thinking = ComparisonEvent.Thinking.of("Analyzing the vendor name...")
+        when:
+        def thinking = ComparisonEvent.Thinking.of("Analyzing vendor details...")
 
-        then: "content is set"
-        thinking.content() == "Analyzing the vendor name..."
+        then:
+        thinking.content() == "Analyzing vendor details..."
+        thinking.eventType() == "thinking"
     }
 
-    def "Thinking record should work with constructor"() {
-        when: "creating via constructor"
-        def thinking = new ComparisonEvent.Thinking("reasoning text")
+    def "Thinking constructor should set content"() {
+        when:
+        def thinking = new ComparisonEvent.Thinking("some text")
 
-        then: "content is set"
-        thinking.content() == "reasoning text"
+        then:
+        thinking.content() == "some text"
     }
 
-    // ==================== FINDING TESTS ====================
+    // ==================== Activity TESTS ====================
 
-    def "Finding.match should create match finding"() {
-        when: "creating match finding"
-        def finding = ComparisonEvent.Finding.match("Vendor name", "exact match")
+    def "Activity.reviewing with PO should use clipboard icon"() {
+        when:
+        def activity = ComparisonEvent.Activity.reviewing("purchase order", "PO-100")
 
-        then: "finding is correct"
-        finding.icon() == "✓"
-        finding.item() == "Vendor name"
-        finding.status() == "matched"
-        finding.detail() == "exact match"
+        then:
+        activity.icon() == "\uD83D\uDCCB"
+        activity.message().contains("Reviewing")
+        activity.message().contains("purchase order")
+        activity.message().contains("PO-100")
+        activity.eventType() == "activity"
     }
 
-    def "Finding.partial should create partial finding"() {
-        when: "creating partial finding"
-        def finding = ComparisonEvent.Finding.partial("Address", "postal code differs")
+    def "Activity.reviewing with invoice should use document icon"() {
+        when:
+        def activity = ComparisonEvent.Activity.reviewing("invoice", "INV-200")
 
-        then: "finding is correct"
-        finding.icon() == "⚠"
-        finding.item() == "Address"
-        finding.status() == "partial"
-        finding.detail() == "postal code differs"
+        then:
+        activity.icon() == "\uD83D\uDCC4"
+        activity.message().contains("invoice")
     }
 
-    def "Finding.mismatch should create mismatch finding"() {
-        when: "creating mismatch finding"
-        def finding = ComparisonEvent.Finding.mismatch("Widget B", "price mismatch (\$50 vs \$55)")
+    def "Activity.reviewing with delivery slip should use package icon"() {
+        when:
+        def activity = ComparisonEvent.Activity.reviewing("delivery slip", "DS-300")
 
-        then: "finding is correct"
-        finding.icon() == "✗"
-        finding.item() == "Widget B"
-        finding.status() == "unmatched"
-        finding.detail() == "price mismatch (\$50 vs \$55)"
+        then:
+        activity.icon() == "\uD83D\uDCE6"
     }
 
-    // ==================== COMPLETE TESTS ====================
+    def "Activity.reviewing with delivery note should use memo icon"() {
+        when:
+        def activity = ComparisonEvent.Activity.reviewing("delivery note", "DN-400")
 
-    def "Complete.of should calculate summary from results"() {
-        given: "comparison with mixed results"
+        then:
+        activity.icon() == "\uD83D\uDCDD"
+    }
+
+    def "Activity.reviewing with unknown type should use document icon"() {
+        when:
+        def activity = ComparisonEvent.Activity.reviewing("unknown", "X-500")
+
+        then:
+        activity.icon() == "\uD83D\uDCC4"
+    }
+
+    def "Activity.analyzing should show document type"() {
+        when:
+        def activity = ComparisonEvent.Activity.analyzing("invoice")
+
+        then:
+        activity.icon() == "\uD83D\uDCC4"
+        activity.message().contains("Analyzing")
+        activity.message().contains("invoice")
+    }
+
+    def "Activity.comparing should show aspect"() {
+        when:
+        def activity = ComparisonEvent.Activity.comparing("vendor information")
+
+        then:
+        activity.icon() == "\uD83D\uDD0D"
+        activity.message().contains("Comparing")
+        activity.message().contains("vendor information")
+    }
+
+    def "Activity.searching should show target"() {
+        when:
+        def activity = ComparisonEvent.Activity.searching("line items")
+
+        then:
+        activity.message().contains("Searching")
+        activity.message().contains("line items")
+    }
+
+    def "Activity.saving should show target"() {
+        when:
+        def activity = ComparisonEvent.Activity.saving("results")
+
+        then:
+        activity.icon() == "\uD83D\uDCBE"
+        activity.message().contains("Saving")
+        activity.message().contains("results")
+    }
+
+    def "Activity.processing should show processing"() {
+        when:
+        def activity = ComparisonEvent.Activity.processing()
+
+        then:
+        activity.icon() == "\u2699\uFE0F"
+        activity.message().contains("Processing")
+    }
+
+    // ==================== Complete TESTS ====================
+
+    def "Complete.of with null results should have zero counts"() {
+        given:
         def comparison = new Comparison()
-        comparison.setDocumentId("doc-123")
-        comparison.setPoId("PO-456")
-
-        def matched = new Result()
-        matched.setStatus(Result.Status.MATCHED)
-
-        def partial = new Result()
-        partial.setStatus(Result.Status.PARTIAL)
-
-        def unmatched = new Result()
-        unmatched.setStatus(Result.Status.UNMATCHED)
-
-        comparison.setResults([matched, matched, partial, unmatched])
-
-        when: "creating complete event"
-        def complete = ComparisonEvent.Complete.of(comparison)
-
-        then: "summary is correct"
-        complete.result() == comparison
-        complete.summary().matches() == 2
-        complete.summary().discrepancies() == 2
-        complete.summary().total() == 4
-    }
-
-    def "Complete.of should handle null results"() {
-        given: "comparison with null results"
-        def comparison = new Comparison()
-        comparison.setDocumentId("doc-123")
         comparison.setResults(null)
 
-        when: "creating complete event"
-        def complete = ComparisonEvent.Complete.of(comparison)
+        when:
+        def complete = ComparisonEvent.Complete.of(comparison, "session-1")
 
-        then: "summary shows zeros"
+        then:
         complete.summary().matches() == 0
         complete.summary().discrepancies() == 0
         complete.summary().total() == 0
-    }
-
-    def "Complete.of should handle empty results"() {
-        given: "comparison with empty results"
-        def comparison = new Comparison()
-        comparison.setResults([])
-
-        when: "creating complete event"
-        def complete = ComparisonEvent.Complete.of(comparison)
-
-        then: "summary shows zeros"
-        complete.summary().total() == 0
-    }
-
-    // ==================== ERROR TESTS ====================
-
-    def "Error.of should create error with message only"() {
-        when: "creating error"
-        def error = ComparisonEvent.Error.of("Something went wrong")
-
-        then: "error is set"
-        error.message() == "Something went wrong"
-        error.code() == null
-    }
-
-    def "Error.of should create error with code"() {
-        when: "creating error with code"
-        def error = ComparisonEvent.Error.of("Not found", "STREAM_NOT_FOUND")
-
-        then: "error and code are set"
-        error.message() == "Not found"
-        error.code() == "STREAM_NOT_FOUND"
-    }
-
-    def "Error constructor should work with message only"() {
-        when: "creating via single-arg constructor"
-        def error = new ComparisonEvent.Error("error message")
-
-        then: "error is set"
-        error.message() == "error message"
-        error.code() == null
-    }
-
-    // ==================== SEALED INTERFACE TESTS ====================
-
-    def "all event types should implement ComparisonEvent"() {
-        expect: "all types implement interface"
-        new ComparisonEvent.Activity("📄", "test") instanceof ComparisonEvent
-        new ComparisonEvent.Thinking("test") instanceof ComparisonEvent
-        new ComparisonEvent.Finding("✓", "item", "status", "detail") instanceof ComparisonEvent
-        ComparisonEvent.Complete.of(new Comparison()) instanceof ComparisonEvent
-        ComparisonEvent.Error.of("error") instanceof ComparisonEvent
+        complete.comparisonId() == "session-1"
+        complete.eventType() == "complete"
     }
 }

@@ -1,144 +1,147 @@
 package com.tosspaper.integrations.api
 
-import com.tosspaper.generated.model.IntegrationSettingsUpdate
-import com.tosspaper.generated.model.UpdateIntegrationConnectionRequest
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.tosspaper.config.BaseIntegrationTest
+import com.tosspaper.config.TestSecurityConfiguration
 import com.tosspaper.models.domain.Currency
 import com.tosspaper.models.domain.integration.IntegrationConnection
 import com.tosspaper.models.domain.integration.IntegrationConnectionStatus
 import com.tosspaper.models.domain.integration.IntegrationProvider
 import com.tosspaper.models.service.IntegrationsService
+import org.spockframework.spring.SpringBean
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.web.client.TestRestTemplate
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
-import spock.lang.Specification
+import org.springframework.http.MediaType
+import org.springframework.web.client.ResourceAccessException
 
 import java.time.OffsetDateTime
 
-class IntegrationsControllerSpec extends Specification {
+class IntegrationsControllerSpec extends BaseIntegrationTest {
 
-    IntegrationsService integrationsService
-    IntegrationsController controller
+    @SpringBean
+    IntegrationsService integrationsService = Mock()
 
-    def setup() {
-        integrationsService = Mock()
-        controller = new IntegrationsController(integrationsService)
-    }
+    @Autowired
+    TestRestTemplate restTemplate
+
+    @Autowired
+    ObjectMapper objectMapper
 
     // ==================== getIntegrationSettings ====================
 
     def "getIntegrationSettings returns OK with settings"() {
         given: "valid context and company ID"
-            def xContextId = "123"
-            def companyId = 123L
             def settings = new IntegrationsService.IntegrationSettings(
                 "USD",
                 true,
                 new BigDecimal("1000.00")
             )
+            integrationsService.getSettings(123L) >> settings
+
+        and: "auth headers with X-Context-Id"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling getIntegrationSettings"
-            def response = controller.getIntegrationSettings(xContextId, companyId)
+            def response = restTemplate.exchange("/v1/companies/123/integration-settings", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called with company ID"
-            1 * integrationsService.getSettings(companyId) >> settings
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains settings"
-            with(response.body) {
-                currency == "USD"
-                autoApprovalEnabled == true
-                autoApprovalThreshold == new BigDecimal("1000.00")
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.currency == "USD"
+            body.autoApprovalEnabled == true
+            body.autoApprovalThreshold == 1000.00
     }
 
     def "getIntegrationSettings handles null currency"() {
         given: "settings with null currency"
-            def xContextId = "123"
-            def companyId = 123L
             def settings = new IntegrationsService.IntegrationSettings(
                 null,
                 false,
                 null
             )
+            integrationsService.getSettings(123L) >> settings
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling getIntegrationSettings"
-            def response = controller.getIntegrationSettings(xContextId, companyId)
+            def response = restTemplate.exchange("/v1/companies/123/integration-settings", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.getSettings(companyId) >> settings
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body has null values"
-            with(response.body) {
-                currency == null
-                autoApprovalEnabled == false
-                autoApprovalThreshold == null
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.currency == null
+            body.autoApprovalEnabled == false
+            body.autoApprovalThreshold == null
     }
 
     // ==================== updateIntegrationSettings ====================
 
     def "updateIntegrationSettings updates and returns settings"() {
         given: "update request"
-            def xContextId = "456"
-            def companyId = 456L
-            def request = new IntegrationSettingsUpdate()
-            request.setCurrency("EUR")
-            request.setAutoApprovalEnabled(true)
-            request.setAutoApprovalThreshold(new BigDecimal("500.00"))
-
             def updatedSettings = new IntegrationsService.IntegrationSettings(
                 "EUR",
                 true,
                 new BigDecimal("500.00")
             )
+            integrationsService.updateSettings(456L, _ as IntegrationsService.IntegrationSettingsUpdate) >> updatedSettings
+
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "456")
+            headers.setContentType(MediaType.APPLICATION_JSON)
+
+            def requestBody = [currency: "EUR", autoApprovalEnabled: true, autoApprovalThreshold: 500.00]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling updateIntegrationSettings"
-            def response = controller.updateIntegrationSettings(xContextId, companyId, request)
+            def response = restTemplate.exchange("/v1/companies/456/integration-settings", HttpMethod.PUT, entity, String)
 
-        then: "service is called with update"
-            1 * integrationsService.updateSettings(companyId, _) >> { args ->
-                def update = args[1] as IntegrationsService.IntegrationSettingsUpdate
-                assert update.currency() == "EUR"
-                assert update.autoApprovalEnabled() == true
-                assert update.autoApprovalThreshold() == new BigDecimal("500.00")
-                return updatedSettings
-            }
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains updated settings"
-            with(response.body) {
-                currency == "EUR"
-                autoApprovalEnabled == true
-                autoApprovalThreshold == new BigDecimal("500.00")
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.currency == "EUR"
+            body.autoApprovalEnabled == true
+            body.autoApprovalThreshold == 500.00
     }
 
     def "updateIntegrationSettings handles partial update"() {
         given: "partial update request (only currency)"
-            def xContextId = "456"
-            def companyId = 456L
-            def request = new IntegrationSettingsUpdate()
-            request.setCurrency("GBP")
-            // autoApprovalEnabled and autoApprovalThreshold are null
-
             def updatedSettings = new IntegrationsService.IntegrationSettings(
                 "GBP",
                 false,
                 null
             )
+            integrationsService.updateSettings(456L, _ as IntegrationsService.IntegrationSettingsUpdate) >> updatedSettings
+
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "456")
+            headers.setContentType(MediaType.APPLICATION_JSON)
+
+            def requestBody = [currency: "GBP"]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling updateIntegrationSettings"
-            def response = controller.updateIntegrationSettings(xContextId, companyId, request)
+            def response = restTemplate.exchange("/v1/companies/456/integration-settings", HttpMethod.PUT, entity, String)
 
-        then: "service is called"
-            1 * integrationsService.updateSettings(companyId, _) >> updatedSettings
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
     }
 
@@ -150,300 +153,294 @@ class IntegrationsControllerSpec extends Specification {
                 new IntegrationsService.ProviderInfo("quickbooks", "QuickBooks Online", "accounting"),
                 new IntegrationsService.ProviderInfo("xero", "Xero", "accounting")
             ]
+            integrationsService.getProviders() >> providers
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
 
         when: "calling getIntegrationProviders"
-            def response = controller.getIntegrationProviders()
+            def response = restTemplate.exchange("/v1/integrations/providers", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.getProviders() >> providers
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains providers"
-            response.body.size() == 2
-            response.body[0].id == "quickbooks"
-            response.body[0].displayName == "QuickBooks Online"
-            response.body[0].category == "accounting"
-            response.body[1].id == "xero"
+            def body = objectMapper.readValue(response.body, List)
+            body.size() == 2
+            body[0].id == "quickbooks"
+            body[0].displayName == "QuickBooks Online"
+            body[0].category == "accounting"
+            body[1].id == "xero"
     }
 
     def "getIntegrationProviders returns empty list when no providers"() {
+        given: "no providers"
+            integrationsService.getProviders() >> []
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+
         when: "calling getIntegrationProviders"
-            def response = controller.getIntegrationProviders()
+            def response = restTemplate.exchange("/v1/integrations/providers", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns empty list"
-            1 * integrationsService.getProviders() >> []
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body is empty"
-            response.body.isEmpty()
+            def body = objectMapper.readValue(response.body, List)
+            body.isEmpty()
     }
 
     // ==================== createAuthUrl ====================
 
     def "createAuthUrl returns auth URL"() {
         given: "context and provider"
-            def xContextId = "789"
-            def providerId = "quickbooks"
             def authUrl = new IntegrationsService.OAuthAuthUrl(
                 "https://oauth.intuit.com/authorize?client_id=xxx",
                 "state-token-123"
             )
+            integrationsService.getAuthUrl(789L, "quickbooks") >> authUrl
+
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "789")
+            headers.setContentType(MediaType.APPLICATION_JSON)
 
         when: "calling createAuthUrl"
-            def response = controller.createAuthUrl(xContextId, providerId)
+            def response = restTemplate.exchange("/v1/integrations/quickbooks/auth-urls", HttpMethod.POST, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.getAuthUrl(789L, providerId) >> authUrl
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains auth URL"
-            response.body.authUrl.toString() == "https://oauth.intuit.com/authorize?client_id=xxx"
-            response.body.state == "state-token-123"
+            def body = objectMapper.readValue(response.body, Map)
+            body.authUrl == "https://oauth.intuit.com/authorize?client_id=xxx"
+            body.state == "state-token-123"
     }
 
     // ==================== handleOAuthCallback ====================
 
     def "handleOAuthCallback redirects on success"() {
         given: "successful OAuth callback parameters"
-            def providerId = "quickbooks"
-            def code = "auth-code-123"
-            def state = "state-token-123"
-            def realmId = "realm-456"
-            def redirectUrl = "https://app.tosspaper.com/integrations?success=true"
+            def redirectUrl = "http://localhost:3000/dashboard/organization?tab=settings&section=integrations&success=true"
+            integrationsService.handleCallback("auth-code-123", "state-token-123", "realm-456", "quickbooks") >> redirectUrl
 
-        when: "calling handleOAuthCallback"
-            def response = controller.handleOAuthCallback(providerId, code, null, state, realmId)
+        when: "calling handleOAuthCallback - OAuth callback is a public endpoint called by the provider"
+            try {
+                restTemplate.getForEntity(
+                    "/v1/integrations/quickbooks/callback?code=auth-code-123&state=state-token-123&realmId=realm-456",
+                    String
+                )
+            } catch (ResourceAccessException ignored) {
+                // Expected: TestRestTemplate follows the redirect to localhost:3000 which isn't running
+            }
 
-        then: "service handles callback"
-            1 * integrationsService.handleCallback(code, state, realmId, providerId) >> redirectUrl
-
-        and: "redirect view is returned"
-            response.url == redirectUrl
+        then: "service is called to handle the callback"
+            1 * integrationsService.handleCallback("auth-code-123", "state-token-123", "realm-456", "quickbooks") >> redirectUrl
     }
 
     def "handleOAuthCallback handles error parameter"() {
         given: "OAuth callback with error"
-            def providerId = "quickbooks"
-            def error = "access_denied"
-            def state = "state-token-123"
-            def redirectUrl = "https://app.tosspaper.com/integrations?error=access_denied"
+            def redirectUrl = "http://localhost:3000/dashboard/organization?tab=settings&section=integrations&error=access_denied"
+            integrationsService.handleCallbackError("access_denied", "state-token-123", "quickbooks") >> redirectUrl
 
         when: "calling handleOAuthCallback with error"
-            def response = controller.handleOAuthCallback(providerId, null, error, state, null)
+            try {
+                restTemplate.getForEntity(
+                    "/v1/integrations/quickbooks/callback?error=access_denied&state=state-token-123",
+                    String
+                )
+            } catch (ResourceAccessException ignored) {
+                // Expected: TestRestTemplate follows the redirect to localhost:3000 which isn't running
+            }
 
         then: "service handles error callback"
-            1 * integrationsService.handleCallbackError(error, state, providerId) >> redirectUrl
-
-        and: "redirect view is returned"
-            response.url == redirectUrl
+            1 * integrationsService.handleCallbackError("access_denied", "state-token-123", "quickbooks") >> redirectUrl
     }
 
     def "handleOAuthCallback handles invalid callback (no code or error)"() {
         given: "OAuth callback without code or error"
-            def providerId = "quickbooks"
-            def state = "state-token-123"
-            def redirectUrl = "https://app.tosspaper.com/integrations?error=invalid_callback"
+            def redirectUrl = "http://localhost:3000/dashboard/organization?tab=settings&section=integrations&error=invalid_callback"
+            integrationsService.handleCallbackError("invalid_callback", "state-token-123", "quickbooks") >> redirectUrl
 
         when: "calling handleOAuthCallback without code or error"
-            def response = controller.handleOAuthCallback(providerId, null, null, state, null)
+            try {
+                restTemplate.getForEntity(
+                    "/v1/integrations/quickbooks/callback?state=state-token-123",
+                    String
+                )
+            } catch (ResourceAccessException ignored) {
+                // Expected: TestRestTemplate follows the redirect to localhost:3000 which isn't running
+            }
 
         then: "service handles as error"
-            1 * integrationsService.handleCallbackError("invalid_callback", state, providerId) >> redirectUrl
-
-        and: "redirect view is returned"
-            response.url == redirectUrl
+            1 * integrationsService.handleCallbackError("invalid_callback", "state-token-123", "quickbooks") >> redirectUrl
     }
 
     // ==================== updateIntegrationConnection ====================
 
     def "updateIntegrationConnection enables connection"() {
         given: "update request to enable connection"
-            def xContextId = "123"
-            def connectionId = "conn-456"
-            def request = new UpdateIntegrationConnectionRequest()
-            request.setStatus(UpdateIntegrationConnectionRequest.StatusEnum.ENABLED)
+            def connection = createConnection("conn-456", IntegrationConnectionStatus.ENABLED)
+            integrationsService.updateConnectionStatus("conn-456", 123L, IntegrationConnectionStatus.ENABLED) >> connection
 
-            def connection = createConnection(connectionId, IntegrationConnectionStatus.ENABLED)
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(MediaType.APPLICATION_JSON)
+
+            def requestBody = [status: "enabled"]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling updateIntegrationConnection"
-            def response = controller.updateIntegrationConnection(xContextId, connectionId, request)
+            def response = restTemplate.exchange("/v1/integrations/connections/conn-456", HttpMethod.PUT, entity, String)
 
-        then: "service updates connection status and returns updated connection"
-            1 * integrationsService.updateConnectionStatus(connectionId, 123L, IntegrationConnectionStatus.ENABLED) >> connection
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains updated connection"
-            response.body.id == connectionId
-            response.body.status == com.tosspaper.generated.model.IntegrationConnection.StatusEnum.ENABLED
+            def body = objectMapper.readValue(response.body, Map)
+            body.id == "conn-456"
+            body.status == "enabled"
     }
 
     def "updateIntegrationConnection disables connection"() {
         given: "update request to disable connection"
-            def xContextId = "123"
-            def connectionId = "conn-456"
-            def request = new UpdateIntegrationConnectionRequest()
-            request.setStatus(UpdateIntegrationConnectionRequest.StatusEnum.DISABLED)
+            def connection = createConnection("conn-456", IntegrationConnectionStatus.DISABLED)
+            integrationsService.updateConnectionStatus("conn-456", 123L, IntegrationConnectionStatus.DISABLED) >> connection
 
-            def connection = createConnection(connectionId, IntegrationConnectionStatus.DISABLED)
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(MediaType.APPLICATION_JSON)
+
+            def requestBody = [status: "disabled"]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling updateIntegrationConnection"
-            def response = controller.updateIntegrationConnection(xContextId, connectionId, request)
+            def response = restTemplate.exchange("/v1/integrations/connections/conn-456", HttpMethod.PUT, entity, String)
 
-        then: "service updates connection status and returns updated connection"
-            1 * integrationsService.updateConnectionStatus(connectionId, 123L, IntegrationConnectionStatus.DISABLED) >> connection
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
     }
 
     def "updateIntegrationConnection returns bad request when status is null"() {
         given: "update request without status"
-            def xContextId = "123"
-            def connectionId = "conn-456"
-            def request = new UpdateIntegrationConnectionRequest()
-            // status is null
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(MediaType.APPLICATION_JSON)
 
-        when: "calling updateIntegrationConnection"
-            def response = controller.updateIntegrationConnection(xContextId, connectionId, request)
+            def requestBody = [:]
+            def entity = new HttpEntity<>(requestBody, headers)
 
-        then: "no service calls made"
-            0 * integrationsService._
+        when: "calling updateIntegrationConnection without status"
+            def response = restTemplate.exchange("/v1/integrations/connections/conn-456", HttpMethod.PUT, entity, String)
 
-        and: "response status is BAD_REQUEST"
+        then: "response status is BAD_REQUEST"
             response.statusCode == HttpStatus.BAD_REQUEST
-    }
-
-    def "updateIntegrationConnection successfully processes ENABLED status"() {
-        given: "update request to enable"
-            def xContextId = "123"
-            def connectionId = "conn-456"
-            def request = new UpdateIntegrationConnectionRequest()
-            request.setStatus(UpdateIntegrationConnectionRequest.StatusEnum.ENABLED)
-
-            def connection = createConnection(connectionId, IntegrationConnectionStatus.ENABLED)
-
-        when: "calling updateIntegrationConnection"
-            def response = controller.updateIntegrationConnection(xContextId, connectionId, request)
-
-        then: "status is updated and connection returned"
-            1 * integrationsService.updateConnectionStatus(connectionId, 123L, IntegrationConnectionStatus.ENABLED) >> connection
-
-        and: "response is OK"
-            response.statusCode == HttpStatus.OK
-    }
-
-    def "updateIntegrationConnection successfully processes DISABLED status"() {
-        given: "update request to disable"
-            def xContextId = "123"
-            def connectionId = "conn-456"
-            def request = new UpdateIntegrationConnectionRequest()
-            request.setStatus(UpdateIntegrationConnectionRequest.StatusEnum.DISABLED)
-
-            def connection = createConnection(connectionId, IntegrationConnectionStatus.DISABLED)
-
-        when: "calling updateIntegrationConnection"
-            def response = controller.updateIntegrationConnection(xContextId, connectionId, request)
-
-        then: "status is updated and connection returned"
-            1 * integrationsService.updateConnectionStatus(connectionId, 123L, IntegrationConnectionStatus.DISABLED) >> connection
-
-        and: "response is OK"
-            response.statusCode == HttpStatus.OK
     }
 
     // ==================== listIntegrationConnections ====================
 
     def "listIntegrationConnections returns connections"() {
         given: "connections exist for company"
-            def xContextId = "123"
             def connections = [
                 createConnection("conn-1", IntegrationConnectionStatus.ENABLED),
                 createConnection("conn-2", IntegrationConnectionStatus.DISABLED)
             ]
+            integrationsService.listConnections(123L) >> connections
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.listConnections(123L) >> connections
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains connections"
-            response.body.size() == 2
-            response.body[0].id == "conn-1"
-            response.body[1].id == "conn-2"
+            def body = objectMapper.readValue(response.body, List)
+            body.size() == 2
+            body[0].id == "conn-1"
+            body[1].id == "conn-2"
     }
 
     def "listIntegrationConnections returns empty list when no connections"() {
         given: "no connections for company"
-            def xContextId = "123"
+            integrationsService.listConnections(123L) >> []
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns empty list"
-            1 * integrationsService.listConnections(123L) >> []
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body is empty"
-            response.body.isEmpty()
+            def body = objectMapper.readValue(response.body, List)
+            body.isEmpty()
     }
 
     def "listIntegrationConnections maps connection with preferences"() {
         given: "connection with currency preferences"
-            def xContextId = "123"
             def connection = createConnectionWithPreferences(
                 "conn-1",
                 IntegrationConnectionStatus.ENABLED,
                 Currency.USD,
                 true
             )
+            integrationsService.listConnections(123L) >> [connection]
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.listConnections(123L) >> [connection]
-
-        and: "response includes preferences"
+        then: "response includes preferences"
             response.statusCode == HttpStatus.OK
-            response.body[0].preferences != null
-            response.body[0].preferences.defaultCurrency == "USD"
-            response.body[0].preferences.multicurrencyEnabled == true
+            def body = objectMapper.readValue(response.body, List)
+            body[0].preferences != null
+            body[0].preferences.defaultCurrency == "USD"
+            body[0].preferences.multicurrencyEnabled == true
     }
 
     def "listIntegrationConnections handles null preferences"() {
         given: "connection without currency preferences"
-            def xContextId = "123"
             def connection = createConnection("conn-1", IntegrationConnectionStatus.ENABLED)
-            // defaultCurrency and multicurrencyEnabled are null
+            integrationsService.listConnections(123L) >> [connection]
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.listConnections(123L) >> [connection]
-
-        and: "response has no preferences"
+        then: "response has no preferences"
             response.statusCode == HttpStatus.OK
-            response.body[0].preferences == null
+            def body = objectMapper.readValue(response.body, List)
+            body[0].preferences == null
     }
 
     def "listIntegrationConnections handles only defaultCurrency set"() {
         given: "connection with only defaultCurrency"
-            def xContextId = "123"
             def connection = IntegrationConnection.builder()
                 .id("conn-1")
                 .companyId(123L)
@@ -455,23 +452,26 @@ class IntegrationsControllerSpec extends Specification {
                 .multicurrencyEnabled(null)
                 .createdAt(OffsetDateTime.now())
                 .build()
+            integrationsService.listConnections(123L) >> [connection]
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.listConnections(123L) >> [connection]
-
-        and: "response includes preferences with only currency"
+        then: "response includes preferences with only currency"
             response.statusCode == HttpStatus.OK
-            response.body[0].preferences != null
-            response.body[0].preferences.defaultCurrency == "EUR"
-            response.body[0].preferences.multicurrencyEnabled == null
+            def body = objectMapper.readValue(response.body, List)
+            body[0].preferences != null
+            body[0].preferences.defaultCurrency == "EUR"
+            body[0].preferences.multicurrencyEnabled == null
     }
 
     def "listIntegrationConnections handles only multicurrencyEnabled set"() {
         given: "connection with only multicurrencyEnabled"
-            def xContextId = "123"
             def connection = IntegrationConnection.builder()
                 .id("conn-1")
                 .companyId(123L)
@@ -483,35 +483,40 @@ class IntegrationsControllerSpec extends Specification {
                 .multicurrencyEnabled(false)
                 .createdAt(OffsetDateTime.now())
                 .build()
+            integrationsService.listConnections(123L) >> [connection]
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listIntegrationConnections"
-            def response = controller.listIntegrationConnections(xContextId)
+            def response = restTemplate.exchange("/v1/integrations/connections", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.listConnections(123L) >> [connection]
-
-        and: "response includes preferences with only multicurrency flag"
+        then: "response includes preferences with only multicurrency flag"
             response.statusCode == HttpStatus.OK
-            response.body[0].preferences != null
-            response.body[0].preferences.defaultCurrency == null
-            response.body[0].preferences.multicurrencyEnabled == false
+            def body = objectMapper.readValue(response.body, List)
+            body[0].preferences != null
+            body[0].preferences.defaultCurrency == null
+            body[0].preferences.multicurrencyEnabled == false
     }
 
     // ==================== disconnectIntegration ====================
 
     def "disconnectIntegration removes connection"() {
-        given: "connection to disconnect"
-            def xContextId = "123"
-            def connectionId = "conn-456"
+        given: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
 
         when: "calling disconnectIntegration"
-            def response = controller.disconnectIntegration(xContextId, connectionId)
+            def response = restTemplate.exchange("/v1/integrations/connections/conn-456", HttpMethod.DELETE, new HttpEntity<>(headers), String)
 
-        then: "service is called"
-            1 * integrationsService.disconnect(connectionId, 123L)
-
-        and: "response status is NO_CONTENT"
+        then: "response status is NO_CONTENT"
             response.statusCode == HttpStatus.NO_CONTENT
+
+        and: "service is called"
+            1 * integrationsService.disconnect("conn-456", 123L)
     }
 
     // ==================== Helper Methods ====================

@@ -71,6 +71,8 @@ jobs:
           filters: |
             java:
               - '**/*.java'
+              - '**/*.groovy'
+              - '**/*.gradle'
               - 'Dockerfile'
               - 'docker-compose*.yml'
 
@@ -106,13 +108,17 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Version: $VERSION"
 
+      - name: Configure Docker API version for Testcontainers
+        if: steps.should_build.outputs.java_changed == 'true'
+        run: echo "api.version=1.44" > ~/.docker-java.properties
+
       - name: Generate jOOQ classes
         if: steps.should_build.outputs.java_changed == 'true'
         run: make jooq
 
       - name: Build with Gradle
         if: steps.should_build.outputs.java_changed == 'true'
-        run: ./gradlew build -x test
+        run: ./gradlew build
 
       - name: Set up QEMU
         if: steps.should_build.outputs.java_changed == 'true'

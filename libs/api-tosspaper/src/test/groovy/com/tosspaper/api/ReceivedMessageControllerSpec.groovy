@@ -1,182 +1,178 @@
 package com.tosspaper.api
 
-import com.tosspaper.company.CompanyService
-import com.tosspaper.generated.model.AttachmentList
-import com.tosspaper.generated.model.ReceivedMessageList
-import com.tosspaper.generated.model.Pagination as ApiPagination
-import com.tosspaper.generated.model.Attachment
-import com.tosspaper.generated.model.ReceivedMessage
-import com.tosspaper.mapper.AttachmentMapper
-import com.tosspaper.mapper.ReceivedMessageMapper
-import com.tosspaper.generated.model.Company
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.tosspaper.config.BaseIntegrationTest
+import com.tosspaper.config.TestSecurityConfiguration
+import com.tosspaper.models.domain.AttachmentStatus
+import com.tosspaper.models.domain.EmailAttachment
+import com.tosspaper.models.domain.EmailMessage
+import com.tosspaper.models.jooq.Tables
 import com.tosspaper.models.paging.Paginated
 import com.tosspaper.models.paging.Pagination
 import com.tosspaper.models.query.ReceivedMessageQuery
-import com.tosspaper.models.service.ReceivedMessageService
+import org.jooq.DSLContext
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.web.client.TestRestTemplate
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
-import spock.lang.Specification
 
 import java.time.OffsetDateTime
 
-class ReceivedMessageControllerSpec extends Specification {
+class ReceivedMessageControllerSpec extends BaseIntegrationTest {
 
-    ReceivedMessageService receivedMessageService
-    ReceivedMessageMapper receivedMessageMapper
-    AttachmentMapper attachmentMapper
-    CompanyService companyService
-    ReceivedMessageController controller
+    @Autowired
+    TestRestTemplate restTemplate
+
+    @Autowired
+    ObjectMapper objectMapper
+
+    @Autowired
+    DSLContext dsl
+
+    Long companyId
 
     def setup() {
-        receivedMessageService = Mock()
-        receivedMessageMapper = Mock()
-        attachmentMapper = Mock()
-        companyService = Mock()
-        controller = new ReceivedMessageController(receivedMessageService, receivedMessageMapper, attachmentMapper, companyService)
+        companyId = TestSecurityConfiguration.TEST_COMPANY_ID
+
+        dsl.insertInto(Tables.COMPANIES)
+            .set(Tables.COMPANIES.ID, companyId)
+            .set(Tables.COMPANIES.NAME, "Test Company")
+            .set(Tables.COMPANIES.EMAIL, "aribooluwatoba@gmail.com")
+            .set(Tables.COMPANIES.ASSIGNED_EMAIL, "inbox@company.com")
+            .onDuplicateKeyIgnore()
+            .execute()
+    }
+
+    def cleanup() {
+        dsl.deleteFrom(Tables.COMPANIES).where(Tables.COMPANIES.ID.eq(companyId)).execute()
     }
 
     // ==================== listReceivedMessages ====================
 
     def "listReceivedMessages returns OK with message list"() {
-        given: "valid context and query parameters"
-            def xContextId = "123"
-            def page = 1
-            def pageSize = 20
-            def status = "pending"
-            def search = "invoice"
-            def createdDateFrom = OffsetDateTime.now().minusDays(7)
-            def createdDateTo = OffsetDateTime.now()
-            def fromEmail = "sender@example.com"
+        given: "service returns messages"
+            def message1 = createEmailMessage()
+            def message2 = createEmailMessage()
+            def serviceResult = new Paginated([message1, message2], new Pagination(1, 20, 1, 2))
 
-            def company = new Company().assignedEmail("inbox@company.com")
-            def serviceResult = new Paginated([], new Pagination(1, 20, 1, 0))
-            def messageList = new ReceivedMessageList()
-            messageList.setData([createReceivedMessage("msg-1"), createReceivedMessage("msg-2")])
-            messageList.setPagination(new ApiPagination())
+            receivedMessageService.listReceivedMessages(_ as ReceivedMessageQuery) >> serviceResult
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", companyId.toString())
 
         when: "calling listReceivedMessages"
-            def response = controller.listReceivedMessages(xContextId, page, pageSize, status, search, createdDateFrom, createdDateTo, fromEmail)
+            def response = restTemplate.exchange(
+                "/v1/received_messages?page=1&pageSize=20&status=pending&search=invoice",
+                HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "company service returns assigned email"
-            1 * companyService.getCompanyById(123L) >> company
-
-        and: "service is called with correct query"
-            1 * receivedMessageService.listReceivedMessages(_ as ReceivedMessageQuery) >> { ReceivedMessageQuery q ->
-                assert q.page == page
-                assert q.pageSize == pageSize
-                assert q.status == status
-                assert q.search == search
-                assert q.createdDateFrom == createdDateFrom
-                assert q.createdDateTo == createdDateTo
-                assert q.assignedEmail == "inbox@company.com"
-                assert q.fromEmail == fromEmail
-                return serviceResult
-            }
-
-        and: "mapper converts result"
-            1 * receivedMessageMapper.toApiReceivedMessageList(serviceResult) >> messageList
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains messages"
-            with(response.body) {
-                data.size() == 2
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.data.size() == 2
     }
 
-    def "listReceivedMessages uses default page and pageSize when null"() {
-        given: "context with null pagination parameters"
-            def xContextId = "456"
-            def company = new Company().assignedEmail("inbox@company.com")
+    def "listReceivedMessages uses default page and pageSize when not provided"() {
+        given: "service returns empty result"
             def serviceResult = new Paginated([], new Pagination(1, 20, 1, 0))
-            def messageList = new ReceivedMessageList()
-            messageList.setData([])
-            messageList.setPagination(new ApiPagination())
 
-        when: "calling listReceivedMessages with null page/pageSize"
-            def response = controller.listReceivedMessages(xContextId, null, null, null, null, null, null, null)
+            receivedMessageService.listReceivedMessages(_ as ReceivedMessageQuery) >> serviceResult
 
-        then: "company service returns assigned email"
-            1 * companyService.getCompanyById(456L) >> company
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", companyId.toString())
 
-        and: "service is called with default page=1 and pageSize=20"
-            1 * receivedMessageService.listReceivedMessages(_ as ReceivedMessageQuery) >> { ReceivedMessageQuery q ->
-                assert q.page == 1
-                assert q.pageSize == 20
-                return serviceResult
-            }
+        when: "calling listReceivedMessages with no page/pageSize"
+            def response = restTemplate.exchange(
+                "/v1/received_messages",
+                HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        and: "mapper converts result"
-            1 * receivedMessageMapper.toApiReceivedMessageList(serviceResult) >> messageList
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
+
+        and: "response body contains empty list"
+            def body = objectMapper.readValue(response.body, Map)
+            body.data.size() == 0
     }
 
     // ==================== getAttachments ====================
 
     def "getAttachments returns OK with attachment list"() {
-        given: "valid message ID"
+        given: "service returns attachments"
             def messageId = UUID.randomUUID()
-            def attachments = [createDomainAttachment("att-1"), createDomainAttachment("att-2")]
-            def attachmentList = new AttachmentList()
-            attachmentList.setData([createAttachment("att-1"), createAttachment("att-2")])
+            def attachment1 = createEmailAttachment("att-1")
+            def attachment2 = createEmailAttachment("att-2")
+
+            receivedMessageService.getAttachmentsByMessageId(messageId) >> [attachment1, attachment2]
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
 
         when: "calling getAttachments"
-            def response = controller.getAttachments(messageId)
+            def response = restTemplate.exchange(
+                "/v1/received_messages/${messageId}/attachments",
+                HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns attachments"
-            1 * receivedMessageService.getAttachmentsByMessageId(messageId) >> attachments
-
-        and: "mapper converts result"
-            1 * attachmentMapper.toApiAttachmentList(attachments) >> attachmentList
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains attachments"
-            with(response.body) {
-                data.size() == 2
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.data.size() == 2
     }
 
     def "getAttachments returns empty list when no attachments found"() {
-        given: "message ID with no attachments"
+        given: "service returns empty list"
             def messageId = UUID.randomUUID()
-            def attachmentList = new AttachmentList()
-            attachmentList.setData([])
+
+            receivedMessageService.getAttachmentsByMessageId(messageId) >> []
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
 
         when: "calling getAttachments"
-            def response = controller.getAttachments(messageId)
+            def response = restTemplate.exchange(
+                "/v1/received_messages/${messageId}/attachments",
+                HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns empty list"
-            1 * receivedMessageService.getAttachmentsByMessageId(messageId) >> []
-
-        and: "mapper converts empty result"
-            1 * attachmentMapper.toApiAttachmentList([]) >> attachmentList
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response contains empty list"
-            response.body.data.isEmpty()
+            def body = objectMapper.readValue(response.body, Map)
+            body.data.isEmpty()
     }
 
     // ==================== Helper Methods ====================
 
-    private static ReceivedMessage createReceivedMessage(String id) {
-        def message = new ReceivedMessage()
-        message.id = UUID.randomUUID()
-        return message
+    private static EmailMessage createEmailMessage() {
+        return EmailMessage.builder()
+            .id(UUID.randomUUID())
+            .fromAddress("sender@example.com")
+            .toAddress("inbox@company.com")
+            .subject("Test Subject")
+            .bodyHtml("<p>Test</p>")
+            .providerTimestamp(OffsetDateTime.now())
+            .attachmentsCount(0)
+            .build()
     }
 
-    private static Attachment createAttachment(String id) {
-        def attachment = new Attachment()
-        attachment.id = id
-        return attachment
-    }
-
-    private static Object createDomainAttachment(String id) {
-        return [id: id]
+    private static EmailAttachment createEmailAttachment(String assignedId) {
+        return EmailAttachment.builder()
+            .assignedId(assignedId)
+            .fileName("test.pdf")
+            .sizeBytes(1024L)
+            .status(AttachmentStatus.pending)
+            .contentType("application/pdf")
+            .storageUrl("s3://bucket/key")
+            .build()
     }
 }

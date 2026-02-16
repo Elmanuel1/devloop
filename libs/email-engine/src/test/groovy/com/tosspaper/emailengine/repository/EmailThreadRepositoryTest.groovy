@@ -110,8 +110,11 @@ class EmailThreadRepositoryTest extends BaseRepositoryTest {
         when: "soft deleting the thread"
         threadRepository.softDelete(savedThread.getThreadId(), deletedAt)
 
-        then: "thread still exists but has deleted_at set"
-        def result = threadRepository.findById(savedThread.getThreadId())
-        result.deletedAt != null
+        then: "thread still exists in DB but has deleted_at set (findById excludes soft-deleted)"
+        def record = dsl.selectFrom(EMAIL_THREAD)
+            .where(EMAIL_THREAD.ID.eq(savedThread.getThreadId()))
+            .fetchOne()
+        record != null
+        record.get(EMAIL_THREAD.DELETED_AT) != null
     }
 }

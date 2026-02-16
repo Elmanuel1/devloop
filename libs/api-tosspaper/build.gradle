@@ -1,17 +1,3 @@
-import org.testcontainers.containers.PostgreSQLContainer
-
-buildscript {
-    repositories {
-        mavenCentral()
-    }
-    dependencies {
-        classpath libs.testcontainers.postgresql
-        classpath libs.testcontainers
-        classpath libs.postgresql
-        classpath libs.flyway.database.postgresql
-    }
-}
-
 plugins {
 	alias(libs.plugins.spring.boot)
 	alias(libs.plugins.spring.dep.mgmt)
@@ -35,6 +21,7 @@ version = '0.0.1-SNAPSHOT'
 
 repositories {
 	mavenCentral()
+	maven { url 'https://repo.spring.io/milestone' }
 }
 
 dependencies {
@@ -91,12 +78,16 @@ dependencies {
 	implementation 'com.svix:svix:1.37.0'
 
 	// Testing
+	// Spring AI on test classpath - needed to resolve StreamingComparisonAgent for @MockBean
+	testImplementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
+	testImplementation 'org.springframework.ai:spring-ai-client-chat'
 	testImplementation libs.spring.boot.starter.test
 	testImplementation libs.groovy.core
 	testImplementation libs.spock.core
 	testImplementation libs.spock.spring
 	testImplementation libs.testcontainers
 	testImplementation libs.testcontainers.postgresql
+	testImplementation libs.testcontainers.localstack
 	testImplementation libs.testcontainers.junit.jupiter
 	testRuntimeOnly libs.junit.platform.launcher
 	testRuntimeOnly libs.postgresql

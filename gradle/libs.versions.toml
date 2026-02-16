@@ -10,7 +10,7 @@ flyway = "11.1.0"
 mapstruct = "1.5.5.Final"
 lombok = "1.18.36"
 postgresql = "42.7.4"
-testcontainers = "1.20.4"
+testcontainers = "1.21.4"
 aws-sdk = "2.29.45"
 spock = "2.4-M1-groovy-4.0"
 groovy = "4.0.28"
@@ -131,6 +131,7 @@ spock-spring = { module = "org.spockframework:spock-spring", version.ref = "spoc
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
+testcontainers-localstack = { module = "org.testcontainers:localstack", version.ref = "testcontainers" }
 testcontainers-spock = { module = "org.testcontainers:spock", version.ref = "testcontainers" }
 testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter", version.ref = "testcontainers" }
 

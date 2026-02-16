@@ -4,6 +4,10 @@
       {
         "Id": "1",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+        },
         "Name": "Due on receipt",
         "Active": true,
         "Type": "STANDARD",
@@ -12,6 +16,10 @@
       {
         "Id": "2",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+        },
         "Name": "Net 15",
         "Active": true,
         "Type": "STANDARD",
@@ -20,6 +28,10 @@
       {
         "Id": "3",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+        },
         "Name": "Net 30",
         "Active": true,
         "Type": "STANDARD",
@@ -28,6 +40,10 @@
       {
         "Id": "4",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+        },
         "Name": "Net 60",
         "Active": true,
         "Type": "STANDARD",
@@ -36,6 +52,10 @@
       {
         "Id": "5",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-01-01T08:00:00-08:00"
+        },
         "Name": "2% 10 Net 30",
         "Active": true,
         "Type": "STANDARD",

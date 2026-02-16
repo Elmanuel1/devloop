@@ -339,4 +339,291 @@ class ContactSyncRepositorySpec extends BaseIntegrationTest {
         updated.pushFailureReason == null
         updated.pushRetryLastAttemptAt == null
     }
+
+    def "should upsert new contact from provider"() {
+        given: "a new contact from provider"
+        def address = Address.builder()
+                .address("123 Provider St")
+                .city("Provider City")
+                .stateOrProvince("ON")
+                .postalCode("M1A 1A1")
+                .country("Canada")
+                .build()
+
+        def contact = new Party()
+        contact.setName("New Provider Contact")
+        contact.setEmail("newprovider@test.com")
+        contact.setPhone("+1234567890")
+        contact.setAddress(address)
+        contact.setNotes("Provider notes")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-new-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderCreatedAt(OffsetDateTime.now())
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setTag(PartyTag.SUPPLIER)
+        contact.setCurrencyCode(com.tosspaper.models.domain.Currency.USD)
+        contact.setExternalMetadata(Map.of("qb_id", "12345"))
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the contact is created"
+        def created = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.COMPANY_ID.eq(1L))
+                .and(CONTACTS.PROVIDER.eq("quickbooks"))
+                .and(CONTACTS.EXTERNAL_ID.eq("qb-new-123"))
+                .fetchOne()
+
+        created != null
+        created.name == "New Provider Contact"
+        created.email == "newprovider@test.com"
+        created.phone == "+1234567890"
+        created.provider == "quickbooks"
+        created.externalId == "qb-new-123"
+        created.providerVersion == "v1"
+        created.status == "active"
+        created.tag == "supplier"
+        created.currencyCode == "USD"
+        created.address != null
+    }
+
+    def "should update existing contact from provider by external id"() {
+        given: "an existing contact from provider"
+        dsl.insertInto(CONTACTS)
+                .set(CONTACTS.ID, "contact-update-provider")
+                .set(CONTACTS.COMPANY_ID, 1L)
+                .set(CONTACTS.NAME, "Old Name")
+                .set(CONTACTS.EMAIL, "old@test.com")
+                .set(CONTACTS.PROVIDER, "quickbooks")
+                .set(CONTACTS.EXTERNAL_ID, "qb-update-123")
+                .set(CONTACTS.PROVIDER_VERSION, "v1")
+                .set(CONTACTS.STATUS, "active")
+                .execute()
+
+        and: "an updated contact from provider"
+        def contact = new Party()
+        contact.setName("Updated Name")
+        contact.setEmail("updated@test.com")
+        contact.setPhone("+9876543210")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-update-123")
+        contact.setProviderVersion("v2")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setTag(PartyTag.VENDOR)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the contact is updated"
+        def updated = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.ID.eq("contact-update-provider"))
+                .fetchOne()
+
+        updated.name == "Updated Name"
+        updated.email == "updated@test.com"
+        updated.phone == "+9876543210"
+        updated.providerVersion == "v2"
+        updated.tag == "vendor"
+    }
+
+    def "should update existing contact by email and tag"() {
+        given: "an existing local contact (no provider)"
+        dsl.insertInto(CONTACTS)
+                .set(CONTACTS.ID, "contact-update-email")
+                .set(CONTACTS.COMPANY_ID, 1L)
+                .set(CONTACTS.NAME, "Local Contact")
+                .set(CONTACTS.EMAIL, "local@test.com")
+                .set(CONTACTS.TAG, "supplier")
+                .set(CONTACTS.STATUS, "active")
+                .execute()
+
+        and: "a provider contact with same email and tag"
+        def contact = new Party()
+        contact.setName("Provider Contact")
+        contact.setEmail("local@test.com")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-email-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setTag(PartyTag.SUPPLIER)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the existing contact is updated"
+        def updated = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.COMPANY_ID.eq(1L))
+                .and(CONTACTS.EMAIL.eq("local@test.com"))
+                .fetchOne()
+
+        updated != null
+        updated.name == "Provider Contact"
+    }
+
+    def "should update existing contact by phone and tag"() {
+        given: "an existing local contact with phone"
+        dsl.insertInto(CONTACTS)
+                .set(CONTACTS.ID, "contact-update-phone")
+                .set(CONTACTS.COMPANY_ID, 1L)
+                .set(CONTACTS.NAME, "Phone Contact")
+                .set(CONTACTS.PHONE, "+1111111111")
+                .set(CONTACTS.TAG, "vendor")
+                .set(CONTACTS.STATUS, "active")
+                .execute()
+
+        and: "a provider contact with same phone and tag"
+        def contact = new Party()
+        contact.setName("Provider Phone Contact")
+        contact.setPhone("+1111111111")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-phone-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setTag(PartyTag.VENDOR)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the existing contact is updated"
+        def updated = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.COMPANY_ID.eq(1L))
+                .and(CONTACTS.PHONE.eq("+1111111111"))
+                .fetchOne()
+
+        updated != null
+        updated.name == "Provider Phone Contact"
+    }
+
+    def "should update existing contact by name"() {
+        given: "an existing contact with unique name"
+        dsl.insertInto(CONTACTS)
+                .set(CONTACTS.ID, "contact-update-name")
+                .set(CONTACTS.COMPANY_ID, 1L)
+                .set(CONTACTS.NAME, "Unique Company Name")
+                .set(CONTACTS.STATUS, "active")
+                .execute()
+
+        and: "a provider contact with same name (case-insensitive, trimmed)"
+        def contact = new Party()
+        contact.setName("  unique company name  ")
+        contact.setEmail("unique@test.com")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-name-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the existing contact is updated"
+        def contacts = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.COMPANY_ID.eq(1L))
+                .fetch()
+
+        contacts.size() == 1
+        contacts[0].email == "unique@test.com"
+    }
+
+    def "should handle batch upsert from provider"() {
+        given: "multiple contacts from provider"
+        def contacts = (1..5).collect { idx ->
+            def contact = new Party()
+            contact.setName("Batch Contact ${idx}")
+            contact.setEmail("batch${idx}@test.com")
+            contact.setProvider("quickbooks")
+            contact.setExternalId("qb-batch-${idx}")
+            contact.setProviderVersion("v1")
+            contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+            contact.setStatus(Party.PartyStatus.ACTIVE)
+            contact.setTag(PartyTag.SUPPLIER)
+            contact
+        }
+
+        when: "batch upserting from provider"
+        syncRepository.upsertFromProvider(1L, contacts)
+
+        then: "all contacts are created"
+        def created = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.COMPANY_ID.eq(1L))
+                .and(CONTACTS.PROVIDER.eq("quickbooks"))
+                .fetch()
+
+        created.size() >= 5
+    }
+
+    def "should handle contact with null address"() {
+        given: "a contact without address"
+        def contact = new Party()
+        contact.setName("No Address Contact")
+        contact.setEmail("noaddress@test.com")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-noaddr-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setAddress(null)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the contact is created without address"
+        def created = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.EXTERNAL_ID.eq("qb-noaddr-123"))
+                .fetchOne()
+
+        created != null
+        created.address == null
+    }
+
+    def "should handle contact with null external metadata"() {
+        given: "a contact without external metadata"
+        def contact = new Party()
+        contact.setName("No Metadata Contact")
+        contact.setEmail("nometadata@test.com")
+        contact.setProvider("quickbooks")
+        contact.setExternalId("qb-nometa-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+        contact.setExternalMetadata(null)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the contact is created without metadata"
+        def created = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.EXTERNAL_ID.eq("qb-nometa-123"))
+                .fetchOne()
+
+        created != null
+        created.externalMetadata == null
+    }
+
+    def "should normalize provider name to lowercase"() {
+        given: "a contact with mixed-case provider name"
+        def contact = new Party()
+        contact.setName("Mixed Case Provider")
+        contact.setEmail("mixedcase@test.com")
+        contact.setProvider("QuickBooks")
+        contact.setExternalId("qb-mixed-123")
+        contact.setProviderVersion("v1")
+        contact.setProviderLastUpdatedAt(OffsetDateTime.now())
+        contact.setStatus(Party.PartyStatus.ACTIVE)
+
+        when: "upserting from provider"
+        syncRepository.upsertFromProvider(1L, [contact])
+
+        then: "the provider is stored in lowercase"
+        def created = dsl.selectFrom(CONTACTS)
+                .where(CONTACTS.EXTERNAL_ID.eq("qb-mixed-123"))
+                .fetchOne()
+
+        created.provider == "quickbooks"
+    }
 }

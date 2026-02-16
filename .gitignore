@@ -140,3 +140,8 @@ secrets/*-secrets.json
 !secrets/*-secrets.enc.json
 !secrets/*-config.json
 !secrets/.sops.yaml
+
+# Ignore design assets and docs
+*.png
+docs/bid-platform-competitive-analysis.md
+docs/tosspaperbid-full-review.md

@@ -2,7 +2,7 @@ package com.tosspaper.purchaseorder
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.common.BadRequestException
-import com.tosspaper.common.ForbiddenException
+import com.tosspaper.models.exception.ForbiddenException
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.company.CompanyRepository
 import com.tosspaper.contact.ContactService
@@ -247,7 +247,7 @@ class PurchaseOrderServiceSpec extends Specification {
             result.id == "po-new"
     }
 
-    def "createPurchaseOrder validates total price is not zero"() {
+    def "createPurchaseOrder allows zero total price (free samples, promotional items)"() {
         given: "a create request with zero total"
             def companyId = 1L
             def projectId = "proj-1"
@@ -255,15 +255,29 @@ class PurchaseOrderServiceSpec extends Specification {
             createRequest.items = [createItem(0.0, 5)]
             createRequest.vendorContact = createContactDto("vendor-1")
 
+            def project = createProjectRecord(projectId)
+            def record = createPurchaseOrderRecord("po-new", companyId)
+            def purchaseOrder = createPurchaseOrder("po-new", companyId)
+            def company = createCompanyRecord(companyId)
+
         when: "creating purchase order"
-            service.createPurchaseOrder(companyId, projectId, createRequest)
+            def result = service.createPurchaseOrder(companyId, projectId, createRequest)
 
         then: "no accounting connection"
             1 * integrationConnectionService.findActiveByCompanyAndCategory(companyId, IntegrationCategory.ACCOUNTING) >> Optional.empty()
 
-        and: "BadRequestException is thrown for zero total"
-            def ex = thrown(BadRequestException)
-            ex.message.contains("zero")
+        and: "project is fetched and PO is created (zero total is allowed)"
+            1 * projectRepository.findById(projectId) >> project
+            1 * purchaseOrderMapper.toRecord(companyId, projectId, createRequest) >> record
+            1 * purchaseOrderMapper.toItemsPojos(_) >> []
+            1 * purchaseOrderRepository.create(record, _) >> record
+            1 * purchaseOrderMapper.toDto(record, _) >> purchaseOrder
+            1 * companyRepository.findById(companyId) >> company
+            1 * vectorStoreIngestionPublisher.publishPurchaseOrderEvent(_, _, _, _, _, _)
+            1 * integrationConnectionService.listByCompany(companyId) >> []
+
+        and: "result is returned"
+            result.id == "po-new"
     }
 
     def "createPurchaseOrder validates vendor currency when multicurrency disabled"() {
@@ -694,7 +708,7 @@ class PurchaseOrderServiceSpec extends Specification {
             result.id == "po-new"
     }
 
-    def "createPurchaseOrder validates items missing unitPrice or quantity contribute zero"() {
+    def "createPurchaseOrder allows items missing unitPrice or quantity (contribute zero to total)"() {
         given: "a create request with items missing unitPrice"
             def companyId = 1L
             def projectId = "proj-1"
@@ -705,15 +719,29 @@ class PurchaseOrderServiceSpec extends Specification {
             createRequest.items = [itemWithNoPrice]
             createRequest.vendorContact = createContactDto("vendor-1")
 
+            def project = createProjectRecord(projectId)
+            def record = createPurchaseOrderRecord("po-new", companyId)
+            def purchaseOrder = createPurchaseOrder("po-new", companyId)
+            def company = createCompanyRecord(companyId)
+
         when: "creating purchase order"
-            service.createPurchaseOrder(companyId, projectId, createRequest)
+            def result = service.createPurchaseOrder(companyId, projectId, createRequest)
 
         then: "no accounting connection"
             1 * integrationConnectionService.findActiveByCompanyAndCategory(companyId, IntegrationCategory.ACCOUNTING) >> Optional.empty()
 
-        and: "BadRequestException is thrown for zero total (item with null unitPrice contributes 0)"
-            def ex = thrown(BadRequestException)
-            ex.message.contains("zero")
+        and: "project is fetched and PO is created (zero total from null unitPrice is allowed)"
+            1 * projectRepository.findById(projectId) >> project
+            1 * purchaseOrderMapper.toRecord(companyId, projectId, createRequest) >> record
+            1 * purchaseOrderMapper.toItemsPojos(_) >> []
+            1 * purchaseOrderRepository.create(record, _) >> record
+            1 * purchaseOrderMapper.toDto(record, _) >> purchaseOrder
+            1 * companyRepository.findById(companyId) >> company
+            1 * vectorStoreIngestionPublisher.publishPurchaseOrderEvent(_, _, _, _, _, _)
+            1 * integrationConnectionService.listByCompany(companyId) >> []
+
+        and: "result is returned"
+            result.id == "po-new"
     }
 
     def "createPurchaseOrder skips vendor currency validation when vendor has no currency"() {

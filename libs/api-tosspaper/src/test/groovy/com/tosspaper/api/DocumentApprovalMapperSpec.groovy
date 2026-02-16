@@ -286,7 +286,7 @@ class DocumentApprovalMapperSpec extends Specification {
             result.projectId == "proj-789"
             result.poId == "po-id-456"
             result.matchType == MatchType.AI_MATCH
-            result.matchReport == null
+            result.matchReport == []
     }
 
     def "toExtractionResultApi handles null matchType with default PENDING"() {
@@ -324,8 +324,8 @@ class DocumentApprovalMapperSpec extends Specification {
         when: "mapping to API"
             def result = DocumentApprovalMapper.toExtractionResultApi(domain)
 
-        then: "matchReport is null"
-            result.matchReport == null
+        then: "matchReport is empty list (generated model initializes with empty ArrayList)"
+            result.matchReport == []
     }
 
     def "toExtractionResultApi parses matchReport JSON when provided"() {

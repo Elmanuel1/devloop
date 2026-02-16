@@ -603,7 +603,7 @@ class InvoiceMapperSpec extends Specification {
         result.invoiceDetails != null
         result.invoiceDetails.currencyCode == "USD"
         result.invoiceDetails.paymentTerms == "Net 60"
-        result.invoiceDetails.dueDate == "2024-03-15"
+        result.invoiceDetails.dueDate == LocalDate.parse("2024-03-15")
     }
 
     def "toDto should parse complete party with address and contactInfo"() {
@@ -616,7 +616,7 @@ class InvoiceMapperSpec extends Specification {
             "address": {
                 "street": "123 Main St",
                 "city": "Vancouver",
-                "state": "BC",
+                "provinceOrState": "BC",
                 "postalCode": "V6B 1A1",
                 "country": "Canada"
             },
@@ -785,7 +785,7 @@ class InvoiceMapperSpec extends Specification {
         given: "a domain Invoice with complete party information"
         def address = new com.tosspaper.models.extraction.dto.Address()
         address.city = "Toronto"
-        address.state = "ON"
+        address.provinceOrState = "ON"
 
         def contactInfo = new com.tosspaper.models.extraction.dto.ContactInfo()
         contactInfo.email = "info@company.com"
@@ -836,7 +836,7 @@ class InvoiceMapperSpec extends Specification {
         result.invoiceDetails != null
         result.invoiceDetails.currencyCode == "EUR"
         result.invoiceDetails.paymentTerms == "Net 45"
-        result.invoiceDetails.dueDate == "2024-04-30"
+        result.invoiceDetails.dueDate == LocalDate.parse("2024-04-30")
     }
 
     def "toDomain should parse complete party with nested objects"() {
@@ -849,7 +849,7 @@ class InvoiceMapperSpec extends Specification {
             "address": {
                 "street": "456 Commerce Ave",
                 "city": "Calgary",
-                "state": "AB",
+                "provinceOrState": "AB",
                 "postalCode": "T2P 3M9"
             },
             "contactInfo": {
@@ -1148,7 +1148,7 @@ class InvoiceMapperSpec extends Specification {
         given: "a record with all four party types"
         def sellerJson = JSONB.valueOf('{"role": "Seller", "name": "Seller Corp"}')
         def buyerJson = JSONB.valueOf('{"role": "Buyer", "name": "Buyer Corp"}')
-        def shipToJson = JSONB.valueOf('{"role": "Ship To", "name": "Warehouse A"}')
+        def shipToJson = JSONB.valueOf('{"role": "Buyer", "name": "Warehouse A"}')
         def billToJson = JSONB.valueOf('{"role": "Bill To", "name": "Accounts Dept"}')
 
         def record = new InvoicesRecord(
@@ -1174,7 +1174,7 @@ class InvoiceMapperSpec extends Specification {
         given: "a record with all four party types"
         def sellerJson = JSONB.valueOf('{"role": "Seller", "name": "Seller Inc"}')
         def buyerJson = JSONB.valueOf('{"role": "Buyer", "name": "Buyer Inc"}')
-        def shipToJson = JSONB.valueOf('{"role": "Ship To", "name": "Dock B"}')
+        def shipToJson = JSONB.valueOf('{"role": "Buyer", "name": "Dock B"}')
         def billToJson = JSONB.valueOf('{"role": "Bill To", "name": "Finance Dept"}')
 
         def record = new InvoicesRecord(

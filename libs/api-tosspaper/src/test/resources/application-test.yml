@@ -23,6 +23,8 @@ spring:
           jwk-set-uri: https://test-issuer.com/.well-known/jwks.json
 
   ai:
+    anthropic:
+      api-key: "dummy-anthropic-key"
     openai:
       api-key: "dummy-openai-key"
       classifier:
@@ -63,6 +65,13 @@ logging:
     org.jooq: DEBUG
     
 app:
+  disposable-email:
+    blocklist-file: "/tmp/test-disposable-blocklist.txt"
+    fetch-url: "https://dummy.example.com/blocklist"
+    fetch-interval-hours: 24
+    fetch-enabled: false
+  rejected-documents:
+    retention-hours: 24
   integrations:
     encryption:
       key: "dummy-test-key-32-chars-long-1234"
@@ -84,12 +93,10 @@ app:
     integrations-redirect-url: "http://localhost:3000/dashboard/organization?tab=settings&section=integrations"
 
 aws:
-  credentials:
-    access-key: "dummy-key"
-    secret-key: "dummy-secret"
   bucket:
     region: "us-east-1"
-    name: "dummy-bucket"
+    name: "tosspaper-email-attachments"
+    path-style-access: true
 
 schema:
   prompts:
@@ -108,5 +115,7 @@ http:
       issuer: "localhost"
       audience: "toss-paper"
       jwk-set-uri: "https://test-issuer.com/.well-known/jwks.json"
+    csrf:
+      enabled: true
     cors:
       allowed-origins: "*"

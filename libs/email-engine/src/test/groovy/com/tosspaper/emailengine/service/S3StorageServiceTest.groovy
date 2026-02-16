@@ -25,7 +25,6 @@ class S3StorageServiceTest extends Specification {
 
     def setup() {
         awsProperties.getBucket() >> bucketProperties
-        awsProperties.getCredentials() >> credentials
 
         bucketProperties.getName() >> "test-bucket"
         bucketProperties.getRegion() >> "us-east-1"

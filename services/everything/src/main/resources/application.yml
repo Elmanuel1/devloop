@@ -90,7 +90,6 @@ spring:
       max-file-size: 50MB
       max-request-size: 50MB
       file-size-threshold: 2MB
-      max-file-count: 1000
 
   data:
     redis:
@@ -299,7 +298,6 @@ server:
   max-http-request-header-size: 64KB
   tomcat:
     max-http-header-size: 64KB
-    max-file-count: 10000
     max-parameter-count: 10000
     max-part-count: ${SERVER_TOMCAT_MAX_PART_COUNT:1000}
     max-http-form-post-size: 50MB
@@ -512,14 +510,14 @@ logging:
     com.zaxxer.hikari.pool.PoolBase: WARN
     com.tosspaper.everything: INFO
     com.tosspaper: INFO
-    # AWS SSM Parameter Store debugging
-    io.awspring.cloud: DEBUG
+    # AWS SSM Parameter Store
+    io.awspring.cloud: WARN
     software.amazon.awssdk: WARN
     org.jooq: WARN
     org.springframework.jdbc: WARN
-    # MCP Client debugging
-    io.modelcontextprotocol: DEBUG
-    org.springframework.ai.mcp: DEBUG
+    # MCP Client
+    io.modelcontextprotocol: WARN
+    org.springframework.ai.mcp: WARN
     # Spring Security - set to DEBUG for troubleshooting
     org.springframework.security: WARN
     org.springframework.security.web: WARN

@@ -6,7 +6,6 @@ import com.tosspaper.models.config.AppEmailProperties
 import com.tosspaper.integrations.config.IntegrationProperties
 import com.tosspaper.integrations.config.IntegrationEncryptionProperties
 import com.tosspaper.integrations.quickbooks.config.QuickBooksProperties
-import com.tosspaper.models.properties.AwsProperties
 import com.tosspaper.aiengine.properties.HttpProperties
 import com.tosspaper.aiengine.properties.AIProperties
 import com.tosspaper.models.properties.FileProperties
@@ -19,6 +18,8 @@ import com.tosspaper.models.properties.CsrfCookieProperties
 import com.tosspaper.models.properties.JWTTokenProperties
 import com.tosspaper.models.properties.JwkCacheProperties
 import com.tosspaper.models.properties.JwtClaimProperties
+import com.tosspaper.models.properties.AwsProperties
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Primary
 import org.springframework.context.annotation.Bean
@@ -29,6 +30,7 @@ import org.springframework.security.core.Authentication
 import java.io.Serializable
 
 @TestConfiguration
+@EnableConfigurationProperties(AwsProperties.class)
 class TestSecurityConfiguration {
     static final Long TEST_COMPANY_ID = 1L
     static final String TEST_USER_EMAIL = "aribooluwatoba@gmail.com"
@@ -39,16 +41,6 @@ class TestSecurityConfiguration {
         props.setApiKey("dummy-key")
         props.setDomain("dummy-domain")
         props.setFromEmail("test@test.com")
-        return props
-    }
-
-    @Bean
-    AwsProperties awsProperties() {
-        AwsProperties props = new AwsProperties()
-        props.getCredentials().setAccessKey("dummy")
-        props.getCredentials().setSecretKey("dummy")
-        props.getBucket().setName("dummy")
-        props.getBucket().setRegion("us-east-1")
         return props
     }
 
@@ -109,7 +101,7 @@ class TestSecurityConfiguration {
     @Bean
     IgnoredCsrfPathConfigurationProperties ignoredCsrfPathConfigurationProperties() {
         IgnoredCsrfPathConfigurationProperties props = new IgnoredCsrfPathConfigurationProperties()
-        props.setPaths(["/api/v1/webhooks/**"])
+        props.setPaths(["/api/v1/webhooks/**", "/v1/quickbooks/**"])
         return props
     }
 

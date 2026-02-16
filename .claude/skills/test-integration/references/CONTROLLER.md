@@ -22,6 +22,22 @@
 
 **Why?** Controller tests verify the full integration: HTTP → Controller → Service → Repository → Database. Mocking breaks this chain and hides real integration issues.
 
+## What to Mock vs What Must Be Real
+
+**Mock ONLY these raw API clients** (in `BaseIntegrationTest`):
+- `MailgunMessagesApi` — Mailgun SDK
+- `AuthInvitationClient` — Supabase HTTP client
+- `IntegrationScheduleManager` — Temporal SDK
+- AI services: `ExtractionService`, `ProcessingService`, `ReductoProcessingService`, `DocumentExtractor`
+
+**NEVER mock these** — use real implementations:
+- `S3Client`, `S3Presigner` — real via LocalStack Testcontainer
+- Any service that queries the database (repositories, lookup services, sync services)
+- Any service that composes other services (EmailService, SenderNotificationService, etc.)
+- StorageService wrappers (they use real S3Client via LocalStack)
+- IntegrationConnectionService, IntegrationsService, OAuthStateService
+- RedisStreamPublisher/MessagePublisher (uses real Redis via Testcontainers)
+
 ---
 
 ## Setup Pattern

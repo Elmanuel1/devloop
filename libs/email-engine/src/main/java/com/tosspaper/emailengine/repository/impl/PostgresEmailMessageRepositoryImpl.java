@@ -116,10 +116,10 @@ public class PostgresEmailMessageRepositoryImpl implements EmailMessageRepositor
     @Override
     public EmailMessage saveThreadAndMessage(EmailThread thread, EmailMessage message) {
         log.debug("Saving thread and message atomically");
-        
+
         return dsl.transactionResult(configuration -> {
             DSLContext txDsl = configuration.dsl();
-            
+
             // First, save the thread with ON CONFLICT to handle duplicate webhooks
             var savedThreadRecord = txDsl.insertInto(EMAIL_THREAD)
                 .set(EMAIL_THREAD.SUBJECT, thread.getSubject())
@@ -134,35 +134,39 @@ public class PostgresEmailMessageRepositoryImpl implements EmailMessageRepositor
                 .returningResult(EMAIL_THREAD.asterisk())
                 .fetchSingle()
                 .into(EMAIL_THREAD);
-                
+
             log.debug("Upserted email thread with id: {}", savedThreadRecord.getId());
-            
-            // Then, save the message with the thread ID and ON CONFLICT to handle duplicate webhooks
+
+            // Then, save the message with the thread ID and ON CONFLICT DO UPDATE to handle duplicate webhooks.
+            // This is a true upsert - on conflict, we update the existing record and return it.
             var savedMessageRecord = txDsl.insertInto(EMAIL_MESSAGE)
-                .set(EMAIL_MESSAGE.THREAD_ID, savedThreadRecord.getId())
-                .set(EMAIL_MESSAGE.COMPANY_ID, message.getCompanyId())
-                .set(EMAIL_MESSAGE.PROVIDER, message.getProvider())
-                .set(EMAIL_MESSAGE.PROVIDER_MESSAGE_ID, message.getProviderMessageId())
-                .set(EMAIL_MESSAGE.IN_REPLY_TO, message.getInReplyTo())
-                .set(EMAIL_MESSAGE.FROM_ADDRESS, message.getFromAddress())
-                .set(EMAIL_MESSAGE.TO_ADDRESS, message.getToAddress())
-                .set(EMAIL_MESSAGE.CC, message.getCc())
-                .set(EMAIL_MESSAGE.BCC, message.getBcc())
-                .set(EMAIL_MESSAGE.SUBJECT, message.getSubject())
-                .set(EMAIL_MESSAGE.BODY_TEXT, message.getBodyText())
-                .set(EMAIL_MESSAGE.BODY_HTML, message.getBodyHtml())
-                .set(EMAIL_MESSAGE.HEADERS, message.getHeaders() != null ? org.jooq.JSONB.valueOf(message.getHeaders()) : null)
-                .set(EMAIL_MESSAGE.DIRECTION, message.getDirection().getValue())
-                .set(EMAIL_MESSAGE.STATUS, message.getStatus().getValue())
-                .set(EMAIL_MESSAGE.PROVIDER_TIMESTAMP, message.getProviderTimestamp())
-                .onConflict(EMAIL_MESSAGE.PROVIDER, EMAIL_MESSAGE.PROVIDER_MESSAGE_ID)
-                .doNothing()
-                .returningResult(EMAIL_MESSAGE.asterisk())
-                .fetchSingle()
-                .into(EMAIL_MESSAGE);
-                
+                    .set(EMAIL_MESSAGE.THREAD_ID, savedThreadRecord.getId())
+                    .set(EMAIL_MESSAGE.COMPANY_ID, message.getCompanyId())
+                    .set(EMAIL_MESSAGE.PROVIDER, message.getProvider())
+                    .set(EMAIL_MESSAGE.PROVIDER_MESSAGE_ID, message.getProviderMessageId())
+                    .set(EMAIL_MESSAGE.IN_REPLY_TO, message.getInReplyTo())
+                    .set(EMAIL_MESSAGE.FROM_ADDRESS, message.getFromAddress())
+                    .set(EMAIL_MESSAGE.TO_ADDRESS, message.getToAddress())
+                    .set(EMAIL_MESSAGE.CC, message.getCc())
+                    .set(EMAIL_MESSAGE.BCC, message.getBcc())
+                    .set(EMAIL_MESSAGE.SUBJECT, message.getSubject())
+                    .set(EMAIL_MESSAGE.BODY_TEXT, message.getBodyText())
+                    .set(EMAIL_MESSAGE.BODY_HTML, message.getBodyHtml())
+                    .set(EMAIL_MESSAGE.HEADERS, message.getHeaders() != null ? org.jooq.JSONB.valueOf(message.getHeaders()) : null)
+                    .set(EMAIL_MESSAGE.DIRECTION, message.getDirection().getValue())
+                    .set(EMAIL_MESSAGE.STATUS, message.getStatus().getValue())
+                    .set(EMAIL_MESSAGE.PROVIDER_TIMESTAMP, message.getProviderTimestamp())
+                    .onConflict(EMAIL_MESSAGE.PROVIDER, EMAIL_MESSAGE.PROVIDER_MESSAGE_ID)
+                    .doUpdate()
+                    .set(EMAIL_MESSAGE.STATUS, message.getStatus().getValue())
+                    .where(EMAIL_MESSAGE.PROVIDER.eq(message.getProvider()))
+                    .and(EMAIL_MESSAGE.PROVIDER_MESSAGE_ID.eq(message.getProviderMessageId()))
+                    .returningResult(EMAIL_MESSAGE.asterisk())
+                    .fetchSingle()
+                    .into(EMAIL_MESSAGE);
+
             log.debug("Upserted email message with id: {} for thread: {}", savedMessageRecord.getId(), savedThreadRecord.getId());
-            
+
             return mapToEmailMessage(savedMessageRecord);
         });
     }

@@ -1,91 +1,114 @@
 package com.tosspaper.api
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.aiengine.service.DocumentMatchService
+import com.tosspaper.config.BaseIntegrationTest
 import com.tosspaper.generated.model.LinkPoRequest
+import org.spockframework.spring.SpringBean
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.web.client.TestRestTemplate
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
-import spock.lang.Specification
 
-class DocumentMatchControllerSpec extends Specification {
+class DocumentMatchControllerSpec extends BaseIntegrationTest {
 
-    DocumentMatchService documentMatchService
-    DocumentMatchController controller
+    @SpringBean
+    DocumentMatchService documentMatchService = Mock()
 
-    def setup() {
-        documentMatchService = Mock()
-        controller = new DocumentMatchController(documentMatchService)
-    }
+    @Autowired
+    TestRestTemplate restTemplate
+
+    @Autowired
+    ObjectMapper objectMapper
 
     // ==================== linkPurchaseOrder ====================
 
     def "linkPurchaseOrder returns ACCEPTED when successful"() {
-        given: "valid context, assignedId, and link request"
-            def xContextId = "123"
-            def assignedId = "task-456"
+        given: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "1")
+
+        and: "request body"
             def linkPoRequest = new LinkPoRequest()
             linkPoRequest.poNumber = "PO-001"
+            def entity = new HttpEntity<>(linkPoRequest, headers)
 
         when: "calling linkPurchaseOrder"
-            def response = controller.linkPurchaseOrder(xContextId, assignedId, linkPoRequest)
+            def response = restTemplate.exchange(
+                "/v1/document-matches/task-456/link-po",
+                HttpMethod.POST, entity, String)
 
-        then: "service initiates manual link"
-            1 * documentMatchService.initiateManualLink(123L, assignedId, "PO-001")
-
-        and: "response status is ACCEPTED"
+        then: "response status is ACCEPTED"
             response.statusCode == HttpStatus.ACCEPTED
+
+        and: "service is called with correct parameters"
+            1 * documentMatchService.initiateManualLink(1L, "task-456", "PO-001")
     }
 
-    def "linkPurchaseOrder throws RuntimeException when service fails"() {
-        given: "valid context and request, but service fails"
-            def xContextId = "123"
-            def assignedId = "task-456"
-            def linkPoRequest = new LinkPoRequest()
-            linkPoRequest.poNumber = "PO-001"
-
-        when: "calling linkPurchaseOrder"
-            controller.linkPurchaseOrder(xContextId, assignedId, linkPoRequest)
-
-        then: "service throws exception"
-            1 * documentMatchService.initiateManualLink(123L, assignedId, "PO-001") >> {
+    def "linkPurchaseOrder returns 500 when service fails"() {
+        given: "service will fail"
+            documentMatchService.initiateManualLink(1L, "task-456", "PO-001") >> {
                 throw new IllegalStateException("Failed to link")
             }
 
-        and: "RuntimeException is thrown with wrapped exception"
-            def ex = thrown(RuntimeException)
-            ex.message.contains("Failed to initiate PO link")
-            ex.cause instanceof IllegalStateException
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "1")
+
+        and: "request body"
+            def linkPoRequest = new LinkPoRequest()
+            linkPoRequest.poNumber = "PO-001"
+            def entity = new HttpEntity<>(linkPoRequest, headers)
+
+        when: "calling linkPurchaseOrder"
+            def response = restTemplate.exchange(
+                "/v1/document-matches/task-456/link-po",
+                HttpMethod.POST, entity, String)
+
+        then: "response status is 500 Internal Server Error"
+            response.statusCode == HttpStatus.INTERNAL_SERVER_ERROR
     }
 
     // ==================== rematch ====================
 
     def "rematch returns ACCEPTED when successful"() {
-        given: "valid assignedId"
-            def assignedId = "task-789"
+        given: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            def entity = new HttpEntity<>(headers)
 
         when: "calling rematch"
-            def response = controller.rematch(assignedId)
+            def response = restTemplate.exchange(
+                "/v1/document-matches/task-789/rematch",
+                HttpMethod.POST, entity, String)
 
-        then: "service initiates auto match"
-            1 * documentMatchService.initiateAutoMatch(assignedId)
-
-        and: "response status is ACCEPTED"
+        then: "response status is ACCEPTED"
             response.statusCode == HttpStatus.ACCEPTED
+
+        and: "service is called"
+            1 * documentMatchService.initiateAutoMatch("task-789")
     }
 
-    def "rematch throws RuntimeException when service fails"() {
-        given: "valid assignedId but service fails"
-            def assignedId = "task-789"
-
-        when: "calling rematch"
-            controller.rematch(assignedId)
-
-        then: "service throws exception"
-            1 * documentMatchService.initiateAutoMatch(assignedId) >> {
+    def "rematch returns 500 when service fails"() {
+        given: "service will fail"
+            documentMatchService.initiateAutoMatch("task-789") >> {
                 throw new IllegalStateException("Failed to rematch")
             }
 
-        and: "RuntimeException is thrown with wrapped exception"
-            def ex = thrown(RuntimeException)
-            ex.message.contains("Failed to initiate re-match")
-            ex.cause instanceof IllegalStateException
+        and: "csrf and auth headers"
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            def entity = new HttpEntity<>(headers)
+
+        when: "calling rematch"
+            def response = restTemplate.exchange(
+                "/v1/document-matches/task-789/rematch",
+                HttpMethod.POST, entity, String)
+
+        then: "response status is 500 Internal Server Error"
+            response.statusCode == HttpStatus.INTERNAL_SERVER_ERROR
     }
 }

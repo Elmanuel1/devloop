@@ -72,12 +72,78 @@ def "should throw ServiceException when multiple POs found with same ID"() {
 }
 ```
 
+## WARNINGS
+
+- **DO NOT** write unit tests for REST controllers or repositories — those MUST be integration tests (see `test-integration` skill)
+- **DO NOT** use deprecated `statusCodeValue` — use `response.statusCode == HttpStatus.OK` instead
+
 ## Scope
 
 ✅ Service classes with injected dependencies
 ✅ Business logic and calculations
 ✅ Mapper classes
 ✅ Utility classes with dependencies
+
+## Coverage Goal
+
+**The primary goal is that ALL classes in the module have tests.** Every class must have a corresponding Spec file. Do not skip classes just because the module already hit 80%.
+
+**Minimum 80% line coverage per module** — this is a hard floor.
+
+### Approach
+1. **First**: Identify ALL source classes in the module that lack test coverage
+2. **Then**: Write tests for every untested class
+3. **Finally**: Verify total module coverage is above 80%
+
+## CRITICAL: No Superficial Tests
+
+Tests MUST NOT be superficial. Every test must:
+
+1. **Set ALL fields** on input objects — never use empty/default builders. Populate every field with realistic test data:
+   ```groovy
+   // WRONG - superficial, most fields empty
+   def po = PurchaseOrder.builder().displayId("PO-1").build()
+
+   // CORRECT - all fields populated
+   def po = PurchaseOrder.builder()
+       .displayId("PO-001")
+       .vendorName("Acme Corp")
+       .status(PurchaseOrderStatus.DRAFT)
+       .totalAmount(new BigDecimal("1500.00"))
+       .lineItems([lineItem1, lineItem2])
+       .notes("Rush order")
+       .build()
+   ```
+
+2. **Assert ALL fields** on output objects — verify every field in the result, not just one or two:
+   ```groovy
+   // WRONG - only checks one field
+   then: "result is returned"
+       result != null
+       result.success
+
+   // CORRECT - asserts all fields using with() block
+   then: "result has all expected values"
+       with(result) {
+           success == true
+           externalId == "qb-po-1"
+           externalDocNumber == "PO-001"
+           providerVersion == "0"
+           providerLastUpdatedAt != null
+           errorMessage == null
+           conflictDetected == false
+           retryable == false
+       }
+   ```
+
+3. **Verify mock interactions with specific arguments** — not just `_` wildcards:
+   ```groovy
+   // WRONG - all wildcards
+   1 * service.save(_, _)
+
+   // CORRECT - verify actual values passed
+   1 * service.save("conn-1", { it.displayId == "PO-001" && it.vendorName == "Acme Corp" })
+   ```
 
 ## What to Test
 

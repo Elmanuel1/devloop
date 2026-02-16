@@ -8,7 +8,7 @@ import spock.lang.Specification
 class ApiTossPaperApplicationTest extends Specification {
     def "application class exists"() {
         expect:
-        // Simple test to verify the application class exists
-        ApiTossPaperApplication != null
+        // Simple test to verify the test application class exists
+        TestApplication != null
     }
 }

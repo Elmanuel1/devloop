@@ -245,6 +245,78 @@ class CompanyServiceSpec extends Specification {
             result.id == 1L
     }
 
+    def "createCompany generates assignedEmail when not provided"() {
+        given: "a company create request without assignedEmail"
+            def email = "owner@acme.com"
+            def userId = "user-uuid-789"
+            def companyCreate = new CompanyCreate()
+            companyCreate.name = "No Email Company"
+            companyCreate.assignedEmail = null
+
+            def withAssigned = new CompanyCreate()
+            withAssigned.name = "No Email Company"
+            withAssigned.assignedEmail = "acme+123456@dev-clientdocs.useassetiq.com"
+
+            def record = createCompaniesRecord(null, "No Email Company")
+            def savedRecord = createCompaniesRecord(1L, "No Email Company")
+            def company = createCompany(1L, "No Email Company")
+            def txDsl = Mock(DSLContext)
+
+        when: "creating company"
+            def result = service.createCompany(companyCreate, email, userId)
+
+        then: "email domain is fetched for generation"
+            1 * appEmailProperties.getAllowedDomain() >> "dev-clientdocs.useassetiq.com"
+
+        and: "mapper is called with generated assignedEmail"
+            1 * companyMapper.toRecord({ it.assignedEmail != null && it.assignedEmail.contains("@dev-clientdocs.useassetiq.com") }, email) >> record
+
+        and: "transaction is executed"
+            1 * dslContext.transactionResult(_) >> { args ->
+                return (args[0] as org.jooq.TransactionalCallable).run(Mock(Configuration) { dsl() >> txDsl })
+            }
+            1 * companyRepository.save(txDsl, record) >> savedRecord
+            1 * authorizedUserRepository.save(txDsl, _)
+            1 * companyMapper.toDto(savedRecord) >> company
+
+        and: "result is returned"
+            result.id == 1L
+    }
+
+    def "createCompany generates assignedEmail when blank"() {
+        given: "a company create request with blank assignedEmail"
+            def email = "owner@example.org"
+            def userId = "user-uuid-abc"
+            def companyCreate = new CompanyCreate()
+            companyCreate.name = "Blank Email Company"
+            companyCreate.assignedEmail = "   "
+
+            def record = createCompaniesRecord(null, "Blank Email Company")
+            def savedRecord = createCompaniesRecord(1L, "Blank Email Company")
+            def company = createCompany(1L, "Blank Email Company")
+            def txDsl = Mock(DSLContext)
+
+        when: "creating company"
+            def result = service.createCompany(companyCreate, email, userId)
+
+        then: "email domain is fetched for generation"
+            1 * appEmailProperties.getAllowedDomain() >> "dev-clientdocs.useassetiq.com"
+
+        and: "mapper is called with generated assignedEmail containing domain prefix"
+            1 * companyMapper.toRecord({ it.assignedEmail != null && it.assignedEmail.contains("example+") }, email) >> record
+
+        and: "transaction is executed"
+            1 * dslContext.transactionResult(_) >> { args ->
+                return (args[0] as org.jooq.TransactionalCallable).run(Mock(Configuration) { dsl() >> txDsl })
+            }
+            1 * companyRepository.save(txDsl, record) >> savedRecord
+            1 * authorizedUserRepository.save(txDsl, _)
+            1 * companyMapper.toDto(savedRecord) >> company
+
+        and: "result is returned"
+            result.id == 1L
+    }
+
     // ==================== getCompanyById ====================
 
     def "getCompanyById returns company when found"() {

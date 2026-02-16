@@ -1,94 +1,87 @@
 package com.tosspaper.api
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.tosspaper.common.security.SecurityUtils
+import com.tosspaper.config.BaseIntegrationTest
+import com.tosspaper.config.TestSecurityConfiguration
 import com.tosspaper.document_approval.DocumentApprovalApiService
 import com.tosspaper.document_approval.DocumentApprovalDetailService
-import com.tosspaper.generated.model.DocumentApproval
-import com.tosspaper.generated.model.DocumentApprovalDetail
-import com.tosspaper.generated.model.DocumentApprovalList
-import com.tosspaper.generated.model.ExtractionResultResponse
-import com.tosspaper.generated.model.MatchType
-import com.tosspaper.generated.model.Pagination
-import com.tosspaper.generated.model.ReviewExtractionRequest
 import com.tosspaper.models.domain.ExtractionResult
-import org.mockito.MockedStatic
-import org.mockito.Mockito
+import org.spockframework.spring.SpringBean
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.web.client.TestRestTemplate
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
-import spock.lang.Specification
 
-import java.time.OffsetDateTime
+class DocumentApprovalsControllerSpec extends BaseIntegrationTest {
 
-class DocumentApprovalsControllerSpec extends Specification {
+    @Autowired
+    TestRestTemplate restTemplate
 
-    DocumentApprovalApiService documentApprovalService
-    DocumentApprovalDetailService documentApprovalDetailService
+    @Autowired
     ObjectMapper objectMapper
-    DocumentApprovalsController controller
-    MockedStatic<SecurityUtils> securityUtilsMock
 
-    def setup() {
-        documentApprovalService = Mock()
-        documentApprovalDetailService = Mock()
-        objectMapper = new ObjectMapper()
-        controller = new DocumentApprovalsController(documentApprovalService, documentApprovalDetailService, objectMapper)
+    @SpringBean
+    DocumentApprovalApiService documentApprovalService = Mock()
 
-        // Mock SecurityUtils static method
-        securityUtilsMock = Mockito.mockStatic(SecurityUtils.class)
-        securityUtilsMock.when({ SecurityUtils.getSubjectFromJwt() }).thenReturn("test-user-id")
-    }
+    @SpringBean
+    DocumentApprovalDetailService documentApprovalDetailService = Mock()
 
-    def cleanup() {
-        securityUtilsMock?.close()
-    }
+    // DocumentApprovalServiceImpl implements both DocumentApprovalApiService and
+    // com.tosspaper.models.service.DocumentApprovalService. Mocking the API interface
+    // replaces the impl bean, so we also need a mock for the models interface to
+    // satisfy other beans that depend on it (e.g. DocumentApprovalEmailProcessingServiceImpl).
+    @SpringBean
+    com.tosspaper.models.service.DocumentApprovalService modelsDocumentApprovalService = Mock()
 
     // ==================== listDocumentApprovals ====================
 
     def "listDocumentApprovals returns OK with approval list"() {
         given: "valid context and query parameters"
-            def xContextId = "123"
-            def pageSize = 20
-            def cursor = "abc123"
-            def status = "pending"
-            def documentType = "invoice"
-            def fromEmail = "sender@example.com"
-            def createdDateFrom = OffsetDateTime.now().minusDays(7)
-            def createdDateTo = OffsetDateTime.now()
-            def projectId = "proj-1"
-
             def serviceResponse = new DocumentApprovalApiService.DocumentApprovalListResponse(
                 [createDomainApproval("approval-1"), createDomainApproval("approval-2")],
                 "nextCursor123"
             )
+            documentApprovalService.listDocumentApprovalsFromApi(
+                123L, 20, "abc123", "pending", "invoice",
+                "sender@example.com", null, null, "proj-1"
+            ) >> serviceResponse
+
+        and: "auth headers with X-Context-Id"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling listDocumentApprovals"
-            def response = controller.listDocumentApprovals(xContextId, pageSize, cursor, status, documentType, fromEmail, createdDateFrom, createdDateTo, projectId)
+            def uri = "/v1/document-approvals?pageSize=20&cursor=abc123&status=pending&documentType=invoice&fromEmail=sender@example.com&projectId=proj-1"
+            def response = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service is called with correct parameters"
-            1 * documentApprovalService.listDocumentApprovalsFromApi(123L, pageSize, cursor, status, documentType, fromEmail, createdDateFrom, createdDateTo, projectId) >> serviceResponse
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains approvals"
-            with(response.body) {
-                data.size() == 2
-                pagination.cursor == "nextCursor123"
-            }
+            def body = objectMapper.readValue(response.body, Map)
+            body.data.size() == 2
+            body.pagination.cursor == "nextCursor123"
     }
 
-    def "listDocumentApprovals handles null optional parameters"() {
-        given: "only required context parameter"
-            def xContextId = "456"
+    def "listDocumentApprovals handles default and null optional parameters"() {
+        given: "only required context parameter - pageSize defaults to 20 via API spec"
             def serviceResponse = new DocumentApprovalApiService.DocumentApprovalListResponse([], null)
+            documentApprovalService.listDocumentApprovalsFromApi(
+                456L, 20, null, null, null, null, null, null, null
+            ) >> serviceResponse
 
-        when: "calling listDocumentApprovals with null optional parameters"
-            def response = controller.listDocumentApprovals(xContextId, null, null, null, null, null, null, null, null)
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "456")
 
-        then: "service is called with null parameters"
-            1 * documentApprovalService.listDocumentApprovalsFromApi(456L, null, null, null, null, null, null, null, null) >> serviceResponse
+        when: "calling listDocumentApprovals with no optional parameters"
+            def response = restTemplate.exchange("/v1/document-approvals", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
     }
 
@@ -96,102 +89,122 @@ class DocumentApprovalsControllerSpec extends Specification {
 
     def "reviewExtraction returns NO_CONTENT when approved without documentData"() {
         given: "valid context, approvalId, and request without documentData"
-            def xContextId = "123"
-            def approvalId = "approval-789"
-            def request = new ReviewExtractionRequest()
-            request.approved = true
-            request.notes = "Looks good"
-            request.documentData = null
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON)
+
+            def requestBody = [approved: true, notes: "Looks good", documentData: null]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling reviewExtraction"
-            def response = controller.reviewExtraction(xContextId, approvalId, request)
+            def response = restTemplate.exchange("/v1/document-approvals/approval-789/extractions", HttpMethod.POST, entity, String)
 
-        then: "service is called with correct parameters (using test-user-id from setup mock)"
-            1 * documentApprovalService.reviewExtraction(123L, approvalId, true, "test-user-id", "Looks good", null)
-
-        and: "response status is NO_CONTENT"
+        then: "response status is NO_CONTENT"
             response.statusCode == HttpStatus.NO_CONTENT
+
+        and: "service is called with correct parameters"
+            1 * documentApprovalService.reviewExtraction(
+                123L, "approval-789", true,
+                TestSecurityConfiguration.TEST_USER_EMAIL, "Looks good", null
+            )
     }
 
     def "reviewExtraction returns NO_CONTENT when rejected"() {
         given: "valid context, approvalId, and rejection request"
-            def xContextId = "123"
-            def approvalId = "approval-789"
-            def request = new ReviewExtractionRequest()
-            request.approved = false
-            request.notes = "Invalid data"
-            request.documentData = null
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON)
+
+            def requestBody = [approved: false, notes: "Invalid data", documentData: null]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling reviewExtraction"
-            def response = controller.reviewExtraction(xContextId, approvalId, request)
+            def response = restTemplate.exchange("/v1/document-approvals/approval-789/extractions", HttpMethod.POST, entity, String)
 
-        then: "service is called with correct parameters (using test-user-id from setup mock)"
-            1 * documentApprovalService.reviewExtraction(123L, approvalId, false, "test-user-id", "Invalid data", null)
-
-        and: "response status is NO_CONTENT"
+        then: "response status is NO_CONTENT"
             response.statusCode == HttpStatus.NO_CONTENT
+
+        and: "service is called with correct parameters"
+            1 * documentApprovalService.reviewExtraction(
+                123L, "approval-789", false,
+                TestSecurityConfiguration.TEST_USER_EMAIL, "Invalid data", null
+            )
     }
 
     def "reviewExtraction converts documentData when provided"() {
         given: "valid context, approvalId, and request with documentData"
-            def xContextId = "123"
-            def approvalId = "approval-789"
-            def documentData = [documentType: "invoice", documentNumber: "INV-001"]
-            def request = new ReviewExtractionRequest()
-            request.approved = true
-            request.notes = "With edits"
-            request.documentData = documentData
+            def (csrfToken, csrfCookie) = initializeCsrfToken(restTemplate)
+            def headers = createAuthHeaders(csrfToken, csrfCookie)
+            headers.add("X-Context-Id", "123")
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON)
+
+            def requestBody = [
+                approved: true,
+                notes: "With edits",
+                documentData: [documentType: "invoice", documentNumber: "INV-001"]
+            ]
+            def entity = new HttpEntity<>(requestBody, headers)
 
         when: "calling reviewExtraction"
-            def response = controller.reviewExtraction(xContextId, approvalId, request)
+            def response = restTemplate.exchange("/v1/document-approvals/approval-789/extractions", HttpMethod.POST, entity, String)
 
-        then: "service is called with converted extraction object (using test-user-id from setup mock)"
-            1 * documentApprovalService.reviewExtraction(123L, approvalId, true, "test-user-id", "With edits", _ as com.tosspaper.models.extraction.dto.Extraction)
-
-        and: "response status is NO_CONTENT"
+        then: "response status is NO_CONTENT"
             response.statusCode == HttpStatus.NO_CONTENT
+
+        and: "service is called with converted extraction object"
+            1 * documentApprovalService.reviewExtraction(
+                123L, "approval-789", true,
+                TestSecurityConfiguration.TEST_USER_EMAIL, "With edits",
+                _ as com.tosspaper.models.extraction.dto.Extraction
+            )
     }
 
     // ==================== getDocumentApprovalDetail ====================
 
     def "getDocumentApprovalDetail returns OK with detail"() {
         given: "valid context and approvalId"
-            def xContextId = "123"
-            def approvalId = "approval-123"
-            def domainDetail = createDomainApprovalDetail(approvalId)
+            def domainDetail = createDomainApprovalDetail("approval-123")
+            documentApprovalDetailService.getApprovalDetail(123L, "approval-123") >> domainDetail
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling getDocumentApprovalDetail"
-            def response = controller.getDocumentApprovalDetail(xContextId, approvalId)
+            def response = restTemplate.exchange("/v1/document-approvals/approval-123", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns detail"
-            1 * documentApprovalDetailService.getApprovalDetail(123L, approvalId) >> domainDetail
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains detail"
-            response.body.approvalId == approvalId
+            def body = objectMapper.readValue(response.body, Map)
+            body.approvalId == "approval-123"
     }
 
     // ==================== getDocumentApprovalExtraction ====================
 
     def "getDocumentApprovalExtraction returns OK with extraction result"() {
         given: "valid context and approvalId"
-            def xContextId = "123"
-            def approvalId = "approval-123"
             def extractionResult = createExtractionResult("task-456")
+            documentApprovalDetailService.getExtractionResult(123L, "approval-123") >> extractionResult
+
+        and: "auth headers"
+            def headers = new HttpHeaders()
+            headers.setBearerAuth(TestSecurityConfiguration.getTestToken())
+            headers.add("X-Context-Id", "123")
 
         when: "calling getDocumentApprovalExtraction"
-            def response = controller.getDocumentApprovalExtraction(xContextId, approvalId)
+            def response = restTemplate.exchange("/v1/document-approvals/approval-123/extraction", HttpMethod.GET, new HttpEntity<>(headers), String)
 
-        then: "service returns extraction result"
-            1 * documentApprovalDetailService.getExtractionResult(123L, approvalId) >> extractionResult
-
-        and: "response status is OK"
+        then: "response status is OK"
             response.statusCode == HttpStatus.OK
 
         and: "response body contains extraction"
-            response.body.assignedId == "task-456"
+            def body = objectMapper.readValue(response.body, Map)
+            body.assignedId == "task-456"
     }
 
     // ==================== Helper Methods ====================

@@ -21,6 +21,7 @@ class FilesServiceImplSpec extends Specification {
     AwsProperties awsS3Properties
     AwsProperties.Bucket bucket
     S3Presigner s3Presigner
+    com.tosspaper.models.service.ReceivedMessageService receivedMessageService
 
     @Subject
     FilesServiceImpl filesService
@@ -29,10 +30,12 @@ class FilesServiceImplSpec extends Specification {
         awsS3Properties = Mock(AwsProperties)
         bucket = Mock(AwsProperties.Bucket)
         s3Presigner = Mock(S3Presigner)
-        filesService = new FilesServiceImpl(awsS3Properties, s3Presigner)
+        receivedMessageService = Mock(com.tosspaper.models.service.ReceivedMessageService)
+        filesService = new FilesServiceImpl(awsS3Properties, s3Presigner, receivedMessageService)
 
         awsS3Properties.getBucket() >> bucket
         bucket.getName() >> "test-bucket"
+        receivedMessageService.getAttachmentByStorageKey(_, _) >> Optional.of(Mock(Object))
     }
 
     def "should create presigned upload URL successfully"() {

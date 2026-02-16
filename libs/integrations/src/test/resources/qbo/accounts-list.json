@@ -4,6 +4,10 @@
       {
         "Id": "33",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-01-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-06-15T10:00:00-07:00"
+        },
         "Name": "Accounts Payable",
         "FullyQualifiedName": "Accounts Payable",
         "Active": true,
@@ -16,6 +20,10 @@
       {
         "Id": "79",
         "SyncToken": "1",
+        "MetaData": {
+          "CreateTime": "2024-01-15T09:00:00-08:00",
+          "LastUpdatedTime": "2024-06-20T11:00:00-07:00"
+        },
         "Name": "Sales of Product Income",
         "FullyQualifiedName": "Income:Sales of Product Income",
         "Active": true,
@@ -28,6 +36,10 @@
       {
         "Id": "80",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-02-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-07-01T10:00:00-07:00"
+        },
         "Name": "Cost of Goods Sold",
         "FullyQualifiedName": "Cost of Goods Sold",
         "Active": true,
@@ -40,6 +52,10 @@
       {
         "Id": "81",
         "SyncToken": "0",
+        "MetaData": {
+          "CreateTime": "2024-03-01T08:00:00-08:00",
+          "LastUpdatedTime": "2024-08-01T10:00:00-07:00"
+        },
         "Name": "Inventory Asset",
         "FullyQualifiedName": "Inventory Asset",
         "Active": true,

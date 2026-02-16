@@ -1,8 +1,7 @@
 package com.tosspaper.item
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.tosspaper.common.ForbiddenException
-import com.tosspaper.common.security.SecurityUtils
+import com.tosspaper.models.exception.ForbiddenException
 import com.tosspaper.generated.model.Item as GeneratedItem
 import com.tosspaper.generated.model.ItemCreate
 import com.tosspaper.generated.model.ItemUpdate
@@ -11,8 +10,10 @@ import com.tosspaper.integrations.service.IntegrationConnectionService
 import com.tosspaper.models.domain.integration.IntegrationCategory
 import com.tosspaper.models.domain.integration.IntegrationConnection
 import com.tosspaper.models.domain.integration.Item
-import org.mockito.MockedStatic
-import org.mockito.Mockito
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.oauth2.core.OAuth2AccessToken
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthentication
 import spock.lang.Specification
 
 import java.time.OffsetDateTime
@@ -25,7 +26,6 @@ class ItemAPIServiceSpec extends Specification {
     IntegrationPushStreamPublisher integrationPushStreamPublisher
     ObjectMapper objectMapper
     ItemAPIServiceImpl service
-    MockedStatic<SecurityUtils> securityUtilsMock
 
     def setup() {
         itemRepository = Mock()
@@ -43,13 +43,16 @@ class ItemAPIServiceSpec extends Specification {
             objectMapper
         )
 
-        // Mock SecurityUtils static method
-        securityUtilsMock = Mockito.mockStatic(SecurityUtils.class)
-        securityUtilsMock.when({ SecurityUtils.getSubjectFromJwt() }).thenReturn("test@example.com")
+        // Set up real SecurityContext instead of mocking SecurityUtils
+        def attributes = [email: "test@example.com", sub: "test-sub"]
+        def user = new DefaultOAuth2User(Collections.emptySet(), attributes, "sub")
+        def accessToken = new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER, "test-token", null, null)
+        SecurityContextHolder.getContext().setAuthentication(
+            new BearerTokenAuthentication(user, accessToken, Collections.emptySet()))
     }
 
     def cleanup() {
-        securityUtilsMock?.close()
+        SecurityContextHolder.clearContext()
     }
 
     // ==================== getItems ====================

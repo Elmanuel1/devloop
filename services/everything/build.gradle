@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'groovy'
     id 'application'
     id 'org.springframework.boot'
 }
@@ -10,7 +11,7 @@ dependencies {
     implementation project(':libs:ai-engine')
     implementation project(':libs:api-tosspaper')
     implementation project(':libs:integrations')
-    
+
     // Mailgun SDK for sending emails
     implementation libs.mailgun
 
@@ -29,10 +30,10 @@ dependencies {
 
     // Bootstrap context for early config loading (LocalStack endpoint)
     implementation libs.spring.cloud.starter.bootstrap
-    
+
     implementation libs.spring.boot.starter.batch
     implementation 'org.springframework.boot:spring-boot-starter'
-    
+
     // Spring Security for authentication
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
@@ -40,6 +41,19 @@ dependencies {
 
     // Jackson JSR310 for Java 8 date/time support (OffsetDateTime, LocalDate, etc.)
     implementation libs.jackson.datatype.jsr310
+
+    // Testing
+    testImplementation libs.groovy.core
+    testImplementation libs.spock.core
+    testImplementation libs.spock.spring
+    testImplementation libs.spring.boot.starter.test
+    testImplementation libs.spring.security.test
+    testImplementation libs.testcontainers
+    testImplementation libs.testcontainers.postgresql
+    testImplementation libs.testcontainers.localstack
+    testImplementation libs.testcontainers.spock
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.postgresql
 }
 
 springBoot {
@@ -48,6 +62,20 @@ springBoot {
 
 application {
     mainClass = 'com.tosspaper.everything.EverythingApplication'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+processTestResources {
+    from("${rootProject.projectDir}/flyway") {
+        into 'flyway'
+    }
+    from("${rootProject.projectDir}/libs/api-tosspaper/src/test/resources") {
+        include 'jwks.json'
+        include 'token.jwt'
+    }
 }
 
 bootJar {

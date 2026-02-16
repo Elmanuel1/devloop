@@ -23,7 +23,7 @@ import com.tosspaper.models.extraction.dto.ComparisonResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -65,7 +65,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "ai.comparison.streaming.enabled", havingValue = "true")
 public class StreamingComparisonAgent {
 
     /**

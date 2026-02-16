@@ -89,6 +89,21 @@ dependencies {
     testImplementation('org.springaicommunity.agents:spring-ai-agents-judge:0.1.0-SNAPSHOT') {
         exclude group: 'org.springframework.ai'
     }
+
+    // Spock testing
+    testImplementation libs.groovy.core
+    testImplementation libs.spock.core
+    testImplementation libs.spock.spring
+
+    // WireMock for HTTP mocking
+    testImplementation 'org.wiremock:wiremock-standalone:3.3.1'
+
+    // OkHttp MockWebServer (alternative to WireMock for OkHttp)
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
 }
 
 // Configure jsonschema2pojo to generate POJOs from schema files

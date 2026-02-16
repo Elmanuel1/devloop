@@ -31,8 +31,9 @@ http:
       paths: /v1/companies/**,/v1/projects/**,/v1/contacts/**,/v1/purchase-orders/**
     csrf:
       # CSRF disabled - Bearer token APIs are not vulnerable to CSRF since
-      # browsers don't auto-attach Authorization headers like they do cookies
-      enabled: ${HTTP_SECURITY_CSRF_ENABLED:false}
+      # browsers don't auto-attach Authorization headers like they do cookies.
+      # This is a REST API with JWT auth only; CSRF protection is unnecessary.
+      enabled: false
     csrf-ignored:
       # Paths exempt from CSRF validation (must match insecure paths)
       paths: /*/email-messages,/reducto/webhook,/actuator/**,/auth/hooks/**,/v1/quickbooks/events

@@ -1,18 +1,18 @@
 spring:
   datasource:
-    # These will be overridden by Testcontainers in BaseRepositoryTest
+    # These will be overridden by @DynamicPropertySource in BaseRepositoryTest
     url: jdbc:postgresql://localhost:5432/testdb
     username: test
     password: test
     driver-class-name: org.postgresql.Driver
-  
+
   flyway:
     enabled: true
     locations: ["classpath:/"]
     baseline-on-migrate: true
     clean-disabled: false
     validate-on-migrate: true
-  
+
   threads:
     virtual:
       enabled: true
@@ -22,33 +22,11 @@ spring:
       ddl-auto: none  # We use Flyway for schema management
     show-sql: false
     open-in-view: false
-  
-  data:
-    redis:
-      # Use embedded Redis for tests or mock Redis
-      database: 1
-      host: localhost
-      port: 16379
-      password: mypass
-      timeout: 60000
-  
+
   jackson:
     time-zone: UTC
     serialization:
       write-dates-as-timestamps: false
-
-# Redisson configuration for tests
-redisson:
-  config: |
-    singleServerConfig:
-      address: "redis://localhost:16379"
-      password: "mypass"
-      database: 1
-      connectionPoolSize: 5
-      connectionMinimumIdleSize: 2
-      timeout: 60000
-      retryAttempts: 2
-      retryInterval: 1000
         
 server:
   timezone: UTC

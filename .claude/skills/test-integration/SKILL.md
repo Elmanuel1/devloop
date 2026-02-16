@@ -70,6 +70,15 @@ Uncovered branches in PurchaseOrderRepositoryImpl:
 
 For each uncovered branch, write a specific integration test that exercises that code path.
 
+## WARNINGS
+
+- **NO mocks** for integration tests **except raw external API clients** (SDK clients, HTTP clients)
+- Mock the **API client** (e.g., `MailgunMessagesApi`, `S3Client`), NOT the service that uses it
+- Services like `SenderNotificationService`, `EmailService`, etc. should be REAL — they get mocked API clients injected
+- If a service only talks to the database, it MUST be real (not mocked)
+- REST controllers and repositories MUST always be integration tests, never unit tests
+- **DO NOT** use deprecated `statusCodeValue` — use `response.statusCode == HttpStatus.OK` instead
+
 ## Scope
 
 ✅ Repository classes (database operations)

@@ -597,7 +597,7 @@ public class FileTools {
      * @throws IllegalStateException if working directory is not set
      */
     private Path resolve(String relativePath) {
-        if (workingDirectory == null) {
+        if (workingDirectory.get() == null) {
             throw new IllegalStateException("Working directory not set. Call setWorkingDirectory() first.");
         }
         return workingDirectory.get().resolve(relativePath).normalize();

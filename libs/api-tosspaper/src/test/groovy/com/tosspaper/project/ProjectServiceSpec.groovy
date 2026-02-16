@@ -1,7 +1,7 @@
 package com.tosspaper.project
 
 
-import com.tosspaper.common.ForbiddenException
+import com.tosspaper.models.exception.ForbiddenException
 import com.tosspaper.generated.model.ProjectCreate
 import com.tosspaper.generated.model.ProjectUpdate
 import com.tosspaper.models.jooq.tables.records.ProjectsRecord

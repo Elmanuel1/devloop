@@ -9,6 +9,7 @@ import com.tosspaper.models.domain.ComparisonContext
 import com.tosspaper.models.domain.DocumentType
 import com.tosspaper.models.domain.ExtractionTask
 import com.tosspaper.models.domain.PurchaseOrder
+import com.tosspaper.models.exception.BadRequestException
 import com.tosspaper.models.extraction.dto.Comparison
 import com.tosspaper.models.service.PurchaseOrderLookupService
 import org.jooq.DSLContext
@@ -71,7 +72,7 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
         def events = [
             new ComparisonEvent.Activity("📄", "Processing..."),
             new ComparisonEvent.Thinking("Analyzing..."),
-            ComparisonEvent.Complete.of(comparison)
+            ComparisonEvent.Complete.of(comparison, "test-comparison-id")
         ]
         streamingAgent.executeComparison(context) >> Flux.fromIterable(events)
 
@@ -111,7 +112,7 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
 
     // ==================== BLOCKING WRAPPER TESTS ====================
 
-    def "compareDocumentParts should return comparison from stream"() {
+    def "compareDocumentParts should return comparison from blocking call"() {
         given: "comparison context"
         def task = ExtractionTask.builder()
             .assignedId("doc-123")
@@ -126,17 +127,13 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
             .build()
         def context = new ComparisonContext(po, task)
 
-        and: "agent returns events with Complete"
+        and: "agent returns comparison via blocking call"
         def comparison = new Comparison()
         comparison.setDocumentId("doc-123")
         comparison.setPoId("PO-456")
         comparison.setResults([])
 
-        def events = [
-            new ComparisonEvent.Activity("📄", "Processing..."),
-            ComparisonEvent.Complete.of(comparison)
-        ]
-        streamingAgent.executeComparison(context) >> Flux.fromIterable(events)
+        streamingAgent.executeComparisonBlocking(context) >> comparison
 
         when: "comparing documents (blocking)"
         def result = service.compareDocumentParts(context)
@@ -146,7 +143,7 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
         result.poId == "PO-456"
     }
 
-    def "compareDocumentParts should return null if no Complete event"() {
+    def "compareDocumentParts should return null if blocking call returns null"() {
         given: "comparison context"
         def task = ExtractionTask.builder()
             .assignedId("doc-123")
@@ -156,12 +153,8 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
         def po = PurchaseOrder.builder().id("po-id").companyId(1L).build()
         def context = new ComparisonContext(po, task)
 
-        and: "agent returns events without Complete"
-        def events = [
-            new ComparisonEvent.Activity("📄", "Processing..."),
-            ComparisonEvent.Error.of("Something failed")
-        ]
-        streamingAgent.executeComparison(context) >> Flux.fromIterable(events)
+        and: "agent returns null from blocking call"
+        streamingAgent.executeComparisonBlocking(context) >> null
 
         when: "comparing documents (blocking)"
         def result = service.compareDocumentParts(context)
@@ -217,5 +210,163 @@ class StreamingDocumentComparisonServiceSpec extends Specification {
 
         then: "empty is returned"
         result.isEmpty()
+    }
+
+    // ==================== triggerComparisonStream TESTS ====================
+
+    def "triggerComparisonStream should throw when extraction task not found"() {
+        given:
+        extractionTaskRepository.findByAssignedId("bad-id") >> null
+
+        when:
+        service.triggerComparisonStream("bad-id", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "EXTRACTION_NOT_FOUND"
+    }
+
+    def "triggerComparisonStream should throw on company mismatch"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .poNumber("PO-456")
+            .purchaseOrderId("po-id")
+            .conformedJson('{}')
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+
+        when:
+        service.triggerComparisonStream("doc-123", 999L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "COMPANY_MISMATCH"
+    }
+
+    def "triggerComparisonStream should throw when no PO linked"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .purchaseOrderId(null)
+            .conformedJson('{}')
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+
+        when:
+        service.triggerComparisonStream("doc-123", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "NO_PO_LINKED"
+    }
+
+    def "triggerComparisonStream should throw when blank PO linked"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .purchaseOrderId("  ")
+            .conformedJson('{}')
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+
+        when:
+        service.triggerComparisonStream("doc-123", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "NO_PO_LINKED"
+    }
+
+    def "triggerComparisonStream should throw when not conformed"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .poNumber("PO-456")
+            .purchaseOrderId("po-id")
+            .conformedJson(null)
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+
+        when:
+        service.triggerComparisonStream("doc-123", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "NOT_CONFORMED"
+    }
+
+    def "triggerComparisonStream should throw when blank conformed json"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .poNumber("PO-456")
+            .purchaseOrderId("po-id")
+            .conformedJson("  ")
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+
+        when:
+        service.triggerComparisonStream("doc-123", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "NOT_CONFORMED"
+    }
+
+    def "triggerComparisonStream should throw when PO not found"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .poNumber("PO-456")
+            .purchaseOrderId("po-id")
+            .conformedJson('{}')
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+        poService.getPoWithItemsByPoNumber(1L, "PO-456") >> Optional.empty()
+
+        when:
+        service.triggerComparisonStream("doc-123", 1L, "session-1")
+
+        then:
+        def ex = thrown(BadRequestException)
+        ex.code == "PO_NOT_FOUND"
+    }
+
+    def "triggerComparisonStream should return events on success"() {
+        given:
+        def task = ExtractionTask.builder()
+            .assignedId("doc-123")
+            .companyId(1L)
+            .poNumber("PO-456")
+            .purchaseOrderId("po-id")
+            .conformedJson('{"valid": true}')
+            .build()
+        def po = PurchaseOrder.builder()
+            .id("po-id")
+            .companyId(1L)
+            .displayId("PO-456")
+            .build()
+        extractionTaskRepository.findByAssignedId("doc-123") >> task
+        poService.getPoWithItemsByPoNumber(1L, "PO-456") >> Optional.of(po)
+
+        and: "agent returns events"
+        def activity = new ComparisonEvent.Activity("icon", "Processing...")
+        streamingAgent.executeComparison(_) >> Flux.just(activity)
+
+        when:
+        def result = service.triggerComparisonStream("doc-123", 1L, "session-1")
+            .collectList()
+            .block(Duration.ofSeconds(5))
+
+        then:
+        result.size() >= 1
+        result[0] instanceof ComparisonEvent.Activity
     }
 }
