@@ -75,7 +75,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: ./gradlew :libs:openapi-precon:publish -PprojectVersion=${{ steps.version.outputs.version }}
+        run: ./gradlew :libs:openapi-precon:publish -PprojectVersion=${{ steps.version.outputs.version }} --no-configuration-cache
 
       - name: Publish TypeScript client to GitHub Packages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
