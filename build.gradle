@@ -105,6 +105,7 @@ subprojects {
         implementation libs.vavr
         
         // Testing
+        testImplementation(libs.assertj.core)  // CVE-2026-24400: override transitive 3.27.4
         testImplementation libs.groovy.core
         testImplementation libs.spock.core
         testImplementation libs.spock.spring

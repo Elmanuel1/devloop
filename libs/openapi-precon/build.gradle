@@ -1,0 +1,117 @@
+plugins {
+    alias(libs.plugins.openapi.generator)
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.tosspaper'
+version = findProperty('projectVersion') ?: '0.0.1'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}")
+    implementation "io.swagger.core.v3:swagger-annotations:${libs.versions.swagger.annotations.get()}"
+    implementation "jakarta.validation:jakarta.validation-api:${libs.versions.jakarta.validation.get()}"
+    implementation 'jakarta.annotation:jakarta.annotation-api'
+    implementation 'jakarta.servlet:jakarta.servlet-api'
+    implementation 'org.hibernate.validator:hibernate-validator'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    implementation 'org.springframework:spring-web'
+    implementation 'org.springframework:spring-context'
+}
+
+def specFile = "${rootDir}/specs/precon/openapi-precon.yaml"
+
+openApiGenerate {
+    generatorName = 'spring'
+    inputSpec = specFile
+    outputDir = layout.buildDirectory.dir("generated").get().asFile.absolutePath
+    apiPackage = 'com.tosspaper.precon.generated.api'
+    modelPackage = 'com.tosspaper.precon.generated.model'
+    invokerPackage = 'com.tosspaper.precon.generated.invoker'
+    configOptions = [
+        skipDefaultInterface: 'true',
+        interfaceOnly: 'true',
+        useTags: 'true',
+        dateLibrary: 'java8',
+        useSpringBoot3: 'true',
+        serializableModel: 'true',
+        useJakartaEe: 'true',
+        useBeanValidation: 'true',
+        performBeanValidation: 'true',
+        openApiNullable: 'false'
+    ]
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += [layout.buildDirectory.dir("generated/src/main/java").get().asFile]
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn('openApiGenerate')
+}
+
+tasks.named('build') {
+    dependsOn('buildTypescriptClient')
+}
+
+// --- TypeScript client generation ---
+
+def tsOutputDir = layout.buildDirectory.dir("generated-ts").get().asFile.absolutePath
+
+tasks.register('buildTypescriptClient', Exec) {
+    description = 'Generate and build TypeScript-Axios client from OpenAPI spec'
+    group = 'openapi'
+
+    commandLine 'bash', '-c', [
+        "npx @openapitools/openapi-generator-cli@2.29.0 generate -i ${specFile} -g typescript-axios -o ${tsOutputDir} --additional-properties=apiPackage=api,modelPackage=model,withInterfaces=true,withSeparateModelsAndApi=true",
+        "cp ${projectDir}/package.json ${projectDir}/tsconfig.json ${tsOutputDir}/",
+        "cd ${tsOutputDir} && npm install && npm run build"
+    ].join(' && ')
+}
+
+tasks.register('publishTypescriptClient', Exec) {
+    description = 'Publish TypeScript client to GitHub Packages'
+    group = 'openapi'
+    dependsOn 'buildTypescriptClient'
+    workingDir tsOutputDir
+
+    commandLine 'npm', 'publish'
+}
+
+// --- Maven publishing ---
+
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/${System.getenv('GITHUB_REPOSITORY') ?: 'Build4Africa/tosspaper'}")
+            credentials {
+                username = System.getenv('GITHUB_ACTOR') ?: ''
+                password = System.getenv('GITHUB_TOKEN') ?: ''
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            groupId = 'com.tosspaper'
+            artifactId = 'tosspaper-openapi-precon'
+            from components.java
+        }
+    }
+}

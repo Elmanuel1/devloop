@@ -35,6 +35,7 @@ bouncycastle = "1.78.1"
 sonarqube = "5.1.0.4882"
 spring-cloud-aws = "3.4.0"
 spring-cloud = "2025.0.1"
+assertj = "3.27.7"
 
 [libraries]
 # Spring Boot
@@ -125,6 +126,7 @@ spring-cloud-bom = { module = "org.springframework.cloud:spring-cloud-dependenci
 spring-cloud-starter-bootstrap = { module = "org.springframework.cloud:spring-cloud-starter-bootstrap" }
 
 # Testing
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
 groovy-core = { module = "org.apache.groovy:groovy", version.ref = "groovy" }
 spock-core = { module = "org.spockframework:spock-core", version.ref = "spock" }
 spock-spring = { module = "org.spockframework:spock-spring", version.ref = "spock" }

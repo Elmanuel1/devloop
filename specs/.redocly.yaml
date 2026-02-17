@@ -1,0 +1,42 @@
+extends:
+  - recommended-strict
+
+apis:
+  precon:
+    root: precon/openapi-precon.yaml
+
+rules:
+  # Structural
+  no-unresolved-refs: error
+  no-ambiguous-paths: error
+  no-identical-paths: error
+  no-path-trailing-slash: error
+  no-undefined-server-variable: error
+  no-empty-servers: error
+
+  # Info
+  info-license: warn
+
+  # Operations
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-operationId-url-safe: error
+  operation-summary: error
+  operation-description: warn
+  operation-parameters-unique: error
+
+  # Schemas
+  no-enum-type-mismatch: error
+  no-schema-type-mismatch: error
+  no-invalid-schema-examples: error
+
+  # Naming & consistency
+  path-segment-plural:
+    severity: warn
+    exceptions:
+      - v1
+      - v2
+  no-http-verbs-in-paths: error
+
+  # Security
+  security-defined: error

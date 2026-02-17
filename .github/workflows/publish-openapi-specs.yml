@@ -1,0 +1,84 @@
+name: OpenAPI Specs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'specs/**'
+      - 'libs/openapi-precon/**'
+      - '.github/workflows/publish-openapi-specs.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'specs/**'
+      - 'libs/openapi-precon/**'
+      - '.github/workflows/publish-openapi-specs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate OpenAPI spec
+        run: |
+          npx @redocly/cli@1.34.3 lint --config specs/.redocly.yaml specs/precon/openapi-precon.yaml
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="0.1.0-${SHORT_SHA}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build Java library and TypeScript client
+        run: ./gradlew :libs:openapi-precon:build -PprojectVersion=${{ steps.version.outputs.version }}
+
+      - name: Publish Java library to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: ./gradlew :libs:openapi-precon:publish -PprojectVersion=${{ steps.version.outputs.version }}
+
+      - name: Publish TypeScript client to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: ./gradlew :libs:openapi-precon:publishTypescriptClient

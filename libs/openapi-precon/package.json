@@ -1,0 +1,24 @@
+{
+  "name": "@build4africa/tosspaper-openapi-precon",
+  "version": "0.0.1",
+  "description": "Generated TypeScript models and API client for Tosspaper Precon API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "axios": "^1.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Build4Africa/tosspaper.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}

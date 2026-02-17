@@ -1,0 +1,1142 @@
+openapi: 3.0.3
+servers:
+  - url: /
+    description: Default server
+info:
+  title: Precon API
+  version: v1
+  description: REST API for Tenders and TenderDocuments — the collection and storage layer for bid documents.
+  contact:
+    name: Tosspaper
+
+security:
+  - jwtAuth: []
+
+components:
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XContextIdHeader:
+      name: X-Context-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Company ID for scoping the request.
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Client-generated unique key (UUID recommended). If a request with the same key was already processed, the server returns the original response instead of creating a duplicate. Keys expire after 24 hours.
+
+  schemas:
+    # ──────────────────── Enums ────────────────────
+
+    TenderStatus:
+      type: string
+      enum:
+        - draft
+        - pending
+        - submitted
+        - won
+        - lost
+        - cancelled
+        - archived
+
+    TenderDocumentStatus:
+      type: string
+      enum:
+        - uploading
+        - processing
+        - ready
+        - failed
+
+    ContentType:
+      type: string
+      enum:
+        - application/pdf
+        - image/png
+        - image/jpeg
+        - application/zip
+
+    Currency:
+      type: string
+      enum:
+        - CAD
+        - USD
+
+    DeliveryMethod:
+      type: string
+      enum:
+        - lump_sum
+        - unit_price
+        - stipulated_price
+        - design_build
+        - construction_management
+        - cost_plus
+        - time_and_materials
+        - mixed
+
+    BondType:
+      type: string
+      enum:
+        - bid
+        - performance
+        - labour_and_materials
+
+    ConditionType:
+      type: string
+      enum:
+        - insurance
+        - certification
+        - compliance
+        - participation
+        - prequalification
+        - scheduling
+        - safety
+        - other
+
+    SortField:
+      type: string
+      enum:
+        - closing_date
+        - created_at
+        - name
+
+    SortDirection:
+      type: string
+      enum:
+        - asc
+        - desc
+
+    # ──────────────────── Shared Schemas ────────────────────
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "api.validation.error"
+        message:
+          type: string
+          example: "An error occurred while processing your request"
+
+    Pagination:
+      type: object
+      required:
+        - cursor
+      properties:
+        cursor:
+          type: string
+          nullable: true
+          description: Cursor for next page. Null if no more results.
+
+    # ──────────────────── Embedded Objects ────────────────────
+
+    Address:
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          type: string
+          description: Street address
+        city:
+          type: string
+          nullable: true
+        state_or_province:
+          type: string
+          nullable: true
+        postal_code:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+
+    Party:
+      type: object
+      required:
+        - role
+        - name
+      properties:
+        role:
+          type: string
+          maxLength: 100
+          description: Party role in the tender. Freeform — suggested values are owner, engineer, architect, purchasing_agent, general_contractor, surety, quantity_surveyor.
+        name:
+          type: string
+          description: Legal or operational name
+        address:
+          $ref: '#/components/schemas/Address'
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+
+    Bond:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/BondType'
+        percentage:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: Bond as percentage of total tendered price.
+        fixed_amount:
+          type: number
+          nullable: true
+          minimum: 0
+          description: Bond as fixed dollar amount. Currency inherited from tender currency.
+        description:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Freeform description for non-standard expressions.
+
+    Condition:
+      type: object
+      required:
+        - type
+        - description
+      properties:
+        type:
+          $ref: '#/components/schemas/ConditionType'
+        description:
+          type: string
+          maxLength: 500
+          description: Condition text.
+
+    # ──────────────────── Tender ────────────────────
+
+    Tender:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - created_at
+        - updated_at
+        - created_by
+      properties:
+        id:
+          type: string
+          description: Tender ID
+        name:
+          type: string
+          description: Tender name
+        platform:
+          type: string
+          nullable: true
+          description: Tendering platform (e.g., "bidsandtenders.ca", "MERX", "bonfire")
+        status:
+          $ref: '#/components/schemas/TenderStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+          nullable: true
+          description: Currency for all monetary values on this tender. Defaults to CAD if not set.
+        reference_number:
+          type: string
+          nullable: true
+          description: Contract/reference number (AI-extracted)
+        location:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Project location (AI-extracted)
+        scope_of_work:
+          type: string
+          nullable: true
+          description: What the project involves (AI-extracted)
+        delivery_method:
+          $ref: '#/components/schemas/DeliveryMethod'
+          nullable: true
+        closing_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Bid submission deadline (AI-extracted)
+        site_visit_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Site visit/meeting date (AI-extracted)
+        site_visit_mandatory:
+          type: boolean
+          nullable: true
+          description: Whether site visit attendance is mandatory (AI-extracted)
+        completion_date:
+          type: string
+          format: date
+          nullable: true
+          description: Project completion date (AI-extracted)
+        inquiry_deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last day to ask questions (AI-extracted)
+        submission_method:
+          type: string
+          nullable: true
+          description: How to submit bids (AI-extracted)
+        submission_url:
+          type: string
+          format: uri
+          nullable: true
+          description: URL for electronic submission (AI-extracted)
+        bonds:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Bond'
+          description: Bond requirements (AI-extracted)
+        conditions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Condition'
+          description: Tender conditions and requirements (AI-extracted)
+        liquidated_damages:
+          type: string
+          nullable: true
+          description: Penalty for late completion (AI-extracted)
+        parties:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Party'
+          description: Extracted parties
+        metadata:
+          type: object
+          nullable: true
+          description: JSONB for additional AI-extracted fields
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        created_by:
+          type: string
+          description: User ID who created the tender
+
+    TenderDocument:
+      type: object
+      required:
+        - id
+        - tender_id
+        - file_name
+        - content_type
+        - file_size
+        - s3_key
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Document ID
+        tender_id:
+          type: string
+          description: Parent tender ID
+        file_name:
+          type: string
+          description: Original file name
+        content_type:
+          $ref: '#/components/schemas/ContentType'
+        file_size:
+          type: integer
+          description: Declared file size in bytes
+        s3_key:
+          type: string
+          description: S3 object key
+        status:
+          $ref: '#/components/schemas/TenderDocumentStatus'
+        error_reason:
+          type: string
+          nullable: true
+          description: Reason for failure (null if not failed)
+        metadata:
+          type: object
+          nullable: true
+          description: JSONB — extraction results, ZIP entry info, etc.
+        parent_document_id:
+          type: string
+          nullable: true
+          description: If extracted from a ZIP, the ID of the original ZIP document
+        uploaded_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the file upload to S3 completed. Null while uploading.
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+
+    # ──────────────────── Request / Response Schemas ────────────────────
+
+    TenderCreateRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          description: Tender name
+        platform:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: Tendering platform
+        currency:
+          $ref: '#/components/schemas/Currency'
+          nullable: true
+          description: Currency. Defaults to CAD if not set.
+        closing_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: Bid submission deadline
+        delivery_method:
+          $ref: '#/components/schemas/DeliveryMethod'
+          nullable: true
+          description: Contract delivery method
+
+    TenderUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        platform:
+          type: string
+          nullable: true
+          maxLength: 255
+        status:
+          $ref: '#/components/schemas/TenderStatus'
+        currency:
+          $ref: '#/components/schemas/Currency'
+          nullable: true
+        reference_number:
+          type: string
+          nullable: true
+          maxLength: 255
+        location:
+          type: string
+          nullable: true
+          maxLength: 500
+        scope_of_work:
+          type: string
+          nullable: true
+        delivery_method:
+          $ref: '#/components/schemas/DeliveryMethod'
+          nullable: true
+        closing_date:
+          type: string
+          format: date-time
+          nullable: true
+        site_visit_date:
+          type: string
+          format: date-time
+          nullable: true
+        site_visit_mandatory:
+          type: boolean
+          nullable: true
+        completion_date:
+          type: string
+          format: date
+          nullable: true
+        inquiry_deadline:
+          type: string
+          format: date-time
+          nullable: true
+        submission_method:
+          type: string
+          nullable: true
+          maxLength: 500
+        submission_url:
+          type: string
+          format: uri
+          nullable: true
+        bonds:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Bond'
+        conditions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Condition'
+        liquidated_damages:
+          type: string
+          nullable: true
+          maxLength: 255
+        parties:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Party'
+        metadata:
+          type: object
+          nullable: true
+
+    TenderCreateResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: ID of the created tender
+
+    PresignedUrlRequest:
+      type: object
+      required:
+        - file_name
+        - content_type
+        - file_size
+      properties:
+        file_name:
+          type: string
+          maxLength: 255
+          description: File name with extension. Alphanumeric + .-_ () only.
+        content_type:
+          $ref: '#/components/schemas/ContentType'
+        file_size:
+          type: integer
+          minimum: 1
+          description: Expected file size in bytes. Max 209715200 (200MB) for PDF/PNG/JPG, 524288000 (500MB) for ZIP.
+
+    PresignedUrlResponse:
+      type: object
+      required:
+        - presigned_url
+        - document_id
+        - expiration
+      properties:
+        presigned_url:
+          type: string
+          format: uri
+          description: S3 presigned PUT URL
+        document_id:
+          type: string
+          description: ID of the created document record
+        expiration:
+          type: string
+          format: date-time
+          description: When the presigned URL expires (15 minutes from creation)
+
+    DownloadUrlResponse:
+      type: object
+      required:
+        - url
+        - expiration
+      properties:
+        url:
+          type: string
+          format: uri
+          description: S3 presigned GET URL
+        expiration:
+          type: string
+          format: date-time
+          description: When the URL expires (2 minutes from creation)
+
+    # ──────────────────── List Response Wrappers ────────────────────
+
+    TenderListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tender'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    TenderDocumentListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenderDocument'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+paths:
+  # ──────────────────── Tenders ────────────────────
+
+  /v1/tenders:
+    post:
+      operationId: createTender
+      summary: Create Tender
+      description: >
+        Create a new tender. Tender name must be unique per company among non-deleted
+        tenders (case-insensitive). Returns 409 on conflict.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenderCreateRequest'
+      responses:
+        '201':
+          description: Tender created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URI of the created tender (/v1/tenders/{id})
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderCreateResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — duplicate tender name or idempotency key mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      operationId: listTenders
+      summary: List Tenders
+      description: >
+        List tenders with cursor-based pagination, search, sort, and status filter.
+        Returns all non-archived tenders by default.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+          description: Case-insensitive partial match (ILIKE) across name, reference_number, location.
+        - name: sort
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SortField'
+          description: Sort field. Default closing_date (soonest due first). Ignored when cursor is provided.
+        - name: direction
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Sort direction. Ignored when cursor is provided.
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TenderStatus'
+          description: Filter by status. Pass status=archived to list archived tenders.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}:
+    get:
+      operationId: getTender
+      summary: Get Tender
+      description: Retrieve a single tender by ID.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tender'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: updateTender
+      summary: Update Tender
+      description: Partial update — all fields optional.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenderUpdateRequest'
+      responses:
+        '200':
+          description: OK — updated Tender
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tender'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — duplicate tender name or invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteTender
+      summary: Delete Tender
+      description: >
+        Only tenders in draft or pending status can be deleted. Soft-deletes
+        the tender and cascades to all associated documents.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+      responses:
+        '204':
+          description: No Content
+        '400':
+          description: Bad Request — tender not in deletable status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────── Tender Documents ────────────────────
+
+  /v1/tenders/{tenderId}/documents/presigned-urls:
+    post:
+      operationId: getUploadPresignedUrl
+      summary: Get Upload Presigned URL
+      description: Generate an S3 presigned PUT URL for uploading a document to a tender.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUrlRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlResponse'
+        '400':
+          description: Bad Request — validation error or file size exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — tender does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents:
+    get:
+      operationId: listTenderDocuments
+      summary: List Tender Documents
+      description: List documents for a tender with cursor-based pagination and optional status filter.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TenderDocumentStatus'
+          description: Filter by document status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderDocumentListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — tender does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents/{documentId}:
+    delete:
+      operationId: deleteTenderDocument
+      summary: Delete Tender Document
+      description: Deletes the document record and the file from S3.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document ID
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents/{documentId}/presigned-urls:
+    get:
+      operationId: getDownloadPresignedUrl
+      summary: Get Download Presigned URL
+      description: Generate an S3 presigned GET URL for downloading a tender document.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tender ID
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document ID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
