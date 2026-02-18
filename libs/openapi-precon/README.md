@@ -23,12 +23,21 @@ Both packages are always published at the same version, defined in `gradle.prope
 
 ## Usage
 
+### Authentication
+
+GitHub Packages requires a personal access token (PAT) with `read:packages` scope. Generate one at **Settings > Developer settings > Personal access tokens** and export it:
+
+```sh
+export GITHUB_TOKEN=ghp_your_token_here
+```
+
 ### TypeScript
 
 Configure npm to use GitHub Packages for the `@build4africa` scope:
 
 ```sh
 echo "@build4africa:registry=https://npm.pkg.github.com" >> .npmrc
+echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
 ```
 
 Install:
