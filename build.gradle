@@ -213,6 +213,7 @@ sonar {
             "libs:ai-engine",
             "libs:api-tosspaper",
             "libs:integrations",
+            "libs:flyway-jooq-classes",
             "services:everything"
         ].join(",")
         
