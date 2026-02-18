@@ -25,7 +25,15 @@ Both packages are always published at the same version, defined in `gradle.prope
 
 ### Authentication
 
-GitHub Packages requires a personal access token (PAT) with `read:packages` scope. Generate one at **Settings > Developer settings > Personal access tokens** and export it:
+GitHub Packages requires authentication to pull packages.
+
+1. Go to https://github.com/settings/tokens/new
+2. Select **classic** token
+3. Set an expiration
+4. Select scopes: `read:packages`
+5. Click **Generate token** and copy it
+
+Export the token:
 
 ```sh
 export GITHUB_TOKEN=ghp_your_token_here
