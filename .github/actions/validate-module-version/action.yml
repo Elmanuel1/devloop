@@ -1,0 +1,30 @@
+name: 'Validate Module Version'
+description: 'Validates semver format in gradle.properties and matching CHANGELOG.md entry for a module'
+
+inputs:
+  module-path:
+    description: 'Path to the module directory (e.g., libs/openapi-precon)'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate version and changelog
+      shell: bash
+      run: |
+        MODULE_PATH="${{ inputs.module-path }}"
+
+        VERSION=$(grep '^moduleVersion=' "${MODULE_PATH}/gradle.properties" | cut -d'=' -f2)
+        echo "version=$VERSION"
+
+        if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::Version '$VERSION' is not valid semantic versioning"
+          exit 1
+        fi
+
+        if ! grep -q "## \[$VERSION\]" "${MODULE_PATH}/CHANGELOG.md"; then
+          echo "::error::CHANGELOG.md missing entry for version $VERSION"
+          exit 1
+        fi
+
+        echo "Version $VERSION is valid and has a CHANGELOG entry"
