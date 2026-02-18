@@ -10,6 +10,7 @@ repositories {
 dependencies {
     // Internal modules
     api project(':libs:models')
+    implementation libs.flyway.jooq.classes
 
     // Spring Boot
     implementation libs.spring.boot.starter.web
