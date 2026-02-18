@@ -1,10 +1,20 @@
 package com.tosspaper.models.jooq.binding;
 
-import org.jooq.*;
+import org.jooq.Binding;
+import org.jooq.BindingGetResultSetContext;
+import org.jooq.BindingGetSQLInputContext;
+import org.jooq.BindingGetStatementContext;
+import org.jooq.BindingRegisterContext;
+import org.jooq.BindingSQLContext;
+import org.jooq.BindingSetSQLOutputContext;
+import org.jooq.BindingSetStatementContext;
+import org.jooq.Converter;
 import org.jooq.conf.ParamType;
 import org.jooq.impl.DSL;
 
-import java.sql.*;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Types;
 
 /**
  * Custom jOOQ binding for PostgreSQL tsvector columns.
