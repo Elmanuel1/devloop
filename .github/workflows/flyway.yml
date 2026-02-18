@@ -279,7 +279,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'publish-jooq-classes.yml',
-              ref: context.ref,
+              ref: context.payload.pull_request?.head?.ref || context.ref.replace('refs/heads/', ''),
               inputs: {
                 publish: String(
                   '${{ env.FLYWAY_ACTION }}' === 'migrate' &&
