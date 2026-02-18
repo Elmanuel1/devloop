@@ -34,20 +34,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate version and changelog
-        run: |
-          VERSION=$(grep '^moduleVersion=' libs/openapi-precon/gradle.properties | cut -d'=' -f2)
-          echo "version=$VERSION"
-
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Version '$VERSION' is not valid semantic versioning"
-            exit 1
-          fi
-
-          if ! grep -q "## \[$VERSION\]" libs/openapi-precon/CHANGELOG.md; then
-            echo "::error::CHANGELOG.md missing entry for version $VERSION"
-            exit 1
-          fi
+      - name: Validate module version
+        uses: ./.github/actions/validate-module-version
+        with:
+          module-path: libs/openapi-precon
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
