@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.tosspaper'
-version = findProperty('projectVersion') ?: '0.0.1'
+version = findProperty('moduleVersion')
 
 java {
     toolchain {
@@ -81,7 +81,7 @@ tasks.register('buildTypescriptClient', Exec) {
     commandLine 'bash', '-c', [
         "npx @openapitools/openapi-generator-cli@2.29.0 generate -i ${specFile} -g typescript-axios -o ${tsOutputDir} --additional-properties=apiPackage=api,modelPackage=model,withInterfaces=true,withSeparateModelsAndApi=true",
         "cp ${projectDir}/package.json ${projectDir}/tsconfig.json ${tsOutputDir}/",
-        "cd ${tsOutputDir} && npm install && npm run build"
+        "cd ${tsOutputDir} && npm version ${project.version} --no-git-tag-version --allow-same-version && npm install && npm run build"
     ].join(' && ')
 }
 

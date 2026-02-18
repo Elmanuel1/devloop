@@ -1,6 +1,6 @@
 {
   "name": "@build4africa/tosspaper-openapi-precon",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "description": "Generated TypeScript models and API client for Tosspaper Precon API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
