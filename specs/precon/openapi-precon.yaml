@@ -252,15 +252,14 @@ components:
         currency:
           $ref: '#/components/schemas/Currency'
           nullable: true
-          description: Currency for all monetary values on this tender. Defaults to CAD if not set.
+          description: Currency for all monetary values on this tender.
         reference_number:
           type: string
           nullable: true
           description: Contract/reference number (AI-extracted)
         location:
-          type: string
+          $ref: '#/components/schemas/Address'
           nullable: true
-          maxLength: 500
           description: Project location (AI-extracted)
         scope_of_work:
           type: string
@@ -417,7 +416,7 @@ components:
         currency:
           $ref: '#/components/schemas/Currency'
           nullable: true
-          description: Currency. Defaults to CAD if not set.
+          description: Currency for monetary values on this tender.
         closing_date:
           type: string
           format: date-time
@@ -448,9 +447,8 @@ components:
           nullable: true
           maxLength: 255
         location:
-          type: string
+          $ref: '#/components/schemas/Address'
           nullable: true
-          maxLength: 500
         scope_of_work:
           type: string
           nullable: true
@@ -692,7 +690,7 @@ paths:
           schema:
             type: string
             maxLength: 255
-          description: Case-insensitive partial match (ILIKE) across name, reference_number, location.
+          description: Case-insensitive partial match (ILIKE) across name and reference_number.
         - name: sort
           in: query
           required: false
