@@ -1,18 +1,6 @@
 name: jOOQ Classes
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'flyway/**'
-      - 'libs/flyway-jooq-classes/**'
-      - '.github/workflows/publish-jooq-classes.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'flyway/**'
-      - 'libs/flyway-jooq-classes/**'
-      - '.github/workflows/publish-jooq-classes.yml'
   workflow_dispatch:
     inputs:
       publish:
