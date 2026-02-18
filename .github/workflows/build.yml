@@ -3,8 +3,20 @@ name: Build
 on:
   push:
     branches: [main, staging]
+    paths-ignore:
+      - 'specs/**'
+      - 'libs/openapi-precon/**'
+      - 'terraform/**'
+      - 'flyway/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main, staging]
+    paths-ignore:
+      - 'specs/**'
+      - 'libs/openapi-precon/**'
+      - 'terraform/**'
+      - 'flyway/**'
+      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       environment:
