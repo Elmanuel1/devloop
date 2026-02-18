@@ -63,7 +63,7 @@ public class TsvectorBinding implements Binding<Object, String> {
 
     @Override
     public void set(BindingSetStatementContext<String> ctx) throws SQLException {
-        ctx.statement().setString(ctx.index(), ctx.convert(converter()).value());
+        ctx.statement().setString(ctx.index(), (String) ctx.convert(converter()).value());
     }
 
     @Override
