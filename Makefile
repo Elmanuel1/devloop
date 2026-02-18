@@ -19,7 +19,7 @@ help:
 # Generate JOOQ for all modules
 jooq:
 	@echo "Generating JOOQ classes for all modules..."
-	./gradlew generateJooq --stacktrace
+	./gradlew generateJooq --no-configuration-cache --stacktrace
 	@echo "JOOQ generation completed!"
 
 # Build everything service (includes all dependencies)
@@ -102,4 +102,3 @@ test:
 
 # Alias for docker-up
 all: docker-up
-
