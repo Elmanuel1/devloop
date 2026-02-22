@@ -2,33 +2,31 @@ package com.tosspaper.precon;
 
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.NotFoundException;
-import com.tosspaper.models.exception.DocumentNotReadyException;
-import com.tosspaper.precon.generated.model.DownloadUrlResponse;
-import com.tosspaper.precon.generated.model.Pagination;
-import com.tosspaper.precon.generated.model.PresignedUrlRequest;
-import com.tosspaper.precon.generated.model.PresignedUrlResponse;
-import com.tosspaper.precon.generated.model.TenderDocument;
-import com.tosspaper.precon.generated.model.TenderDocumentListResponse;
-import com.tosspaper.precon.generated.model.TenderDocumentStatus;
+import com.tosspaper.generated.model.DownloadUrlResponse;
+import com.tosspaper.generated.model.PresignedUrlRequest;
+import com.tosspaper.generated.model.PresignedUrlResponse;
+import com.tosspaper.generated.model.TenderDocument;
+import com.tosspaper.generated.model.TenderDocumentListResponse;
+import com.tosspaper.generated.model.TenderPagination;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import com.tosspaper.models.jooq.tables.records.TendersRecord;
+import com.tosspaper.models.properties.AwsProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
-
-import com.tosspaper.models.exception.CannotDeleteException;
 
 import java.net.URI;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -37,50 +35,61 @@ import java.util.UUID;
 public class TenderDocumentServiceImpl implements TenderDocumentService {
 
     private final TenderRepository tenderRepository;
-    private final TenderDocumentRepository tenderDocumentRepository;
-    private final TenderDocumentMapper tenderDocumentMapper;
-    private final TenderFileProperties fileProperties;
+    private final TenderDocumentRepository documentRepository;
+    private final TenderDocumentMapper documentMapper;
+    private final TenderDocumentValidator validator;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
+    private final AwsProperties awsProperties;
 
-    private static final Duration UPLOAD_URL_DURATION = Duration.ofMinutes(10);
-    private static final Duration DOWNLOAD_URL_DURATION = Duration.ofMinutes(5);
-    private static final Set<String> FINAL_STATUSES = Set.of("won", "lost", "cancelled");
+    private static final Duration PRESIGNED_URL_EXPIRY = Duration.ofMinutes(5);
 
     @Override
     public PresignedUrlResponse getUploadPresignedUrl(Long companyId, String tenderId, PresignedUrlRequest request) {
         String companyIdStr = companyId.toString();
 
-        // Validate tender ownership
-        TendersRecord tender = tenderRepository.findById(tenderId);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
-        }
+        // Verify tender exists and belongs to company
+        verifyTenderOwnership(tenderId, companyIdStr);
+
+        // Validate file metadata
+        validator.validate(request);
 
         // Generate document ID and S3 key
         String documentId = UUID.randomUUID().toString();
-        String s3Key = buildS3Key(companyIdStr, tenderId, documentId, request.getFileName());
+        String sanitizedFileName = sanitizeFileName(request.getFileName());
+        String s3Key = String.format("tender-uploads/%s/%s/%s/%s",
+                companyIdStr, tenderId, documentId, sanitizedFileName);
 
-        // Generate presigned upload URL first — if this fails, no orphan DB record
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(UPLOAD_URL_DURATION)
-                .putObjectRequest(c -> c.bucket(fileProperties.getUploadBucket())
-                        .key(s3Key)
-                        .contentType(request.getContentType().getValue())
-                        .contentLength(request.getFileSize().longValue())
-                        .build())
+        // Generate presigned PUT URL FIRST - if fails, no DB record created
+        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                .bucket(awsProperties.getBucket().getName())
+                .key(s3Key)
+                .contentType(request.getContentType().getValue())
+                .contentLength(request.getFileSize())
                 .build();
 
-        var presignedRequest = s3Presigner.presignPutObject(presignRequest);
-        OffsetDateTime expiration = presignedRequest.expiration().atOffset(ZoneOffset.UTC);
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(PRESIGNED_URL_EXPIRY)
+                .putObjectRequest(putObjectRequest)
+                .build();
 
-        // Create document record via mapper
-        TenderDocumentsRecord record = tenderDocumentMapper.toRecord(
-                request, documentId, tenderId, companyIdStr, s3Key);
-        tenderDocumentRepository.insert(record);
+        var presignedPutObject = s3Presigner.presignPutObject(presignRequest);
+        URI presignedUrl = URI.create(presignedPutObject.url().toString());
+        OffsetDateTime expiration = OffsetDateTime.now(ZoneOffset.UTC).plus(PRESIGNED_URL_EXPIRY);
+
+        // Create document record SECOND - if fails, URL expires harmlessly
+        documentRepository.insert(
+                documentId, tenderId, companyIdStr,
+                request.getFileName(),
+                request.getContentType().getValue(),
+                request.getFileSize(),
+                s3Key, "uploading"
+        );
+
+        log.info("Created document record and presigned URL - documentId: {}, tenderId: {}", documentId, tenderId);
 
         PresignedUrlResponse response = new PresignedUrlResponse();
-        response.setPresignedUrl(URI.create(presignedRequest.url().toString()));
+        response.setPresignedUrl(presignedUrl);
         response.setDocumentId(UUID.fromString(documentId));
         response.setExpiration(expiration);
 
@@ -88,49 +97,34 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     }
 
     @Override
-    public TenderDocumentListResponse listDocuments(Long companyId, String tenderId, Integer limit,
-                                                     String cursor, TenderDocumentStatus status) {
+    public TenderDocumentListResponse listDocuments(Long companyId, String tenderId, String status,
+                                                     int limit, String cursorCreatedAt, String cursorId) {
         String companyIdStr = companyId.toString();
 
-        // Validate tender ownership
-        TendersRecord tender = tenderRepository.findById(tenderId);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
-        }
+        // Verify tender exists and belongs to company
+        verifyTenderOwnership(tenderId, companyIdStr);
 
-        // Clamp limit to valid range
-        int effectiveLimit = limit != null ? limit : 20;
-        if (effectiveLimit < 1 || effectiveLimit > 100) {
-            effectiveLimit = 20;
-        }
-
-        // Decode cursor
-        CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
-
-        String statusValue = status != null ? status.getValue() : null;
-        OffsetDateTime cursorCreatedAt = cursorPair != null ? cursorPair.createdAt() : null;
-        String cursorId = cursorPair != null ? cursorPair.id() : null;
-
-        List<TenderDocumentsRecord> records = tenderDocumentRepository.findByTenderId(
-                tenderId, statusValue, effectiveLimit, cursorCreatedAt, cursorId);
+        List<TenderDocumentsRecord> records = documentRepository.findByTenderId(
+                tenderId, status, limit, cursorCreatedAt, cursorId);
 
         // Determine if there are more results
-        boolean hasMore = records.size() > effectiveLimit;
+        boolean hasMore = records.size() > limit;
         if (hasMore) {
-            records = records.subList(0, effectiveLimit);
+            records = records.subList(0, limit);
         }
 
-        List<TenderDocument> documents = tenderDocumentMapper.toDtoList(records);
+        List<TenderDocument> documents = documentMapper.toDtoList(records);
 
-        // Build pagination -- cursor is null when no more results
+        // Build pagination
         String nextCursor = null;
         if (hasMore && !records.isEmpty()) {
-            TenderDocumentsRecord lastRecord = records.getLast();
+            TenderDocumentsRecord lastRecord = records.get(records.size() - 1);
             nextCursor = CursorUtils.encodeCursor(lastRecord.getCreatedAt(), lastRecord.getId());
         }
 
-        Pagination pagination = new Pagination();
+        TenderPagination pagination = new TenderPagination();
         pagination.setCursor(nextCursor);
+        pagination.setHasMore(hasMore);
 
         TenderDocumentListResponse response = new TenderDocumentListResponse();
         response.setData(documents);
@@ -143,40 +137,33 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     public void deleteDocument(Long companyId, String tenderId, String documentId) {
         String companyIdStr = companyId.toString();
 
-        // Validate tender ownership
-        TendersRecord tender = tenderRepository.findById(tenderId);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
-        }
+        // Verify tender exists and belongs to company
+        verifyTenderOwnership(tenderId, companyIdStr);
 
-        // Reject deletion on final status tenders
-        if (FINAL_STATUSES.contains(tender.getStatus())) {
-            throw new CannotDeleteException("api.tenderDocument.cannotDelete",
-                    "Cannot delete documents from a tender in '" + tender.getStatus() + "' status");
-        }
+        // Verify document exists and belongs to tender
+        TenderDocumentsRecord document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException("api.document.notFound", "Document not found"));
 
-        // Find the document (throws NotFoundException if not found)
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
-
-        // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found");
+            throw new NotFoundException("api.document.notFound", "Document not found");
         }
 
-        // Soft-delete the record first
-        tenderDocumentRepository.softDelete(documentId);
+        // Soft-delete document record
+        int deleted = documentRepository.softDelete(documentId);
+        if (deleted == 0) {
+            throw new NotFoundException("api.document.notFound", "Document not found");
+        }
 
-        // Then delete the S3 object (log error if it fails, don't rethrow)
+        // Delete S3 object synchronously
         try {
-            DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
-                    .bucket(fileProperties.getUploadBucket())
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(awsProperties.getBucket().getName())
                     .key(document.getS3Key())
-                    .build();
-            s3Client.deleteObject(deleteRequest);
-            log.info("Deleted S3 object for document {} - key: {}", documentId, document.getS3Key());
+                    .build());
+            log.info("Deleted S3 object - key: {}", document.getS3Key());
         } catch (Exception e) {
-            log.error("Failed to delete S3 object for document {} - key: {}. Record already soft-deleted.",
-                    documentId, document.getS3Key(), e);
+            log.error("Failed to delete S3 object - key: {}", document.getS3Key(), e);
+            // Don't rethrow - document is already soft-deleted
         }
     }
 
@@ -184,45 +171,55 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     public DownloadUrlResponse getDownloadPresignedUrl(Long companyId, String tenderId, String documentId) {
         String companyIdStr = companyId.toString();
 
-        // Validate tender ownership
-        TendersRecord tender = tenderRepository.findById(tenderId);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
-        }
+        // Verify tender exists and belongs to company
+        verifyTenderOwnership(tenderId, companyIdStr);
 
-        // Find the document (throws NotFoundException if not found)
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
+        // Verify document exists and belongs to tender
+        TenderDocumentsRecord document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException("api.document.notFound", "Document not found"));
 
-        // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found");
+            throw new NotFoundException("api.document.notFound", "Document not found");
         }
 
-        // Check status is ready
-        if (!TenderDocumentStatus.READY.getValue().equals(document.getStatus())) {
-            throw new DocumentNotReadyException("api.tenderDocument.notReady",
+        // Verify document status is "ready"
+        if (!"ready".equals(document.getStatus())) {
+            throw new DocumentNotReadyException("api.document.notReady",
                     "Document is not ready for download. Current status: " + document.getStatus());
         }
 
-        // Generate presigned download URL
-        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(DOWNLOAD_URL_DURATION)
-                .getObjectRequest(c -> c.bucket(fileProperties.getUploadBucket())
-                        .key(document.getS3Key())
-                        .build())
+        // Generate presigned GET URL
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(awsProperties.getBucket().getName())
+                .key(document.getS3Key())
                 .build();
 
-        var presignedRequest = s3Presigner.presignGetObject(presignRequest);
-        OffsetDateTime expiration = presignedRequest.expiration().atOffset(ZoneOffset.UTC);
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(PRESIGNED_URL_EXPIRY)
+                .getObjectRequest(getObjectRequest)
+                .build();
+
+        var presignedGetObject = s3Presigner.presignGetObject(presignRequest);
 
         DownloadUrlResponse response = new DownloadUrlResponse();
-        response.setUrl(URI.create(presignedRequest.url().toString()));
-        response.setExpiration(expiration);
+        response.setUrl(URI.create(presignedGetObject.url().toString()));
+        response.setExpiration(OffsetDateTime.now(ZoneOffset.UTC).plus(PRESIGNED_URL_EXPIRY));
 
         return response;
     }
 
-    private String buildS3Key(String companyId, String tenderId, String documentId, String fileName) {
-        return "tenders/" + companyId + "/" + tenderId + "/" + documentId + "/" + fileName;
+    private void verifyTenderOwnership(String tenderId, String companyIdStr) {
+        TendersRecord tender = tenderRepository.findById(tenderId)
+                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
+
+        if (!tender.getCompanyId().equals(companyIdStr)) {
+            throw new NotFoundException("api.tender.notFound", "Tender not found");
+        }
+    }
+
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null) return "file";
+        // Replace spaces and special chars with underscores, keep alphanumeric, dots, hyphens
+        return fileName.replaceAll("[^a-zA-Z0-9.\\-_]", "_");
     }
 }

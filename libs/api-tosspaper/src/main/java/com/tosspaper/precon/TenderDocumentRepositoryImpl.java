@@ -8,11 +8,10 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
 
-import com.tosspaper.common.NotFoundException;
-
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.TENDER_DOCUMENTS;
 
@@ -24,40 +23,50 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
     private final DSLContext dsl;
 
     @Override
-    public TenderDocumentsRecord insert(TenderDocumentsRecord record) {
-        log.info("Inserting tender document - tenderId: {}, fileName: {}", record.getTenderId(), record.getFileName());
+    public TenderDocumentsRecord insert(String id, String tenderId, String companyId, String fileName,
+                                         String contentType, long fileSize, String s3Key, String status) {
+        log.info("Inserting tender document - id: {}, tenderId: {}, fileName: {}", id, tenderId, fileName);
+
         return dsl.insertInto(TENDER_DOCUMENTS)
-                .set(record)
+                .set(TENDER_DOCUMENTS.ID, id)
+                .set(TENDER_DOCUMENTS.TENDER_ID, tenderId)
+                .set(TENDER_DOCUMENTS.COMPANY_ID, companyId)
+                .set(TENDER_DOCUMENTS.FILE_NAME, fileName)
+                .set(TENDER_DOCUMENTS.CONTENT_TYPE, contentType)
+                .set(TENDER_DOCUMENTS.FILE_SIZE, fileSize)
+                .set(TENDER_DOCUMENTS.S3_KEY, s3Key)
+                .set(TENDER_DOCUMENTS.STATUS, status)
                 .returning()
                 .fetchSingle();
     }
 
     @Override
-    public TenderDocumentsRecord findById(String id) {
-        return dsl.selectFrom(TENDER_DOCUMENTS)
+    public Optional<TenderDocumentsRecord> findById(String id) {
+        TenderDocumentsRecord record = dsl.selectFrom(TENDER_DOCUMENTS)
                 .where(TENDER_DOCUMENTS.ID.eq(id))
                 .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
-                .fetchOptional()
-                .orElseThrow(() -> new NotFoundException("api.tenderDocument.notFound", "Tender document not found"));
+                .fetchOne();
+        return Optional.ofNullable(record);
     }
 
     @Override
     public List<TenderDocumentsRecord> findByTenderId(String tenderId, String status, int limit,
-                                                       OffsetDateTime cursorCreatedAt, String cursorId) {
+                                                       String cursorCreatedAt, String cursorId) {
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TENDER_DOCUMENTS.TENDER_ID.eq(tenderId));
         conditions.add(TENDER_DOCUMENTS.DELETED_AT.isNull());
 
-        // Status filter
+        // Optional status filter
         if (status != null && !status.isBlank()) {
             conditions.add(TENDER_DOCUMENTS.STATUS.eq(status));
         }
 
-        // Cursor pagination using row comparison
+        // Cursor pagination
         if (cursorCreatedAt != null && cursorId != null) {
+            OffsetDateTime cursorTime = OffsetDateTime.parse(cursorCreatedAt);
             conditions.add(
                     DSL.row(TENDER_DOCUMENTS.CREATED_AT, TENDER_DOCUMENTS.ID)
-                            .lessThan(DSL.row(cursorCreatedAt, cursorId))
+                            .lessThan(DSL.row(cursorTime, cursorId))
             );
         }
 
