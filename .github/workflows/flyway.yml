@@ -278,9 +278,10 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'publish-jooq-classes.yml',
+              workflow_id: 'publish-modules.yml',
               ref: context.payload.pull_request?.head?.ref || context.ref.replace('refs/heads/', ''),
               inputs: {
+                module: 'flyway-jooq-classes',
                 publish: String(
                   '${{ env.FLYWAY_ACTION }}' === 'migrate' &&
                   '${{ env.TARGET_ENV }}' === 'prod'
