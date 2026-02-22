@@ -15,11 +15,10 @@ repositories {
     }
 }
 
-// JOOQ generation removed - using models.jooq instead
-
 dependencies {
     // Models
     implementation project(':libs:models')
+    implementation libs.flyway.jooq.classes
     
     // Spring AI BOM (1.1.2 - includes prompt caching for Anthropic)
     implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
@@ -60,7 +59,7 @@ dependencies {
     implementation libs.flyway.core
     implementation libs.flyway.database.postgresql
     
-    // JOOQ (using models.jooq generated classes)
+    // JOOQ (using flyway-jooq-classes generated classes)
     implementation libs.jooq
     
     // HTTP Client
@@ -143,8 +142,6 @@ sourceSets {
         }
     }
 }
-
-// JOOQ generation removed - using models.jooq instead
 
 // Ensure JSON Schema POJOs are generated before compileJava
 tasks.named('compileJava').configure {

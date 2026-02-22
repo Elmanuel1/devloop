@@ -2,7 +2,6 @@ plugins {
 	alias(libs.plugins.spring.boot)
 	alias(libs.plugins.spring.dep.mgmt)
 	alias(libs.plugins.openapi.generator)
-	// JOOQ plugin removed - using models.jooq instead
 	alias(libs.plugins.flyway)
 	id 'java'
 	id 'groovy'
@@ -33,6 +32,7 @@ dependencies {
 	// WebFlux for SSE streaming
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation project(':libs:models')
+    implementation libs.flyway.jooq.classes
     implementation project(':libs:ai-engine')
     implementation project(':libs:integrations')
     developmentOnly libs.spring.boot.devtools
@@ -151,8 +151,6 @@ sourceSets {
 		}
 	}
 }
-
-// JOOQ generation removed - using models.jooq instead
 
 test {
 	useJUnitPlatform()

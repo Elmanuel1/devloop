@@ -4,6 +4,7 @@
 [versions]
 spring-boot = "3.5.5"
 spring-dep-mgmt = "1.1.7"
+flyway-jooq-classes = "0.1.2"
 jooq = "3.19.26"
 jooq-plugin = "9.0"
 flyway = "11.1.0"
@@ -68,6 +69,7 @@ flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 
 # JOOQ
+flyway-jooq-classes = { module = "com.tosspaper:flyway-jooq-classes", version.ref = "flyway-jooq-classes" }
 jooq = { module = "org.jooq:jooq", version.ref = "jooq" }
 jooq-meta = { module = "org.jooq:jooq-meta", version.ref = "jooq" }
 jooq-codegen = { module = "org.jooq:jooq-codegen", version.ref = "jooq" }

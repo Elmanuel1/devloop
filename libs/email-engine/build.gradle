@@ -3,18 +3,17 @@ plugins {
     id 'org.flywaydb.flyway'
 }
 
-// JOOQ generation removed - using models.jooq instead
-
 dependencies {
     // Models
     implementation project(':libs:models')
+    implementation libs.flyway.jooq.classes
     
     // Database
     implementation libs.postgresql
     implementation libs.flyway.core
     implementation libs.flyway.database.postgresql
     
-    // JOOQ (using models.jooq generated classes)
+    // JOOQ (using flyway-jooq-classes generated classes)
     implementation libs.jooq
     
     // Mailgun SDK for sending emails
@@ -45,5 +44,3 @@ sourceSets {
         }
     }
 }
-
-// JOOQ generation removed - using models.jooq instead
