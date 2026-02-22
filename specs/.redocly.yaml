@@ -38,5 +38,8 @@ rules:
       - v2
   no-http-verbs-in-paths: error
 
+  # Components
+  no-unused-components: warn
+
   # Security
   security-defined: error
