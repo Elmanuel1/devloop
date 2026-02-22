@@ -132,8 +132,14 @@ tasks.named('generateJooq').configure {
     }
 }
 
-tasks.named('compileJava').configure {
-    dependsOn tasks.named('generateJooq')
+// Only wire jOOQ generation into compileJava when this module is explicitly targeted.
+// During root `./gradlew build`, skip generation — this is a published dependency.
+// The publish workflow builds it with: ./gradlew :libs:flyway-jooq-classes:build --no-configuration-cache
+def isExplicitTarget = gradle.startParameter.taskNames.any { it.contains('flyway-jooq-classes') }
+if (isExplicitTarget) {
+    tasks.named('compileJava').configure {
+        dependsOn tasks.named('generateJooq')
+    }
 }
 
 dependencies {
