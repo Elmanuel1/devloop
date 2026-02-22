@@ -134,4 +134,41 @@ public class GlobalExceptionHandler {
         var apiError = new ApiError("invalid_secret", ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.FORBIDDEN);
     }
+
+    // ──────────────────── Precon Tender Exceptions ────────────────────
+
+    @ExceptionHandler(com.tosspaper.precon.StaleVersionException.class)
+    public ResponseEntity<Object> handleStaleVersionException(com.tosspaper.precon.StaleVersionException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.PRECONDITION_FAILED);
+    }
+
+    @ExceptionHandler(com.tosspaper.precon.InvalidStatusTransitionException.class)
+    public ResponseEntity<Object> handleInvalidStatusTransitionException(com.tosspaper.precon.InvalidStatusTransitionException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.precon.CannotDeleteException.class)
+    public ResponseEntity<Object> handleCannotDeleteException(com.tosspaper.precon.CannotDeleteException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.precon.DuplicateNameException.class)
+    public ResponseEntity<Object> handleDuplicateNameException(com.tosspaper.precon.DuplicateNameException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.precon.IfMatchRequiredException.class)
+    public ResponseEntity<Object> handleIfMatchRequiredException(com.tosspaper.precon.IfMatchRequiredException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.valueOf(428));
+    }
 } 
