@@ -4,7 +4,7 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'com.tosspaper'
+group = findProperty('groupId')
 version = findProperty('moduleVersion')
 
 java {
@@ -109,8 +109,8 @@ publishing {
     }
     publications {
         maven(MavenPublication) {
-            groupId = 'com.tosspaper'
-            artifactId = 'tosspaper-openapi-precon'
+            groupId = findProperty('groupId')
+            artifactId = findProperty('artifactId')
             from components.java
         }
     }

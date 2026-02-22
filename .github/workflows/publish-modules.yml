@@ -1,0 +1,173 @@
+name: Publish Modules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'libs/*/gradle.properties'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'libs/*/gradle.properties'
+  workflow_dispatch:
+    inputs:
+      module:
+        description: 'Module to build'
+        type: choice
+        required: true
+        options:
+          - openapi-precon
+          - flyway-jooq-classes
+      publish:
+        description: 'Publish to GitHub Packages'
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-modules-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+env:
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.build-matrix.outputs.modules }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          list-files: json
+          filters: |
+            modules:
+              - 'libs/*/gradle.properties'
+
+      - name: Build module matrix
+        id: build-matrix
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo 'modules=["${{ inputs.module }}"]' >> $GITHUB_OUTPUT
+          else
+            MODULES=$(echo '${{ steps.filter.outputs.modules_files }}' \
+              | jq -c '[.[] | capture("libs/(?<name>[^/]+)/gradle.properties") | .name]')
+            echo "modules=$MODULES" >> $GITHUB_OUTPUT
+          fi
+          echo "Detected modules: $(cat $GITHUB_OUTPUT)"
+
+  publish:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.modules != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read module properties
+        id: props
+        run: |
+          PROPS="libs/${{ matrix.module }}/gradle.properties"
+          echo "version=$(grep '^moduleVersion=' "$PROPS" | cut -d'=' -f2)" >> $GITHUB_OUTPUT
+          echo "group_id=$(grep '^groupId=' "$PROPS" | cut -d'=' -f2)" >> $GITHUB_OUTPUT
+          echo "artifact_id=$(grep '^artifactId=' "$PROPS" | cut -d'=' -f2)" >> $GITHUB_OUTPUT
+
+      - name: Validate module version
+        uses: ./.github/actions/validate-module-version
+        with:
+          module-path: libs/${{ matrix.module }}
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Check for Node.js module
+        id: node-check
+        run: |
+          if [[ -f "libs/${{ matrix.module }}/package.json" ]]; then
+            echo "has_node=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_node=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Node.js
+        if: steps.node-check.outputs.has_node == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: 'https://npm.pkg.github.com'
+
+      - name: Lint OpenAPI spec
+        if: contains(matrix.module, 'openapi')
+        run: npx @redocly/cli@1.34.3 lint --config specs/.redocly.yaml specs/precon/openapi-precon.yaml
+
+      - name: Configure Docker for TestContainers
+        if: contains(matrix.module, 'flyway')
+        run: echo "TESTCONTAINERS_RYUK_DISABLED=true" >> $GITHUB_ENV
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build
+        run: ./gradlew :libs:${{ matrix.module }}:build --no-configuration-cache
+
+      - name: Publish Java library to GitHub Packages
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: ./gradlew :libs:${{ matrix.module }}:publish --no-configuration-cache
+
+      - name: Publish TypeScript client
+        if: >-
+          steps.node-check.outputs.has_node == 'true' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.publish))
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: ./gradlew :libs:${{ matrix.module }}:publishTypescriptClient
+
+      - name: Job summary
+        if: always()
+        run: |
+          VERSION="${{ steps.props.outputs.version }}"
+          GROUP_ID="${{ steps.props.outputs.group_id }}"
+          ARTIFACT_ID="${{ steps.props.outputs.artifact_id }}"
+          MODULE="${{ matrix.module }}"
+          PUBLISHED="No (PR or publish not requested)"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]] || \
+             [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
+            PUBLISHED="Yes"
+          fi
+
+          echo "## $ARTIFACT_ID@$VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Module** | \`libs/$MODULE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Group ID** | \`$GROUP_ID\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact ID** | \`$ARTIFACT_ID\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`$VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java artifact** | \`$GROUP_ID:$ARTIFACT_ID:$VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ steps.node-check.outputs.has_node }}" == "true" ]]; then
+            echo "| **npm package** | \`@build4africa/$ARTIFACT_ID@$VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| **Published** | $PUBLISHED |" >> $GITHUB_STEP_SUMMARY

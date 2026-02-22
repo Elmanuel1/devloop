@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.flyway)
 }
 
-group = 'com.tosspaper'
+group = findProperty('groupId')
 version = findProperty('moduleVersion')
 
 java {
@@ -163,8 +163,8 @@ publishing {
     }
     publications {
         maven(MavenPublication) {
-            groupId = 'com.tosspaper'
-            artifactId = 'tosspaper-flyway-jooq-classes'
+            groupId = findProperty('groupId')
+            artifactId = findProperty('artifactId')
             from components.java
         }
     }
