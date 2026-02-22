@@ -87,7 +87,7 @@ jobs:
   # PR validation - run terraform plan on changed modules
   pr-validate:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     concurrency:
       group: terraform-${{ matrix.module }}
       cancel-in-progress: false
@@ -122,7 +122,7 @@ jobs:
   # PR validation for environment-specific modules
   pr-validate-env:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: ${{ matrix.environment }}
     concurrency:
       group: terraform-${{ matrix.module }}-${{ matrix.environment }}
@@ -162,7 +162,7 @@ jobs:
   # Manual dispatch - run terraform action on specific module
   manual:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     concurrency:
       group: terraform-${{ inputs.module }}-${{ inputs.environment }}
       cancel-in-progress: false
