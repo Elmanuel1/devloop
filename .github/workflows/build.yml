@@ -37,7 +37,7 @@ env:
 
 jobs:
   determine-environment:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       environment: ${{ steps.env.outputs.environment }}
     steps:
@@ -56,7 +56,7 @@ jobs:
 
   build:
     needs: determine-environment
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: ${{ needs.determine-environment.outputs.environment }}
     permissions:
       contents: write
@@ -104,11 +104,19 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Set up Node.js
+        if: steps.should_build.outputs.java_changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Set up Gradle
         if: steps.should_build.outputs.java_changed == 'true'
         uses: gradle/actions/setup-gradle@v4
         with:
           dependency-graph: generate-and-submit
+          build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
+          build-scan-terms-of-use-agree: "yes"
 
       - name: Determine version
         id: version
@@ -124,7 +132,7 @@ jobs:
         if: steps.should_build.outputs.java_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: ./gradlew build
+        run: ./gradlew build --build-cache --scan
 
       - name: Set up QEMU
         if: steps.should_build.outputs.java_changed == 'true'
