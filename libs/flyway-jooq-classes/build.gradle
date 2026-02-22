@@ -132,6 +132,10 @@ tasks.named('generateJooq').configure {
     }
 }
 
+tasks.named('compileJava').configure {
+    dependsOn tasks.named('generateJooq')
+}
+
 dependencies {
     // jOOQ runtime
     api libs.jooq
