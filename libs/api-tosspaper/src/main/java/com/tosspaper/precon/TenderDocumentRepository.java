@@ -15,4 +15,12 @@ public interface TenderDocumentRepository {
     List<TenderDocumentsRecord> findByTenderId(String tenderId, String status, int limit, String cursorCreatedAt, String cursorId);
 
     int softDelete(String id);
+
+    int updateStatusToProcessing(String id);
+
+    int updateStatusToReady(String id);
+
+    int updateStatusToFailed(String id, String errorReason);
+
+    Optional<TenderDocumentsRecord> findByS3Key(String s3Key);
 }

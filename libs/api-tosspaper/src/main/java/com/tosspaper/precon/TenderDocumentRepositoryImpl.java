@@ -85,4 +85,48 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
                 .execute();
     }
+
+    @Override
+    public int updateStatusToProcessing(String id) {
+        log.info("Updating document status to processing - id: {}", id);
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(TENDER_DOCUMENTS.STATUS, "processing")
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
+    @Override
+    public int updateStatusToReady(String id) {
+        log.info("Updating document status to ready - id: {}", id);
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(TENDER_DOCUMENTS.STATUS, "ready")
+                .set(TENDER_DOCUMENTS.UPLOADED_AT, DSL.currentOffsetDateTime())
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
+    @Override
+    public int updateStatusToFailed(String id, String errorReason) {
+        log.info("Updating document status to failed - id: {}, reason: {}", id, errorReason);
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(TENDER_DOCUMENTS.STATUS, "failed")
+                .set(TENDER_DOCUMENTS.ERROR_REASON, errorReason)
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
+    @Override
+    public Optional<TenderDocumentsRecord> findByS3Key(String s3Key) {
+        TenderDocumentsRecord record = dsl.selectFrom(TENDER_DOCUMENTS)
+                .where(TENDER_DOCUMENTS.S3_KEY.eq(s3Key))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .fetchOne();
+        return Optional.ofNullable(record);
+    }
 }
