@@ -5,6 +5,20 @@ All notable changes to this module will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+- Extraction API: flat, self-contained extraction jobs for AI-powered field extraction from tender documents
+- ExtractionField model with `proposed_value` (AI immutable) and `edited_value` (user override)
+- Conflict resolution via `competing_values[]` with per-candidate citations
+- Application endpoints for applying extraction results to target entities with old/new value audit trail
+- Staleness detection at apply time (`tender.updated_at > extraction.created_at` → 409)
+- Optimistic concurrency via version counter / ETag / If-Match on extractions and tenders
+- Cursor-based pagination, idempotency keys, multi-tenancy (`X-Context-Id`), rate limiting (429 + Retry-After)
+
+### Changed
+- OpenAPI spec upgraded to 3.1.0
+
 ## [0.2.0]
 
 ### Added
