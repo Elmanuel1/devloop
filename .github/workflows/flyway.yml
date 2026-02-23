@@ -99,17 +99,18 @@ jobs:
 
   # ===========================================================================
   # SSM - run Flyway on EC2 (has RDS access)
-  # PR: runs 'info' against stage | Manual: runs selected action
+  # Manual only - PRs validate locally, never touch S3 or stage DB
   # ===========================================================================
   ssm:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: self-hosted
-    environment: ${{ github.event_name == 'pull_request' && 'stage' || inputs.environment }}
+    environment: ${{ inputs.environment }}
     concurrency:
-      group: flyway-${{ github.event_name == 'pull_request' && 'stage' || inputs.environment }}
+      group: flyway-${{ inputs.environment }}
       cancel-in-progress: false
     env:
-      FLYWAY_ACTION: ${{ github.event_name == 'pull_request' && 'info' || inputs.action }}
-      TARGET_ENV: ${{ github.event_name == 'pull_request' && 'stage' || inputs.environment }}
+      FLYWAY_ACTION: ${{ inputs.action }}
+      TARGET_ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
 
