@@ -57,5 +57,9 @@ locals {
       visibility_timeout = 600 # 10 min for push sync
       max_receive_count  = 3
     }
+    tender_upload_events = {
+      visibility_timeout = 300 # 5 min for document processing
+      max_receive_count  = 3
+    }
   }
 }

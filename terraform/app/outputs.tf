@@ -45,6 +45,16 @@ output "s3_bucket_arn" {
   value       = aws_s3_bucket.attachments.arn
 }
 
+output "tender_uploads_bucket_name" {
+  description = "S3 bucket name for tender document uploads"
+  value       = aws_s3_bucket.tender_uploads.id
+}
+
+output "tender_uploads_bucket_arn" {
+  description = "S3 bucket ARN for tender uploads"
+  value       = aws_s3_bucket.tender_uploads.arn
+}
+
 # SQS
 output "sqs_queue_urls" {
   description = "URLs of all SQS queues"
@@ -55,6 +65,7 @@ output "sqs_queue_urls" {
     document_approved      = aws_sqs_queue.document_approved.url
     quickbooks_events      = aws_sqs_queue.quickbooks_events.url
     integration_push       = aws_sqs_queue.integration_push.url
+    tender_upload_events   = aws_sqs_queue.tender_upload_events.url
   }
 }
 
@@ -67,6 +78,7 @@ output "sqs_queue_arns" {
     document_approved      = aws_sqs_queue.document_approved.arn
     quickbooks_events      = aws_sqs_queue.quickbooks_events.arn
     integration_push       = aws_sqs_queue.integration_push.arn
+    tender_upload_events   = aws_sqs_queue.tender_upload_events.arn
   }
 }
 
