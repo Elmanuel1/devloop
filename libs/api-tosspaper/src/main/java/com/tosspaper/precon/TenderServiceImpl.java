@@ -1,6 +1,5 @@
 package com.tosspaper.precon;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.BadRequestException;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.HeaderUtils;
@@ -27,7 +26,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,7 +37,6 @@ public class TenderServiceImpl implements TenderService {
 
     private final TenderRepository tenderRepository;
     private final TenderMapper tenderMapper;
-    private final ObjectMapper objectMapper;
 
     // Valid status transitions: from -> Set<to>
     private static final Map<String, Set<String>> VALID_TRANSITIONS = Map.of(
@@ -54,8 +51,6 @@ public class TenderServiceImpl implements TenderService {
 
     @Override
     public Tender createTender(Long companyId, TenderCreateRequest request) {
-        String companyIdStr = companyId.toString();
-
         // Validate name
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BadRequestException("api.validation.nameRequired", "Tender name is required");
@@ -66,27 +61,11 @@ public class TenderServiceImpl implements TenderService {
             throw new BadRequestException("api.validation.dateInPast", "closing_date must not be in the past");
         }
 
-        // Build fields map
-        Map<String, Object> fields = new HashMap<>();
-        fields.put("name", request.getName());
-        fields.put("created_by", getCurrentUserId());
-
-        if (request.getPlatform() != null) {
-            fields.put("platform", request.getPlatform());
-        }
-        if (request.getCurrency() != null) {
-            fields.put("currency", request.getCurrency());
-        }
-        if (request.getClosingDate() != null) {
-            fields.put("closing_date", request.getClosingDate());
-        }
-        if (request.getDeliveryMethod() != null) {
-            fields.put("delivery_method", request.getDeliveryMethod());
-        }
+        TendersRecord record = tenderMapper.toRecord(request, companyId.toString(), getCurrentUserId());
 
         try {
-            TendersRecord record = tenderRepository.insert(companyIdStr, fields);
-            return tenderMapper.toDto(record);
+            TendersRecord inserted = tenderRepository.insert(record);
+            return tenderMapper.toDto(inserted);
         } catch (DuplicateKeyException e) {
             throw new DuplicateException("api.tender.duplicateName",
                     "A tender with name '" + request.getName() + "' already exists");
@@ -140,7 +119,7 @@ public class TenderServiceImpl implements TenderService {
         // Build pagination
         String nextCursor = null;
         if (hasMore && !records.isEmpty()) {
-            TendersRecord lastRecord = records.get(records.size() - 1);
+            TendersRecord lastRecord = records.getLast();
             nextCursor = CursorUtils.encodeCursor(lastRecord.getCreatedAt(), lastRecord.getId());
         }
 
@@ -159,8 +138,7 @@ public class TenderServiceImpl implements TenderService {
     public Tender getTender(Long companyId, String tenderId) {
         String companyIdStr = companyId.toString();
 
-        TendersRecord record = tenderRepository.findById(tenderId)
-                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
+        TendersRecord record = tenderRepository.findById(tenderId);
 
         // Verify company ownership
         if (!record.getCompanyId().equals(companyIdStr)) {
@@ -183,8 +161,7 @@ public class TenderServiceImpl implements TenderService {
         int expectedVersion = HeaderUtils.parseETagVersion(ifMatch);
 
         // Load existing tender
-        TendersRecord existing = tenderRepository.findById(tenderId)
-                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
+        TendersRecord existing = tenderRepository.findById(tenderId);
 
         // Verify company ownership
         if (!existing.getCompanyId().equals(companyIdStr)) {
@@ -203,12 +180,12 @@ public class TenderServiceImpl implements TenderService {
             throw new BadRequestException("api.validation.dateInPast", "closing_date must not be in the past");
         }
 
-        // Build update fields
-        Map<String, Object> fields = buildUpdateFields(request);
+        // Apply update fields via mapper (only non-null fields are set)
+        tenderMapper.updateRecord(request, existing);
 
         // Perform atomic update with version guard
         try {
-            int rowsUpdated = tenderRepository.update(tenderId, fields, expectedVersion);
+            int rowsUpdated = tenderRepository.update(tenderId, existing, expectedVersion);
             if (rowsUpdated == 0) {
                 throw new StaleVersionException("api.tender.staleVersion",
                         "Tender has been modified by another request. Please refresh and try again.");
@@ -219,8 +196,7 @@ public class TenderServiceImpl implements TenderService {
         }
 
         // Reload and return updated tender
-        TendersRecord updated = tenderRepository.findById(tenderId)
-                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
+        TendersRecord updated = tenderRepository.findById(tenderId);
 
         return tenderMapper.toDto(updated);
     }
@@ -229,8 +205,7 @@ public class TenderServiceImpl implements TenderService {
     public void deleteTender(Long companyId, String tenderId) {
         String companyIdStr = companyId.toString();
 
-        TendersRecord record = tenderRepository.findById(tenderId)
-                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
+        TendersRecord record = tenderRepository.findById(tenderId);
 
         // Verify company ownership
         if (!record.getCompanyId().equals(companyIdStr)) {
@@ -273,67 +248,4 @@ public class TenderServiceImpl implements TenderService {
         return "system";
     }
 
-    private Map<String, Object> buildUpdateFields(TenderUpdateRequest request) {
-        Map<String, Object> fields = new HashMap<>();
-
-        if (request.getName() != null) {
-            fields.put("name", request.getName());
-        }
-        if (request.getPlatform() != null) {
-            fields.put("platform", request.getPlatform());
-        }
-        if (request.getStatus() != null) {
-            fields.put("status", request.getStatus().getValue());
-        }
-        if (request.getCurrency() != null) {
-            fields.put("currency", request.getCurrency());
-        }
-        if (request.getReferenceNumber() != null) {
-            fields.put("reference_number", request.getReferenceNumber());
-        }
-        if (request.getScopeOfWork() != null) {
-            fields.put("scope_of_work", request.getScopeOfWork());
-        }
-        if (request.getDeliveryMethod() != null) {
-            fields.put("delivery_method", request.getDeliveryMethod());
-        }
-        if (request.getClosingDate() != null) {
-            fields.put("closing_date", request.getClosingDate());
-        }
-        if (request.getInquiryDeadline() != null) {
-            fields.put("inquiry_deadline", request.getInquiryDeadline());
-        }
-        if (request.getSubmissionMethod() != null) {
-            fields.put("submission_method", request.getSubmissionMethod());
-        }
-        if (request.getSubmissionUrl() != null) {
-            fields.put("submission_url", request.getSubmissionUrl());
-        }
-        if (request.getLiquidatedDamages() != null) {
-            fields.put("liquidated_damages", request.getLiquidatedDamages());
-        }
-
-        // JSONB fields - serialize to JSON strings
-        try {
-            if (request.getBonds() != null) {
-                fields.put("bonds", objectMapper.writeValueAsString(request.getBonds()));
-            }
-            if (request.getConditions() != null) {
-                fields.put("conditions", objectMapper.writeValueAsString(request.getConditions()));
-            }
-            if (request.getParties() != null) {
-                fields.put("parties", objectMapper.writeValueAsString(request.getParties()));
-            }
-            if (request.getLocation() != null) {
-                fields.put("location", objectMapper.writeValueAsString(request.getLocation()));
-            }
-            if (request.getMetadata() != null) {
-                fields.put("metadata", objectMapper.writeValueAsString(request.getMetadata()));
-            }
-        } catch (Exception e) {
-            throw new BadRequestException("api.validation.error", "Failed to serialize request fields: " + e.getMessage());
-        }
-
-        return fields;
-    }
 }
