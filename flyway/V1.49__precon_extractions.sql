@@ -1,4 +1,4 @@
--- V1.48__precon_extractions.sql
+-- V1.49__precon_extractions.sql
 -- Create extraction tables for the precon extraction pipeline.
 -- Extractions read documents attached to an entity (e.g., tender), extract
 -- structured fields via AI, and allow user review before applying values
