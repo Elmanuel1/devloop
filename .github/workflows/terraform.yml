@@ -87,7 +87,7 @@ jobs:
   # PR validation - run terraform plan on changed modules
   pr-validate:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     concurrency:
       group: terraform-${{ matrix.module }}
       cancel-in-progress: false
@@ -107,6 +107,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: terraform/${{ matrix.module }}
@@ -122,7 +123,7 @@ jobs:
   # PR validation for environment-specific modules
   pr-validate-env:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: ${{ matrix.environment }}
     concurrency:
       group: terraform-${{ matrix.module }}-${{ matrix.environment }}
@@ -144,6 +145,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: terraform/${{ matrix.module }}
@@ -162,7 +164,7 @@ jobs:
   # Manual dispatch - run terraform action on specific module
   manual:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     concurrency:
       group: terraform-${{ inputs.module }}-${{ inputs.environment }}
       cancel-in-progress: false
@@ -180,6 +182,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: Terraform Init
         working-directory: terraform/${{ inputs.module }}

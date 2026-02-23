@@ -31,7 +31,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: ${{ inputs.environment }}
       url: ${{ vars.APP_URL }}
@@ -68,6 +68,23 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
           role-skip-session-tagging: true
+
+      - name: Ensure AWS CLI
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "AWS CLI not found, installing..."
+            ARCH=$(uname -m)
+            if [[ "$ARCH" == "aarch64" ]]; then
+              URL="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip"
+            else
+              URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+            fi
+            curl -fsSL "$URL" -o /tmp/awscliv2.zip
+            unzip -qo /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install --update
+            rm -rf /tmp/aws /tmp/awscliv2.zip
+          fi
+          aws --version
 
       - name: Get EC2 Instance IDs
         id: ec2
