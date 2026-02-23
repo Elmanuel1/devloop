@@ -29,7 +29,7 @@ on:
         default: stage
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: build
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
