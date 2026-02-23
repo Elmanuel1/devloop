@@ -232,7 +232,7 @@ resource "aws_sqs_queue" "tender_upload_events" {
   name = "${local.name_prefix}-tender-upload-events"
 
   visibility_timeout_seconds = local.sqs_queues.tender_upload_events.visibility_timeout
-  message_retention_seconds  = 86400 # 1 day
+  message_retention_seconds  = 345600 # 4 days
   receive_wait_time_seconds  = 20    # Long polling
 
   redrive_policy = jsonencode({

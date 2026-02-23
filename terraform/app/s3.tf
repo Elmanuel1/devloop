@@ -241,7 +241,7 @@ resource "aws_s3_bucket_cors_configuration" "tender_uploads" {
 
   cors_rule {
     allowed_headers = ["*"]
-    allowed_methods = ["PUT"]
+    allowed_methods = ["GET", "PUT"]
     allowed_origins = var.s3_cors_allowed_origins
     expose_headers  = ["ETag"]
     max_age_seconds = 3600
