@@ -79,11 +79,11 @@ resource "aws_lb" "app" {
 }
 
 # -----------------------------------------------------------------------------
-# Target Group - HTTP to EC2 instances (app on 8080, TLS terminated at ALB)
+# Target Group - HTTP to EC2 instances (nginx on 80, TLS terminated at ALB)
 # -----------------------------------------------------------------------------
 resource "aws_lb_target_group" "app" {
   name     = "${local.name_prefix}-tg-http"
-  port     = 8080
+  port     = 80
   protocol = "HTTP"
   vpc_id   = var.vpc_id
 
@@ -99,7 +99,7 @@ resource "aws_lb_target_group" "app" {
     timeout             = 10
     interval            = 30
     path                = "/actuator/health"
-    port                = "8080"
+    port                = "80"
     protocol            = "HTTP"
     matcher             = "200"
   }
