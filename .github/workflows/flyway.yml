@@ -202,9 +202,10 @@ jobs:
           FLYWAY_SCRIPT=$(cat <<SCRIPT
           set -e
 
-          # Download migrations from S3
+          # Download migrations from S3 (clean first to remove stale files)
+          rm -rf /tmp/flyway
           mkdir -p /tmp/flyway
-          aws s3 sync s3://tosspaper-email-attachments-${{ env.TARGET_ENV }}/flyway/ /tmp/flyway/
+          aws s3 sync s3://tosspaper-email-attachments-${{ env.TARGET_ENV }}/flyway/ /tmp/flyway/ --delete
 
           # Decode password (base64 encoded to avoid shell escaping issues)
           DB_PASSWORD=\$(echo "${{ steps.db.outputs.password_b64 }}" | base64 -d)
