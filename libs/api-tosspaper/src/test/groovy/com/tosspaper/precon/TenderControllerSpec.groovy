@@ -342,6 +342,92 @@ class TenderControllerSpec extends BaseIntegrationTest {
             response.body.message != null
     }
 
+    def "GET /v1/tenders/{id} returns 304 when If-None-Match matches current ETag"() {
+        given: "a tender in DB"
+            def tenderId = insertTender(companyId.toString(), "Cached Tender", "draft")
+
+        and: "auth headers with matching If-None-Match"
+            def headers = buildAuthHeaders()
+            headers.add("X-Context-Id", companyId.toString())
+            headers.add("If-None-Match", '"v0"')
+
+        when: "getting tender with matching ETag"
+            def response = restTemplate.exchange(
+                "/v1/tenders/${tenderId}",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                Map)
+
+        then: "304 returned with ETag header and no body"
+            response.statusCode == HttpStatus.NOT_MODIFIED
+            response.headers.getFirst("ETag") != null
+            response.body == null
+    }
+
+    def "GET /v1/tenders/{id} returns 200 when If-None-Match is stale"() {
+        given: "a tender in DB with version bumped to 1"
+            def tenderId = insertTender(companyId.toString(), "Stale Tender", "draft")
+            dsl.execute("UPDATE tenders SET version = 1 WHERE id = ?", tenderId)
+
+        and: "auth headers with old ETag"
+            def headers = buildAuthHeaders()
+            headers.add("X-Context-Id", companyId.toString())
+            headers.add("If-None-Match", '"v0"')
+
+        when: "getting tender with stale ETag"
+            def response = restTemplate.exchange(
+                "/v1/tenders/${tenderId}",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                Map)
+
+        then: "200 returned with body and new ETag"
+            response.statusCode == HttpStatus.OK
+            response.headers.getFirst("ETag") == '"v1"'
+            response.body.name == "Stale Tender"
+    }
+
+    def "GET /v1/tenders/{id} returns 200 after PATCH invalidates cached ETag"() {
+        given: "a tender in DB"
+            def tenderId = insertTender(companyId.toString(), "Patchable Tender", "draft")
+
+        and: "first GET to obtain ETag"
+            def getHeaders = buildAuthHeaders()
+            getHeaders.add("X-Context-Id", companyId.toString())
+            def firstGet = restTemplate.exchange(
+                "/v1/tenders/${tenderId}",
+                HttpMethod.GET,
+                new HttpEntity<>(getHeaders),
+                Map)
+            def originalETag = firstGet.headers.getFirst("ETag")
+
+        and: "PATCH to bump version"
+            def patchHeaders = buildAuthHeaders()
+            patchHeaders.add("X-Context-Id", companyId.toString())
+            patchHeaders.add("If-Match", originalETag)
+            patchHeaders.setContentType(MediaType.APPLICATION_JSON)
+            restTemplate.exchange(
+                "/v1/tenders/${tenderId}",
+                HttpMethod.PATCH,
+                new HttpEntity<>([name: "Updated Tender"], patchHeaders),
+                Map)
+
+        when: "GET with the old ETag"
+            def headers = buildAuthHeaders()
+            headers.add("X-Context-Id", companyId.toString())
+            headers.add("If-None-Match", originalETag)
+            def response = restTemplate.exchange(
+                "/v1/tenders/${tenderId}",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                Map)
+
+        then: "200 returned with updated body and new ETag"
+            response.statusCode == HttpStatus.OK
+            response.headers.getFirst("ETag") != originalETag
+            response.body.name == "Updated Tender"
+    }
+
     def "GET /v1/tenders/{id} returns 404 when soft-deleted"() {
         given: "a soft-deleted tender"
             def tenderId = insertTender(companyId.toString(), "Deleted Tender", "draft")

@@ -9,8 +9,10 @@ import com.tosspaper.generated.model.TenderSortDirection;
 import com.tosspaper.generated.model.TenderSortField;
 import com.tosspaper.generated.model.TenderStatus;
 import com.tosspaper.generated.model.TenderUpdateRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -26,6 +28,7 @@ import java.util.UUID;
 public class TenderController implements TendersApi {
 
     private final TenderService tenderService;
+    private final HttpServletRequest request;
 
     @Override
     @PreAuthorize("hasPermission(#xContextId, 'company', 'tenders:create')")
@@ -61,9 +64,15 @@ public class TenderController implements TendersApi {
         log.debug("GET /v1/tenders/{} - xContextId={}", tenderId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
         Tender tender = tenderService.getTender(companyId, tenderId.toString());
-        return ResponseEntity.ok()
-                .eTag(HeaderUtils.formatETag(tender.getVersion()))
-                .body(tender);
+        String currentETag = HeaderUtils.formatETag(tender.getVersion());
+
+        if (HeaderUtils.isNotModified(request, currentETag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(currentETag)
+                    .build();
+        }
+
+        return ResponseEntity.ok().eTag(currentETag).body(tender);
     }
 
     @Override

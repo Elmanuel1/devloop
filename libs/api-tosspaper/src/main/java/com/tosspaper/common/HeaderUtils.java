@@ -1,6 +1,7 @@
 package com.tosspaper.common;
 
 import com.tosspaper.models.exception.InvalidETagException;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
@@ -26,6 +27,18 @@ public class HeaderUtils {
 
     public static String formatETag(Integer version) {
         return "\"v" + (version != null ? version : 0) + "\"";
+    }
+
+    public static boolean isNotModified(HttpServletRequest request, String currentETag) {
+        String ifNoneMatch = request.getHeader("If-None-Match");
+        if (ifNoneMatch == null) return false;
+        try {
+            int clientVersion = parseETagVersion(ifNoneMatch);
+            int serverVersion = parseETagVersion(currentETag);
+            return clientVersion == serverVersion;
+        } catch (InvalidETagException e) {
+            return false;
+        }
     }
 
     public static int parseETagVersion(String etag) {
