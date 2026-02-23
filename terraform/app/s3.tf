@@ -224,10 +224,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "tender_uploads" {
       days          = 365
       storage_class = "GLACIER"
     }
-
-    expiration {
-      days = !local.is_lower_env ? 2555 : 400
-    }
   }
 
   rule {
