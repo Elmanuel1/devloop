@@ -139,11 +139,7 @@ public class TenderRepositoryImpl implements TenderRepository {
         var updateStep = dsl.update(TENDERS)
                 .set(TENDERS.UPDATED_AT, DSL.currentOffsetDateTime());
 
-        // Increment version via raw SQL since version column might not be in jOOQ yet
-        updateStep = updateStep.set(
-                DSL.field("version", Integer.class),
-                DSL.field("version", Integer.class).plus(1)
-        );
+        updateStep = updateStep.set(TENDERS.VERSION, TENDERS.VERSION.plus(1));
 
         if (fields.containsKey("name")) {
             updateStep = updateStep.set(TENDERS.NAME, (String) fields.get("name"));
@@ -200,7 +196,7 @@ public class TenderRepositoryImpl implements TenderRepository {
         return updateStep
                 .where(TENDERS.ID.eq(id))
                 .and(TENDERS.DELETED_AT.isNull())
-                .and(DSL.field("version", Integer.class).eq(expectedVersion))
+                .and(TENDERS.VERSION.eq(expectedVersion))
                 .execute();
     }
 

@@ -69,6 +69,9 @@ public final class ApiErrorMessages {
     public static final String PROPERTY_ALREADY_EXISTS_CODE = "api.property.duplicate";
     public static final String PURCHASE_ORDER_ALREADY_EXISTS_CODE = "api.purchaseOrder.duplicate";
 
+    public static final String INVALID_ETAG_CODE = "api.validation.invalidETag";
+    public static final String INVALID_ETAG = "Invalid ETag format. Expected format: \"v{version}\"";
+
     public static final String FORBIDDEN_CODE = "api.forbidden";
     public static final String FORBIDDEN_DOMAIN_CODE = "api.forbidden.domain";
     public static final String INTERNAL_SERVER_ERROR_CODE = "api.internalError";

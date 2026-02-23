@@ -1,5 +1,6 @@
 package com.tosspaper.common;
 
+import com.tosspaper.models.exception.InvalidETagException;
 import lombok.experimental.UtilityClass;
 
 @UtilityClass
@@ -29,14 +30,14 @@ public class HeaderUtils {
 
     public static int parseETagVersion(String etag) {
         try {
-            String cleaned = etag.replace("\"", "").replace("W/", "");
+            String cleaned = etag.strip().replace("W/", "").replace("\"", "");
             if (cleaned.startsWith("v")) {
                 return Integer.parseInt(cleaned.substring(1));
             }
             return Integer.parseInt(cleaned);
         } catch (NumberFormatException e) {
-            throw new BadRequestException("api.validation.invalidETag",
-                    "Invalid ETag format. Expected format: \"v{version}\"");
+            throw new InvalidETagException(ApiErrorMessages.INVALID_ETAG_CODE,
+                    ApiErrorMessages.INVALID_ETAG);
         }
     }
 } 
