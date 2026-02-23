@@ -114,7 +114,6 @@ jobs:
         if: steps.should_build.outputs.java_changed == 'true'
         uses: gradle/actions/setup-gradle@v4
         with:
-          dependency-graph: generate-and-submit
           build-scan-terms-of-use-url: "https://gradle.com/help/legal-terms-of-use"
           build-scan-terms-of-use-agree: "yes"
 
