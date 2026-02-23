@@ -24,7 +24,9 @@ public class PermissionRegistry {
                     "extraction:view", "extraction:approve", "extraction:reject",
                     "senders:view", "senders:approve", "senders:reject",
                     "integrations:view", "integrations:edit",
-                    "accounts:view", "items:view", "items:create", "items:update"
+                    "accounts:view", "items:view", "items:create", "items:update",
+                    "tenders:view", "tenders:create", "tenders:edit", "tenders:delete",
+                    "extractions:view", "extractions:create", "extractions:edit", "extractions:delete", "extractions:apply"
             ),
 
             // ADMIN: System configuration and operations (cannot manage members or create POs)
@@ -51,7 +53,9 @@ public class PermissionRegistry {
                     "extraction:view", "extraction:approve", "extraction:reject",
                     "senders:view", "senders:approve", "senders:reject",
                     "integrations:view",
-                    "accounts:view", "items:view", "items:create", "items:update"
+                    "accounts:view", "items:view", "items:create", "items:update",
+                    "tenders:view", "tenders:create", "tenders:edit",
+                    "extractions:view", "extractions:create", "extractions:edit", "extractions:apply"
             ),
 
             // VIEWER: Read-only access for auditors
@@ -66,7 +70,9 @@ public class PermissionRegistry {
                     "members:view",
                     "invitations:view",
                     "integrations:view",
-                    "accounts:view", "items:view"
+                    "accounts:view", "items:view",
+                    "tenders:view",
+                    "extractions:view"
             )
     );
 
