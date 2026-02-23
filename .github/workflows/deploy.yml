@@ -179,11 +179,7 @@ jobs:
           # Export IMAGE_TAG for docker-compose
           export IMAGE_TAG="$IMAGE_TAG"
 
-          # Stop existing containers (keep volumes)
-          echo "Stopping existing containers..."
-          docker compose -f docker-compose-remote.yml down || true
-
-          # Start with new image
+          # Recreate only changed containers (keeps temporal running)
           echo "Starting containers..."
           docker compose -f docker-compose-remote.yml up -d
 
