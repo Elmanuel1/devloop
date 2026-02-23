@@ -25,8 +25,8 @@ public class HeaderUtils {
         }
     }
 
-    public static String formatETag(Integer version) {
-        return "\"v" + (version != null ? version : 0) + "\"";
+    public static String formatETag(int version) {
+        return "\"v%d\"".formatted(version);
     }
 
     public static boolean isNotModified(HttpServletRequest request, String currentETag) {
