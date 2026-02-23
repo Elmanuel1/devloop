@@ -1,7 +1,5 @@
 package com.tosspaper.precon
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.tosspaper.common.BadRequestException
 import com.tosspaper.common.DuplicateException
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.generated.model.Tender
@@ -26,14 +24,12 @@ class TenderServiceSpec extends Specification {
 
     TenderRepository tenderRepository
     TenderMapper tenderMapper
-    ObjectMapper objectMapper
     TenderServiceImpl service
 
     def setup() {
         tenderRepository = Mock()
         tenderMapper = Mock()
-        objectMapper = new ObjectMapper()
-        service = new TenderServiceImpl(tenderRepository, tenderMapper, objectMapper)
+        service = new TenderServiceImpl(tenderRepository, tenderMapper)
 
         // Set up security context
         def auth = new TestingAuthenticationToken("test-user", null)
@@ -54,17 +50,22 @@ class TenderServiceSpec extends Specification {
             request.setCurrency("CAD")
             request.setDeliveryMethod("lump_sum")
             def record = createRecord("tender-1", companyId.toString())
+            def insertedRecord = createRecord("tender-1", companyId.toString())
+            insertedRecord.setName("Bridge RFP")
             def dto = createTenderDto("tender-1")
             dto.setName("Bridge RFP")
 
         when: "creating a tender"
             def result = service.createTender(companyId, request)
 
-        then: "repository inserts the tender"
-            1 * tenderRepository.insert("1", _ as Map) >> record
+        then: "mapper converts request to record"
+            1 * tenderMapper.toRecord(request, "1", "test-user") >> record
+
+        and: "repository inserts the record"
+            1 * tenderRepository.insert(record) >> insertedRecord
 
         and: "mapper converts to DTO"
-            1 * tenderMapper.toDto(record) >> dto
+            1 * tenderMapper.toDto(insertedRecord) >> dto
 
         and: "result is returned"
             result.id != null
@@ -76,40 +77,19 @@ class TenderServiceSpec extends Specification {
             def companyId = 1L
             def request = new TenderCreateRequest()
             request.setName("bridge rfp")
+            def record = createRecord("tender-1", companyId.toString())
 
         when: "creating a tender"
             service.createTender(companyId, request)
 
-        then: "repository throws DuplicateKeyException"
-            1 * tenderRepository.insert("1", _ as Map) >> { throw new DuplicateKeyException("duplicate") }
+        then: "mapper converts request to record"
+            1 * tenderMapper.toRecord(request, "1", "test-user") >> record
+
+        and: "repository throws DuplicateKeyException"
+            1 * tenderRepository.insert(record) >> { throw new DuplicateKeyException("duplicate") }
 
         and: "DuplicateException is thrown"
             thrown(DuplicateException)
-    }
-
-    def "should throw BadRequestException when name is missing"() {
-        given: "a request with no name"
-            def companyId = 1L
-            def request = new TenderCreateRequest()
-
-        when: "creating a tender"
-            service.createTender(companyId, request)
-
-        then: "BadRequestException is thrown"
-            thrown(BadRequestException)
-    }
-
-    def "should throw BadRequestException when name is blank"() {
-        given: "a request with blank name"
-            def companyId = 1L
-            def request = new TenderCreateRequest()
-            request.setName("  ")
-
-        when: "creating a tender"
-            service.createTender(companyId, request)
-
-        then: "BadRequestException is thrown"
-            thrown(BadRequestException)
     }
 
     // ==================== listTenders ====================
@@ -186,7 +166,7 @@ class TenderServiceSpec extends Specification {
             def result = service.getTender(companyId, tenderId)
 
         then: "repository returns record"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(record)
+            1 * tenderRepository.findById(tenderId) >> record
 
         and: "mapper converts"
             1 * tenderMapper.toDto(record) >> dto
@@ -203,8 +183,8 @@ class TenderServiceSpec extends Specification {
         when: "getting tender"
             service.getTender(companyId, tenderId)
 
-        then: "repository returns empty"
-            1 * tenderRepository.findById(tenderId) >> Optional.empty()
+        then: "repository throws NotFoundException"
+            1 * tenderRepository.findById(tenderId) >> { throw new NotFoundException("api.tender.notFound", "Tender not found") }
 
         and: "NotFoundException thrown"
             thrown(NotFoundException)
@@ -220,7 +200,7 @@ class TenderServiceSpec extends Specification {
             service.getTender(companyId, tenderId)
 
         then: "repository returns record with different company"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(record)
+            1 * tenderRepository.findById(tenderId) >> record
 
         and: "NotFoundException thrown"
             thrown(NotFoundException)
@@ -244,13 +224,16 @@ class TenderServiceSpec extends Specification {
             def result = service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
+            1 * tenderRepository.findById(tenderId) >> existing
+
+        and: "mapper applies update"
+            1 * tenderMapper.updateRecord(request, existing)
 
         and: "update executes"
-            1 * tenderRepository.update(tenderId, _ as Map, 0) >> 1
+            1 * tenderRepository.update(tenderId, existing, 0) >> 1
 
         and: "updated record is fetched"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(updated)
+            1 * tenderRepository.findById(tenderId) >> updated
             1 * tenderMapper.toDto(updated) >> dto
 
         and: "result has updated name"
@@ -269,10 +252,13 @@ class TenderServiceSpec extends Specification {
             service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
+            1 * tenderRepository.findById(tenderId) >> existing
+
+        and: "mapper applies update"
+            1 * tenderMapper.updateRecord(request, existing)
 
         and: "update returns 0 rows"
-            1 * tenderRepository.update(tenderId, _, 0) >> 0
+            1 * tenderRepository.update(tenderId, existing, 0) >> 0
 
         and: "StaleVersionException thrown"
             thrown(StaleVersionException)
@@ -290,10 +276,13 @@ class TenderServiceSpec extends Specification {
             service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
+            1 * tenderRepository.findById(tenderId) >> existing
+
+        and: "mapper applies update"
+            1 * tenderMapper.updateRecord(request, existing)
 
         and: "update throws DuplicateKeyException"
-            1 * tenderRepository.update(tenderId, _, 0) >> { throw new DuplicateKeyException("duplicate") }
+            1 * tenderRepository.update(tenderId, existing, 0) >> { throw new DuplicateKeyException("duplicate") }
 
         and: "DuplicateException thrown"
             thrown(DuplicateException)
@@ -330,9 +319,10 @@ class TenderServiceSpec extends Specification {
             def result = service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "no exception"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
-            1 * tenderRepository.update(tenderId, _, 0) >> 1
-            1 * tenderRepository.findById(tenderId) >> Optional.of(updated)
+            1 * tenderRepository.findById(tenderId) >> existing
+            1 * tenderMapper.updateRecord(request, existing)
+            1 * tenderRepository.update(tenderId, existing, 0) >> 1
+            1 * tenderRepository.findById(tenderId) >> updated
             1 * tenderMapper.toDto(updated) >> dto
             result.status == TenderStatus.PENDING
     }
@@ -350,7 +340,7 @@ class TenderServiceSpec extends Specification {
             service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
+            1 * tenderRepository.findById(tenderId) >> existing
 
         and: "InvalidStatusTransitionException thrown"
             thrown(InvalidStatusTransitionException)
@@ -369,7 +359,7 @@ class TenderServiceSpec extends Specification {
             service.deleteTender(companyId, tenderId)
 
         then: "repository finds record"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(record)
+            1 * tenderRepository.findById(tenderId) >> record
 
         and: "soft delete called"
             1 * tenderRepository.softDelete(tenderId)
@@ -386,7 +376,7 @@ class TenderServiceSpec extends Specification {
             service.deleteTender(companyId, tenderId)
 
         then: "repository finds record"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(record)
+            1 * tenderRepository.findById(tenderId) >> record
 
         and: "soft delete called"
             1 * tenderRepository.softDelete(tenderId)
@@ -403,7 +393,7 @@ class TenderServiceSpec extends Specification {
             service.deleteTender(companyId, tenderId)
 
         then: "repository finds record"
-            1 * tenderRepository.findById(tenderId) >> Optional.of(record)
+            1 * tenderRepository.findById(tenderId) >> record
 
         and: "CannotDeleteException thrown"
             thrown(CannotDeleteException)
@@ -417,8 +407,8 @@ class TenderServiceSpec extends Specification {
         when: "deleting"
             service.deleteTender(companyId, tenderId)
 
-        then: "repository returns empty"
-            1 * tenderRepository.findById(tenderId) >> Optional.empty()
+        then: "repository throws NotFoundException"
+            1 * tenderRepository.findById(tenderId) >> { throw new NotFoundException("api.tender.notFound", "Tender not found") }
 
         and: "NotFoundException thrown"
             thrown(NotFoundException)

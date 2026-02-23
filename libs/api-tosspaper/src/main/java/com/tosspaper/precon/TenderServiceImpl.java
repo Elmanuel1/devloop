@@ -51,16 +51,6 @@ public class TenderServiceImpl implements TenderService {
 
     @Override
     public Tender createTender(Long companyId, TenderCreateRequest request) {
-        // Validate name
-        if (request.getName() == null || request.getName().isBlank()) {
-            throw new BadRequestException("api.validation.nameRequired", "Tender name is required");
-        }
-
-        // Validate closing_date is not in the past
-        if (request.getClosingDate() != null && request.getClosingDate().isBefore(OffsetDateTime.now())) {
-            throw new BadRequestException("api.validation.dateInPast", "closing_date must not be in the past");
-        }
-
         TendersRecord record = tenderMapper.toRecord(request, companyId.toString(), getCurrentUserId());
 
         try {
@@ -173,11 +163,6 @@ public class TenderServiceImpl implements TenderService {
             String currentStatus = existing.getStatus();
             String newStatus = request.getStatus().getValue();
             validateStatusTransition(currentStatus, newStatus);
-        }
-
-        // Validate closing_date
-        if (request.getClosingDate() != null && request.getClosingDate().isBefore(OffsetDateTime.now())) {
-            throw new BadRequestException("api.validation.dateInPast", "closing_date must not be in the past");
         }
 
         // Apply update fields via mapper (only non-null fields are set)
