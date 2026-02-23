@@ -94,22 +94,6 @@ class TenderRepositorySpec extends BaseIntegrationTest {
             record.name == "Bridge RFP"
     }
 
-    def "should check name existence case-insensitively"() {
-        given: "a tender"
-            tenderRepository.insert(companyIdStr, [name: "Bridge RFP", created_by: "user-1"])
-
-        expect: "case-insensitive check finds it"
-            tenderRepository.existsByCompanyIdAndName(companyIdStr, "bridge rfp")
-    }
-
-    def "should not find name that belongs to other company"() {
-        given: "a tender in another company"
-            tenderRepository.insert("999", [name: "Bridge RFP", created_by: "user-1"])
-
-        expect: "our company doesn't find it"
-            !tenderRepository.existsByCompanyIdAndName(companyIdStr, "bridge rfp")
-    }
-
     // ==================== findById ====================
 
     def "should find tender by id"() {
@@ -276,18 +260,6 @@ class TenderRepositorySpec extends BaseIntegrationTest {
             def updated = tenderRepository.findById(inserted.id).get()
             updated.name == "New Name"
             updated.currency == "CAD"
-    }
-
-    def "should check name uniqueness excluding self"() {
-        given: "two tenders"
-            def t1 = tenderRepository.insert(companyIdStr, [name: "Bridge", created_by: "user-1"])
-            def t2 = tenderRepository.insert(companyIdStr, [name: "Road", created_by: "user-1"])
-
-        expect: "checking for 'bridge' excluding t2 returns true (t1 has it)"
-            tenderRepository.existsByCompanyIdAndNameExcludingSelf(companyIdStr, "bridge", t2.id)
-
-        and: "checking for 'bridge' excluding t1 returns false (it IS t1)"
-            !tenderRepository.existsByCompanyIdAndNameExcludingSelf(companyIdStr, "bridge", t1.id)
     }
 
     // ==================== softDelete ====================

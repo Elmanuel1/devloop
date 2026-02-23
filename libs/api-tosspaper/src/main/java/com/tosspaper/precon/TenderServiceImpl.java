@@ -3,15 +3,27 @@ package com.tosspaper.precon;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.BadRequestException;
 import com.tosspaper.common.CursorUtils;
+import com.tosspaper.common.HeaderUtils;
+import com.tosspaper.common.DuplicateException;
 import com.tosspaper.common.NotFoundException;
 import com.tosspaper.generated.model.Tender;
 import com.tosspaper.generated.model.TenderCreateRequest;
 import com.tosspaper.generated.model.TenderListResponse;
 import com.tosspaper.generated.model.TenderPagination;
+import com.tosspaper.generated.model.TenderSortDirection;
+import com.tosspaper.generated.model.TenderSortField;
+import com.tosspaper.generated.model.TenderStatus;
 import com.tosspaper.generated.model.TenderUpdateRequest;
+import com.tosspaper.models.exception.CannotDeleteException;
+import com.tosspaper.models.exception.IfMatchRequiredException;
+import com.tosspaper.models.exception.InvalidStatusTransitionException;
+import com.tosspaper.models.exception.StaleVersionException;
 import com.tosspaper.models.jooq.tables.records.TendersRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -41,18 +53,12 @@ public class TenderServiceImpl implements TenderService {
     private static final Set<String> FINAL_STATUSES = Set.of("won", "lost");
 
     @Override
-    public Tender createTender(Long companyId, TenderCreateRequest request, String createdBy) {
+    public Tender createTender(Long companyId, TenderCreateRequest request) {
         String companyIdStr = companyId.toString();
 
         // Validate name
         if (request.getName() == null || request.getName().isBlank()) {
             throw new BadRequestException("api.validation.nameRequired", "Tender name is required");
-        }
-
-        // Check duplicate name (case-insensitive)
-        if (tenderRepository.existsByCompanyIdAndName(companyIdStr, request.getName().toLowerCase())) {
-            throw new DuplicateNameException("api.tender.duplicateName",
-                    "A tender with name '" + request.getName() + "' already exists");
         }
 
         // Validate closing_date is not in the past
@@ -63,7 +69,7 @@ public class TenderServiceImpl implements TenderService {
         // Build fields map
         Map<String, Object> fields = new HashMap<>();
         fields.put("name", request.getName());
-        fields.put("created_by", createdBy);
+        fields.put("created_by", getCurrentUserId());
 
         if (request.getPlatform() != null) {
             fields.put("platform", request.getPlatform());
@@ -78,13 +84,48 @@ public class TenderServiceImpl implements TenderService {
             fields.put("delivery_method", request.getDeliveryMethod());
         }
 
-        TendersRecord record = tenderRepository.insert(companyIdStr, fields);
-        return tenderMapper.toDto(record);
+        try {
+            TendersRecord record = tenderRepository.insert(companyIdStr, fields);
+            return tenderMapper.toDto(record);
+        } catch (DuplicateKeyException e) {
+            throw new DuplicateException("api.tender.duplicateName",
+                    "A tender with name '" + request.getName() + "' already exists");
+        }
     }
 
     @Override
-    public TenderListResponse listTenders(Long companyId, TenderQuery query) {
+    public TenderListResponse listTenders(Long companyId, Integer limit, String cursor, String search,
+                                          TenderSortField sort, TenderSortDirection direction, TenderStatus status) {
         String companyIdStr = companyId.toString();
+
+        // Validate limit
+        int effectiveLimit = limit != null ? limit : 20;
+        if (effectiveLimit < 1 || effectiveLimit > 100) {
+            throw new BadRequestException("api.validation.invalidLimit", "Limit must be between 1 and 100");
+        }
+
+        // Decode cursor
+        OffsetDateTime cursorCreatedAt = null;
+        String cursorId = null;
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                CursorUtils.CursorPair cursorPair = CursorUtils.decodeCursor(cursor);
+                cursorCreatedAt = cursorPair.createdAt();
+                cursorId = cursorPair.id();
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("api.validation.invalidCursor", "Invalid cursor format");
+            }
+        }
+
+        TenderQuery query = TenderQuery.builder()
+                .search(search)
+                .status(status != null ? status.getValue() : null)
+                .sortBy(sort != null ? sort.getValue() : "created_at")
+                .sortDirection(direction != null ? direction.getValue() : "desc")
+                .limit(effectiveLimit)
+                .cursorCreatedAt(cursorCreatedAt)
+                .cursorId(cursorId)
+                .build();
 
         List<TendersRecord> records = tenderRepository.findByCompanyId(companyIdStr, query);
 
@@ -130,8 +171,16 @@ public class TenderServiceImpl implements TenderService {
     }
 
     @Override
-    public Tender updateTender(Long companyId, String tenderId, TenderUpdateRequest request, int expectedVersion) {
+    public Tender updateTender(Long companyId, String tenderId, TenderUpdateRequest request, String ifMatch) {
         String companyIdStr = companyId.toString();
+
+        // If-Match is required
+        if (ifMatch == null || ifMatch.isBlank()) {
+            throw new IfMatchRequiredException("api.validation.ifMatchRequired",
+                    "If-Match header is required for updates. Use the ETag from GET /v1/tenders/{id}.");
+        }
+
+        int expectedVersion = HeaderUtils.parseETagVersion(ifMatch);
 
         // Load existing tender
         TendersRecord existing = tenderRepository.findById(tenderId)
@@ -149,15 +198,6 @@ public class TenderServiceImpl implements TenderService {
             validateStatusTransition(currentStatus, newStatus);
         }
 
-        // Check name uniqueness if name is being changed
-        if (request.getName() != null && !request.getName().isBlank()) {
-            if (tenderRepository.existsByCompanyIdAndNameExcludingSelf(
-                    companyIdStr, request.getName().toLowerCase(), tenderId)) {
-                throw new DuplicateNameException("api.tender.duplicateName",
-                        "A tender with name '" + request.getName() + "' already exists");
-            }
-        }
-
         // Validate closing_date
         if (request.getClosingDate() != null && request.getClosingDate().isBefore(OffsetDateTime.now())) {
             throw new BadRequestException("api.validation.dateInPast", "closing_date must not be in the past");
@@ -167,10 +207,15 @@ public class TenderServiceImpl implements TenderService {
         Map<String, Object> fields = buildUpdateFields(request);
 
         // Perform atomic update with version guard
-        int rowsUpdated = tenderRepository.update(tenderId, fields, expectedVersion);
-        if (rowsUpdated == 0) {
-            throw new StaleVersionException("api.tender.staleVersion",
-                    "Tender has been modified by another request. Please refresh and try again.");
+        try {
+            int rowsUpdated = tenderRepository.update(tenderId, fields, expectedVersion);
+            if (rowsUpdated == 0) {
+                throw new StaleVersionException("api.tender.staleVersion",
+                        "Tender has been modified by another request. Please refresh and try again.");
+            }
+        } catch (DuplicateKeyException e) {
+            throw new DuplicateException("api.tender.duplicateName",
+                    "A tender with name '" + request.getName() + "' already exists");
         }
 
         // Reload and return updated tender
@@ -218,6 +263,14 @@ public class TenderServiceImpl implements TenderService {
             throw new InvalidStatusTransitionException("api.tender.invalidStatusTransition",
                     "Invalid status transition from '" + currentStatus + "' to '" + newStatus + "'. Allowed transitions: " + allowedStr);
         }
+    }
+
+    private String getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getName() != null) {
+            return auth.getName();
+        }
+        return "system";
     }
 
     private Map<String, Object> buildUpdateFields(TenderUpdateRequest request) {

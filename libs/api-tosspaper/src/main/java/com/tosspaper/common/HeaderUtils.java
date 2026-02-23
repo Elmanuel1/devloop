@@ -7,7 +7,7 @@ public class HeaderUtils {
 
     /**
      * Safely parses the X-Context-Id header value to a Long company ID.
-     * 
+     *
      * @param xContextId the X-Context-Id header value
      * @return the parsed company ID as Long
      * @throws BadRequestException if the header value is not a valid Long
@@ -17,9 +17,26 @@ public class HeaderUtils {
             return Long.parseLong(xContextId);
         } catch (NumberFormatException e) {
             throw new BadRequestException(
-                ApiErrorMessages.INVALID_HEADER_FORMAT, 
+                ApiErrorMessages.INVALID_HEADER_FORMAT,
                 ApiErrorMessages.INVALID_CONTEXT_ID_FORMAT.formatted(xContextId)
             );
+        }
+    }
+
+    public static String formatETag(Integer version) {
+        return "\"v" + (version != null ? version : 0) + "\"";
+    }
+
+    public static int parseETagVersion(String etag) {
+        try {
+            String cleaned = etag.replace("\"", "").replace("W/", "");
+            if (cleaned.startsWith("v")) {
+                return Integer.parseInt(cleaned.substring(1));
+            }
+            return Integer.parseInt(cleaned);
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("api.validation.invalidETag",
+                    "Invalid ETag format. Expected format: \"v{version}\"");
         }
     }
 } 

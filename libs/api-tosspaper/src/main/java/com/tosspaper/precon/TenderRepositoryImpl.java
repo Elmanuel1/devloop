@@ -213,32 +213,10 @@ public class TenderRepositoryImpl implements TenderRepository {
                 .execute();
     }
 
-    @Override
-    public boolean existsByCompanyIdAndName(String companyId, String nameLower) {
-        return dsl.fetchExists(
-                dsl.selectFrom(TENDERS)
-                        .where(TENDERS.COMPANY_ID.eq(companyId))
-                        .and(DSL.lower(TENDERS.NAME).eq(nameLower.toLowerCase()))
-                        .and(TENDERS.DELETED_AT.isNull())
-        );
-    }
-
-    @Override
-    public boolean existsByCompanyIdAndNameExcludingSelf(String companyId, String nameLower, String excludeId) {
-        return dsl.fetchExists(
-                dsl.selectFrom(TENDERS)
-                        .where(TENDERS.COMPANY_ID.eq(companyId))
-                        .and(DSL.lower(TENDERS.NAME).eq(nameLower.toLowerCase()))
-                        .and(TENDERS.ID.ne(excludeId))
-                        .and(TENDERS.DELETED_AT.isNull())
-        );
-    }
-
     private List<SortField<?>> buildSortFields(String sortBy, String sortDirection) {
         boolean asc = "asc".equalsIgnoreCase(sortDirection);
 
         if ("closing_date".equals(sortBy)) {
-            // Nulls last regardless of direction
             if (asc) {
                 return List.of(
                         TENDERS.CLOSING_DATE.asc().nullsLast(),

@@ -1,4 +1,4 @@
-package com.tosspaper.precon;
+package com.tosspaper.models.exception;
 
 import lombok.Getter;
 

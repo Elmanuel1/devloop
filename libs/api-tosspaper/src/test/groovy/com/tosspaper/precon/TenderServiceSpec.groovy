@@ -2,12 +2,22 @@ package com.tosspaper.precon
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.common.BadRequestException
+import com.tosspaper.common.DuplicateException
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.generated.model.Tender
 import com.tosspaper.generated.model.TenderCreateRequest
+import com.tosspaper.generated.model.TenderSortDirection
+import com.tosspaper.generated.model.TenderSortField
 import com.tosspaper.generated.model.TenderStatus
 import com.tosspaper.generated.model.TenderUpdateRequest
+import com.tosspaper.models.exception.CannotDeleteException
+import com.tosspaper.models.exception.IfMatchRequiredException
+import com.tosspaper.models.exception.InvalidStatusTransitionException
+import com.tosspaper.models.exception.StaleVersionException
 import com.tosspaper.models.jooq.tables.records.TendersRecord
+import org.springframework.dao.DuplicateKeyException
+import org.springframework.security.authentication.TestingAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import spock.lang.Specification
 
 import java.time.OffsetDateTime
@@ -24,11 +34,19 @@ class TenderServiceSpec extends Specification {
         tenderMapper = Mock()
         objectMapper = new ObjectMapper()
         service = new TenderServiceImpl(tenderRepository, tenderMapper, objectMapper)
+
+        // Set up security context
+        def auth = new TestingAuthenticationToken("test-user", null)
+        SecurityContextHolder.getContext().setAuthentication(auth)
+    }
+
+    def cleanup() {
+        SecurityContextHolder.clearContext()
     }
 
     // ==================== createTender ====================
 
-    def "should create tender with all fields and return response"() {
+    def "should create tender and return response"() {
         given: "a valid create request"
             def companyId = 1L
             def request = new TenderCreateRequest()
@@ -40,12 +58,9 @@ class TenderServiceSpec extends Specification {
             dto.setName("Bridge RFP")
 
         when: "creating a tender"
-            def result = service.createTender(companyId, request, "user-1")
+            def result = service.createTender(companyId, request)
 
-        then: "repository checks for duplicates"
-            1 * tenderRepository.existsByCompanyIdAndName("1", "bridge rfp") >> false
-
-        and: "repository inserts the tender"
+        then: "repository inserts the tender"
             1 * tenderRepository.insert("1", _ as Map) >> record
 
         and: "mapper converts to DTO"
@@ -56,46 +71,20 @@ class TenderServiceSpec extends Specification {
             result.name == "Bridge RFP"
     }
 
-    def "should throw DuplicateNameException when name exists for company (case-insensitive)"() {
+    def "should throw DuplicateException when name exists for company"() {
         given: "a request with a duplicate name"
             def companyId = 1L
             def request = new TenderCreateRequest()
             request.setName("bridge rfp")
 
         when: "creating a tender"
-            service.createTender(companyId, request, "user-1")
+            service.createTender(companyId, request)
 
-        then: "repository finds duplicate"
-            1 * tenderRepository.existsByCompanyIdAndName("1", "bridge rfp") >> true
+        then: "repository throws DuplicateKeyException"
+            1 * tenderRepository.insert("1", _ as Map) >> { throw new DuplicateKeyException("duplicate") }
 
-        and: "DuplicateNameException is thrown"
-            thrown(DuplicateNameException)
-    }
-
-    def "should set status to draft regardless of input"() {
-        given: "a request (status is not settable via create)"
-            def companyId = 1L
-            def request = new TenderCreateRequest()
-            request.setName("Test Tender")
-            def record = createRecord("tender-1", companyId.toString())
-            record.setStatus("draft")
-            def dto = createTenderDto("tender-1")
-            dto.setStatus(TenderStatus.DRAFT)
-
-        when: "creating a tender"
-            def result = service.createTender(companyId, request, "user-1")
-
-        then: "no duplicates found"
-            1 * tenderRepository.existsByCompanyIdAndName("1", "test tender") >> false
-
-        and: "repository insert is called"
-            1 * tenderRepository.insert("1", _ as Map) >> record
-
-        and: "mapper converts to DTO"
-            1 * tenderMapper.toDto(record) >> dto
-
-        and: "result status is draft"
-            result.status == TenderStatus.DRAFT
+        and: "DuplicateException is thrown"
+            thrown(DuplicateException)
     }
 
     def "should throw BadRequestException when name is missing"() {
@@ -104,7 +93,7 @@ class TenderServiceSpec extends Specification {
             def request = new TenderCreateRequest()
 
         when: "creating a tender"
-            service.createTender(companyId, request, "user-1")
+            service.createTender(companyId, request)
 
         then: "BadRequestException is thrown"
             thrown(BadRequestException)
@@ -117,7 +106,7 @@ class TenderServiceSpec extends Specification {
             request.setName("  ")
 
         when: "creating a tender"
-            service.createTender(companyId, request, "user-1")
+            service.createTender(companyId, request)
 
         then: "BadRequestException is thrown"
             thrown(BadRequestException)
@@ -128,19 +117,14 @@ class TenderServiceSpec extends Specification {
     def "should return paginated list of tenders"() {
         given: "a company with tenders"
             def companyId = 1L
-            def query = TenderQuery.builder()
-                .limit(20)
-                .sortBy("created_at")
-                .sortDirection("desc")
-                .build()
             def records = [createRecord("t1", "1"), createRecord("t2", "1")]
             def dtos = [createTenderDto("t1"), createTenderDto("t2")]
 
         when: "listing tenders"
-            def result = service.listTenders(companyId, query)
+            def result = service.listTenders(companyId, 20, null, null, null, null, null)
 
         then: "repository returns records"
-            1 * tenderRepository.findByCompanyId("1", query) >> records
+            1 * tenderRepository.findByCompanyId("1", _ as TenderQuery) >> records
 
         and: "mapper converts"
             1 * tenderMapper.toDtoList(records) >> dtos
@@ -150,17 +134,11 @@ class TenderServiceSpec extends Specification {
     }
 
     def "should pass search term to repository"() {
-        given: "a query with search"
+        given: "a company"
             def companyId = 1L
-            def query = TenderQuery.builder()
-                .search("bridge")
-                .limit(20)
-                .sortBy("created_at")
-                .sortDirection("desc")
-                .build()
 
-        when: "listing tenders"
-            service.listTenders(companyId, query)
+        when: "listing tenders with search"
+            service.listTenders(companyId, 20, null, "bridge", null, null, null)
 
         then: "repository is called with search"
             1 * tenderRepository.findByCompanyId("1", { it.search == "bridge" }) >> []
@@ -168,17 +146,11 @@ class TenderServiceSpec extends Specification {
     }
 
     def "should pass status filter to repository"() {
-        given: "a query with status"
+        given: "a company"
             def companyId = 1L
-            def query = TenderQuery.builder()
-                .status("draft")
-                .limit(20)
-                .sortBy("created_at")
-                .sortDirection("desc")
-                .build()
 
-        when: "listing tenders"
-            service.listTenders(companyId, query)
+        when: "listing tenders with status"
+            service.listTenders(companyId, 20, null, null, null, null, TenderStatus.DRAFT)
 
         then: "repository is called with status"
             1 * tenderRepository.findByCompanyId("1", { it.status == "draft" }) >> []
@@ -188,17 +160,12 @@ class TenderServiceSpec extends Specification {
     def "should return empty list when no tenders exist"() {
         given: "no tenders"
             def companyId = 1L
-            def query = TenderQuery.builder()
-                .limit(20)
-                .sortBy("created_at")
-                .sortDirection("desc")
-                .build()
 
         when: "listing tenders"
-            def result = service.listTenders(companyId, query)
+            def result = service.listTenders(companyId, 20, null, null, null, null, null)
 
         then: "repository returns empty"
-            1 * tenderRepository.findByCompanyId("1", query) >> []
+            1 * tenderRepository.findByCompanyId("1", _ as TenderQuery) >> []
             1 * tenderMapper.toDtoList([]) >> []
 
         and: "result is empty"
@@ -208,7 +175,7 @@ class TenderServiceSpec extends Specification {
 
     // ==================== getTender ====================
 
-    def "should return tender with all fields"() {
+    def "should return tender"() {
         given: "a tender exists"
             def companyId = 1L
             def tenderId = "tender-1"
@@ -274,13 +241,10 @@ class TenderServiceSpec extends Specification {
             dto.setName("New Name")
 
         when: "updating"
-            def result = service.updateTender(companyId, tenderId, request, 0)
+            def result = service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
             1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
-
-        and: "name uniqueness checked"
-            1 * tenderRepository.existsByCompanyIdAndNameExcludingSelf("1", "new name", tenderId) >> false
 
         and: "update executes"
             1 * tenderRepository.update(tenderId, _ as Map, 0) >> 1
@@ -302,11 +266,10 @@ class TenderServiceSpec extends Specification {
             request.setName("New Name")
 
         when: "updating with stale version"
-            service.updateTender(companyId, tenderId, request, 0)
+            service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
             1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
-            1 * tenderRepository.existsByCompanyIdAndNameExcludingSelf("1", "new name", tenderId) >> false
 
         and: "update returns 0 rows"
             1 * tenderRepository.update(tenderId, _, 0) >> 0
@@ -315,7 +278,7 @@ class TenderServiceSpec extends Specification {
             thrown(StaleVersionException)
     }
 
-    def "should throw DuplicateNameException when name conflicts"() {
+    def "should throw DuplicateException when name conflicts on update"() {
         given: "an existing tender with name conflict"
             def companyId = 1L
             def tenderId = "tender-1"
@@ -324,16 +287,30 @@ class TenderServiceSpec extends Specification {
             request.setName("taken")
 
         when: "updating with taken name"
-            service.updateTender(companyId, tenderId, request, 0)
+            service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
             1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
 
-        and: "name conflict detected"
-            1 * tenderRepository.existsByCompanyIdAndNameExcludingSelf("1", "taken", tenderId) >> true
+        and: "update throws DuplicateKeyException"
+            1 * tenderRepository.update(tenderId, _, 0) >> { throw new DuplicateKeyException("duplicate") }
 
-        and: "DuplicateNameException thrown"
-            thrown(DuplicateNameException)
+        and: "DuplicateException thrown"
+            thrown(DuplicateException)
+    }
+
+    def "should throw IfMatchRequiredException when If-Match missing"() {
+        given: "an existing tender"
+            def companyId = 1L
+            def tenderId = "tender-1"
+            def request = new TenderUpdateRequest()
+            request.setName("New Name")
+
+        when: "updating without If-Match"
+            service.updateTender(companyId, tenderId, request, null)
+
+        then: "IfMatchRequiredException thrown"
+            thrown(IfMatchRequiredException)
     }
 
     def "should validate status transition draft to pending"() {
@@ -350,7 +327,7 @@ class TenderServiceSpec extends Specification {
             dto.setStatus(TenderStatus.PENDING)
 
         when: "updating status to pending"
-            def result = service.updateTender(companyId, tenderId, request, 0)
+            def result = service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "no exception"
             1 * tenderRepository.findById(tenderId) >> Optional.of(existing)
@@ -370,7 +347,7 @@ class TenderServiceSpec extends Specification {
             request.setStatus(TenderStatus.WON)
 
         when: "updating status from draft to won"
-            service.updateTender(companyId, tenderId, request, 0)
+            service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
             1 * tenderRepository.findById(tenderId) >> Optional.of(existing)

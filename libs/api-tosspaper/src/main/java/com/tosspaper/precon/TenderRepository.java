@@ -17,8 +17,4 @@ public interface TenderRepository {
     int update(String id, Map<String, Object> fields, int expectedVersion);
 
     int softDelete(String id);
-
-    boolean existsByCompanyIdAndName(String companyId, String nameLower);
-
-    boolean existsByCompanyIdAndNameExcludingSelf(String companyId, String nameLower, String excludeId);
 }
