@@ -144,7 +144,8 @@ components:
       type: string
       description: >
         Lifecycle status of a tender. draft — initial state; pending — active and accepting bids;
-        submitted — bid has been submitted; won/lost — outcome; cancelled — withdrawn.
+        submitted — bid has been submitted; won/lost — outcome; cancelled — withdrawn;
+        archived — retained for records but hidden from default views.
       enum:
         - draft
         - pending
@@ -152,6 +153,7 @@ components:
         - won
         - lost
         - cancelled
+        - archived
 
     TenderDocumentStatus:
       type: string
@@ -1407,6 +1409,7 @@ paths:
       summary: List Tenders
       description: >
         List tenders with cursor-based pagination, search, sort, and status filter.
+        Returns all non-archived tenders by default.
       tags:
         - Tenders
       parameters:
@@ -1452,7 +1455,7 @@ paths:
           required: false
           schema:
             $ref: '#/components/schemas/TenderStatus'
-          description: Filter by status.
+          description: Filter by status. Pass status=archived to list archived tenders.
       responses:
         '200':
           description: OK
@@ -1544,7 +1547,8 @@ paths:
       description: >
         Partial update — all fields optional. Status transitions are validated:
         draft → pending; pending → submitted, cancelled; submitted → won, lost;
-        cancelled → draft. Any other transition returns 400.
+        won/lost → archived; cancelled → draft; archived → draft.
+        Any other transition returns 400.
       tags:
         - Tenders
       parameters:
