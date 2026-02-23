@@ -215,10 +215,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "tender_uploads" {
     id     = "archive-old-uploads"
     status = "Enabled"
 
-    filter {
-      prefix = "tender-uploads/"
-    }
-
     transition {
       days          = 90
       storage_class = "STANDARD_IA"
@@ -260,9 +256,8 @@ resource "aws_s3_bucket_notification" "tender_upload_events" {
   bucket = aws_s3_bucket.tender_uploads.id
 
   queue {
-    queue_arn     = aws_sqs_queue.tender_upload_events.arn
-    events        = ["s3:ObjectCreated:*"]
-    filter_prefix = "tender-uploads/"
+    queue_arn = aws_sqs_queue.tender_upload_events.arn
+    events    = ["s3:ObjectCreated:*"]
   }
 
   depends_on = [aws_sqs_queue_policy.allow_s3_tender_notifications]
