@@ -160,22 +160,6 @@ class TenderRepositorySpec extends BaseIntegrationTest {
             results[0].name == "Active"
     }
 
-    def "should search by name case-insensitively"() {
-        given: "tenders"
-            tenderRepository.insert(buildRecord(companyIdStr, "Bridge RFP", "user-1"))
-            tenderRepository.insert(buildRecord(companyIdStr, "Road Work", "user-1"))
-
-        and: "a search query"
-            def query = TenderQuery.builder().search("bridge").limit(20).sortBy("created_at").sortDirection("desc").build()
-
-        when: "searching"
-            def results = tenderRepository.findByCompanyId(companyIdStr, query)
-
-        then: "only matching returned"
-            results.size() == 1
-            results[0].name == "Bridge RFP"
-    }
-
     def "should filter by status"() {
         given: "tenders with different statuses"
             tenderRepository.insert(buildRecord(companyIdStr, "Draft", "user-1"))

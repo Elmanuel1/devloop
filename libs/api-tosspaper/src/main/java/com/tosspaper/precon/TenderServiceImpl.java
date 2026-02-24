@@ -42,12 +42,11 @@ public class TenderServiceImpl implements TenderService {
     private static final Map<String, Set<String>> VALID_TRANSITIONS = Map.of(
             "draft", Set.of("pending"),
             "pending", Set.of("submitted", "cancelled"),
-            "submitted", Set.of("won", "lost"),
-            "cancelled", Set.of("archived")
+            "submitted", Set.of("won", "lost")
     );
 
     // Final statuses with no further transitions
-    private static final Set<String> FINAL_STATUSES = Set.of("won", "lost");
+    private static final Set<String> FINAL_STATUSES = Set.of("won", "lost", "cancelled");
 
     @Override
     public Tender createTender(Long companyId, TenderCreateRequest request) {

@@ -51,15 +51,6 @@ public class TenderRepositoryImpl implements TenderRepository {
             conditions.add(TENDERS.STATUS.eq(query.getStatus()));
         }
 
-        // Search (ILIKE on name and reference_number)
-        if (query.getSearch() != null && !query.getSearch().isBlank()) {
-            String searchPattern = "%" + query.getSearch().trim() + "%";
-            conditions.add(
-                    TENDERS.NAME.likeIgnoreCase(searchPattern)
-                            .or(TENDERS.REFERENCE_NUMBER.likeIgnoreCase(searchPattern))
-            );
-        }
-
         // Cursor pagination
         if (query.getCursorCreatedAt() != null && query.getCursorId() != null) {
             conditions.add(
