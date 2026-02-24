@@ -38,6 +38,8 @@ tasks.named('compileJava').configure {
 }
 
 dependencies {
+    api project(':libs:file-utils')
+
     // Jackson for JSON schema POJOs
     api 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     api 'com.fasterxml.jackson.core:jackson-annotations:2.15.2'

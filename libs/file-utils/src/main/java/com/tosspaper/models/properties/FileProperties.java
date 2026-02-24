@@ -17,7 +17,7 @@ import java.util.Set;
 @Data
 @Validated
 public class FileProperties {
-    
+
     /**
      * Minimum file size in bytes.
      * Files smaller than this are likely signature icons and will be rejected.
@@ -32,15 +32,15 @@ public class FileProperties {
      */
     @NotNull
     @Min(1)
-    private Long maxFileSizeBytes = 3 * 1024 * 1024L; 
-    
+    private Long maxFileSizeBytes = 3 * 1024 * 1024L;
+
     /**
      * Maximum filename length.
      */
     @NotNull
     @Min(1)
     private Integer maxFilenameLength = 255;
-    
+
     /**
      * Allowed content types.
      */
@@ -52,7 +52,7 @@ public class FileProperties {
         "image/gif",
         "image/webp"
     );
-    
+
     /**
      * Allowed file extensions (without dot).
      */
@@ -60,7 +60,7 @@ public class FileProperties {
     private Set<String> allowedFileExtensions = Set.of(
         "pdf", "jpg", "jpeg", "png", "webp"
     );
-    
+
     /**
      * Map of forbidden characters to their replacement strings.
      */
@@ -77,13 +77,13 @@ public class FileProperties {
         ">", "_",
         "|", "_"
     );
-    
+
     /**
      * Path where files are stored in the filesystem.
      */
     @NotNull
     private String filesystemPath = "/tmp/email-attachments";
-    
+
     /**
      * Minimum image width in pixels.
      * Images smaller than this are likely signature icons and will be rejected.
@@ -103,7 +103,7 @@ public class FileProperties {
     private Integer minImageHeight = 100;
 
     /**
-     * Minimum image area in pixels (width × height).
+     * Minimum image area in pixels (width x height).
      * Images with fewer total pixels are likely signature elements (logos, icons).
      * Default: 240,000 (e.g., 400x600 or 600x400)
      */
@@ -128,5 +128,5 @@ public class FileProperties {
     @NotNull
     @Min(0)
     private Double maxAspectRatio = 3.0;
-    
+
 }

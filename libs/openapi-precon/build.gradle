@@ -1,7 +1,9 @@
 plugins {
     alias(libs.plugins.openapi.generator)
     id 'java-library'
+    id 'groovy'
     id 'maven-publish'
+    id 'jacoco'
 }
 
 group = findProperty('groupId')
@@ -18,6 +20,7 @@ repositories {
 }
 
 dependencies {
+    api project(':libs:file-utils')
     implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}")
     implementation "io.swagger.core.v3:swagger-annotations:${libs.versions.swagger.annotations.get()}"
     implementation "jakarta.validation:jakarta.validation-api:${libs.versions.jakarta.validation.get()}"
@@ -29,6 +32,10 @@ dependencies {
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
     implementation 'org.springframework:spring-web'
     implementation 'org.springframework:spring-context'
+
+    testImplementation libs.groovy.core
+    testImplementation libs.spock.core
+    testRuntimeOnly libs.junit.platform.launcher
 }
 
 def specFile = "${rootDir}/specs/precon/openapi-precon.yaml"
@@ -64,6 +71,24 @@ sourceSets {
 
 tasks.named('compileJava') {
     dependsOn('openApiGenerate')
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.named('compileTestGroovy') {
+    dependsOn('openApiGenerate')
+    options.compilerArgs += ['-J-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+    options.forkOptions.jvmArgs += ['-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }
 
 tasks.named('build') {
