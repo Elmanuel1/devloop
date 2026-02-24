@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.tosspaper.precon.generated.model.ContentType;
+import com.tosspaper.precon.generated.model.PresignedUrlRequest;
 import com.tosspaper.precon.generated.model.TenderDocument;
 import com.tosspaper.precon.generated.model.TenderDocumentStatus;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
@@ -33,6 +34,22 @@ public interface TenderDocumentMapper {
     TenderDocument toDto(TenderDocumentsRecord record);
 
     List<TenderDocument> toDtoList(List<TenderDocumentsRecord> records);
+
+    // ---- DTO -> Record (upload) ----
+
+    default TenderDocumentsRecord toRecord(PresignedUrlRequest request, String documentId,
+                                            String tenderId, String companyId, String s3Key) {
+        TenderDocumentsRecord record = new TenderDocumentsRecord();
+        record.setId(documentId);
+        record.setTenderId(tenderId);
+        record.setCompanyId(companyId);
+        record.setFileName(request.getFileName());
+        record.setContentType(request.getContentType().getValue());
+        record.setFileSize(request.getFileSize().longValue());
+        record.setS3Key(s3Key);
+        record.setStatus(TenderDocumentStatus.UPLOADING.getValue());
+        return record;
+    }
 
     // ---- Named converters ----
 

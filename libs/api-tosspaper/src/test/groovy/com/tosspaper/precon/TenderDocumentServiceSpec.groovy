@@ -1,6 +1,7 @@
 package com.tosspaper.precon
 
 import com.tosspaper.common.NotFoundException
+import com.tosspaper.models.exception.CannotDeleteException
 import com.tosspaper.models.exception.DocumentNotReadyException
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
 import com.tosspaper.models.jooq.tables.records.TendersRecord
@@ -76,20 +77,14 @@ class TenderDocumentServiceSpec extends Specification {
         and: "validator is called with the request"
             1 * tenderDocumentValidator.validate(request)
 
-        and: "document record is inserted with all fields"
-            1 * tenderDocumentRepository.insert({ TenderDocumentsRecord r ->
-                r.tenderId == tenderId &&
-                r.companyId == "42" &&
-                r.fileName == "proposal.pdf" &&
-                r.contentType == "application/pdf" &&
-                r.fileSize == 2048L &&
-                r.status == "uploading" &&
-                r.s3Key.startsWith("tenders/42/${tenderId}/") &&
-                r.s3Key.endsWith("/proposal.pdf")
-            }) >> { TenderDocumentsRecord r -> r }
-
-        and: "presigned URL is generated"
+        and: "presigned URL is generated before insert"
             1 * s3Presigner.presignPutObject(_ as PutObjectPresignRequest) >> presignedPut
+
+        and: "mapper builds the record and it is inserted"
+            1 * tenderDocumentMapper.toRecord(request, _, tenderId, "42", _) >> { args ->
+                createDocumentRecord(args[1], tenderId, "42")
+            }
+            1 * tenderDocumentRepository.insert(_) >> { TenderDocumentsRecord r -> r }
 
         and: "response has presignedUrl, documentId and expiration"
             with(result) {
@@ -122,8 +117,9 @@ class TenderDocumentServiceSpec extends Specification {
 
         and: "no document is created and no presigned URL is generated"
             0 * tenderDocumentValidator.validate(_)
-            0 * tenderDocumentRepository.insert(_)
             0 * s3Presigner.presignPutObject(_)
+            0 * tenderDocumentMapper.toRecord(_, _, _, _, _)
+            0 * tenderDocumentRepository.insert(_)
     }
 
     def "should call validator with the request on upload"() {
@@ -147,8 +143,11 @@ class TenderDocumentServiceSpec extends Specification {
         then: "validator receives the exact same request object"
             1 * tenderRepository.findById(tenderId) >> tender
             1 * tenderDocumentValidator.validate(request)
-            1 * tenderDocumentRepository.insert(_) >> { TenderDocumentsRecord r -> r }
             1 * s3Presigner.presignPutObject(_) >> presignedPut
+            1 * tenderDocumentMapper.toRecord(request, _, tenderId, "10", _) >> { args ->
+                createDocumentRecord(args[1], tenderId, "10")
+            }
+            1 * tenderDocumentRepository.insert(_) >> { TenderDocumentsRecord r -> r }
     }
 
     // ==================== listDocuments ====================
@@ -368,6 +367,29 @@ class TenderDocumentServiceSpec extends Specification {
 
         and: "no exception propagates to the caller"
             noExceptionThrown()
+    }
+
+    def "should throw CannotDeleteException when tender is in final status"() {
+        given: "a tender in 'won' status"
+            def companyId = 42L
+            def tenderId = "tender-abc-123"
+            def documentId = "doc-111"
+            def tender = createTenderRecord(tenderId, "42")
+            tender.setStatus("won")
+
+        when: "deleting the document"
+            service.deleteDocument(companyId, tenderId, documentId)
+
+        then: "tender is found"
+            1 * tenderRepository.findById(tenderId) >> tender
+
+        and: "CannotDeleteException is thrown"
+            thrown(CannotDeleteException)
+
+        and: "document is never looked up or deleted"
+            0 * tenderDocumentRepository.findById(_)
+            0 * tenderDocumentRepository.softDelete(_)
+            0 * s3Client.deleteObject(_)
     }
 
     // ==================== getDownloadPresignedUrl ====================

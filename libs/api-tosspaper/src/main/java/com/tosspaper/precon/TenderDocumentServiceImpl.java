@@ -21,11 +21,14 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import com.tosspaper.models.exception.CannotDeleteException;
+
 import java.net.URI;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -43,6 +46,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
 
     private static final Duration UPLOAD_URL_DURATION = Duration.ofMinutes(10);
     private static final Duration DOWNLOAD_URL_DURATION = Duration.ofMinutes(5);
+    private static final Set<String> FINAL_STATUSES = Set.of("won", "lost", "cancelled");
 
     @Override
     public PresignedUrlResponse getUploadPresignedUrl(Long companyId, String tenderId, PresignedUrlRequest request) {
@@ -61,20 +65,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         String documentId = UUID.randomUUID().toString();
         String s3Key = buildS3Key(companyIdStr, tenderId, documentId, request.getFileName());
 
-        // Create document record
-        TenderDocumentsRecord record = new TenderDocumentsRecord();
-        record.setId(documentId);
-        record.setTenderId(tenderId);
-        record.setCompanyId(companyIdStr);
-        record.setFileName(request.getFileName());
-        record.setContentType(request.getContentType().getValue());
-        record.setFileSize(request.getFileSize().longValue());
-        record.setS3Key(s3Key);
-        record.setStatus("uploading");
-
-        tenderDocumentRepository.insert(record);
-
-        // Generate presigned upload URL
+        // Generate presigned upload URL first — if this fails, no orphan DB record
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
                 .signatureDuration(UPLOAD_URL_DURATION)
                 .putObjectRequest(c -> c.bucket(fileProperties.getUploadBucket())
@@ -86,6 +77,11 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
 
         var presignedRequest = s3Presigner.presignPutObject(presignRequest);
         OffsetDateTime expiration = presignedRequest.expiration().atOffset(ZoneOffset.UTC);
+
+        // Create document record via mapper
+        TenderDocumentsRecord record = tenderDocumentMapper.toRecord(
+                request, documentId, tenderId, companyIdStr, s3Key);
+        tenderDocumentRepository.insert(record);
 
         PresignedUrlResponse response = new PresignedUrlResponse();
         response.setPresignedUrl(URI.create(presignedRequest.url().toString()));
@@ -157,6 +153,12 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
             throw new NotFoundException("api.tender.notFound", "Tender not found");
         }
 
+        // Reject deletion on final status tenders
+        if (FINAL_STATUSES.contains(tender.getStatus())) {
+            throw new CannotDeleteException("api.tenderDocument.cannotDelete",
+                    "Cannot delete documents from a tender in '" + tender.getStatus() + "' status");
+        }
+
         // Find the document (throws NotFoundException if not found)
         TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
 
@@ -201,7 +203,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         }
 
         // Check status is ready
-        if (!"ready".equals(document.getStatus())) {
+        if (!TenderDocumentStatus.READY.getValue().equals(document.getStatus())) {
             throw new DocumentNotReadyException("api.tenderDocument.notReady",
                     "Document is not ready for download. Current status: " + document.getStatus());
         }
