@@ -8,8 +8,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Validates a PresignedUrlRequest against tender file upload rules:
- * allowed content types, max file size, and extension-to-content-type match.
+ * Validates a PresignedUrlRequest against file upload rules:
+ * allowed content types, max file size, and file extension.
  */
 @Constraint(validatedBy = ValidPresignedUploadValidator.class)
 @Target({ ElementType.TYPE, ElementType.PARAMETER })

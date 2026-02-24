@@ -818,6 +818,7 @@ components:
     PresignedUrlRequest:
       type: object
       additionalProperties: false
+      x-class-extra-annotation: "@com.tosspaper.common.validator.ValidPresignedUpload"
       required:
         - file_name
         - content_type
