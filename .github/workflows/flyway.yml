@@ -87,6 +87,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            jooq_version:
+              - 'libs/flyway-jooq-classes/gradle.properties'
+
+      - name: Require flyway-jooq-classes version bump
+        if: steps.changes.outputs.jooq_version != 'true'
+        run: |
+          echo "::error::Flyway migrations changed but libs/flyway-jooq-classes/gradle.properties was not updated. Bump moduleVersion before merging."
+          exit 1
+
+      - name: Validate CHANGELOG entry
+        run: |
+          VERSION=$(grep '^moduleVersion=' libs/flyway-jooq-classes/gradle.properties | cut -d'=' -f2)
+          if ! grep -q "## \[$VERSION\]" libs/flyway-jooq-classes/CHANGELOG.md; then
+            echo "::error::CHANGELOG.md missing entry for version $VERSION"
+            exit 1
+          fi
+          echo "flyway-jooq-classes version $VERSION has CHANGELOG entry"
+
       - name: Run Flyway Migrate (local)
         uses: docker://flyway/flyway:10.20.0  # Keep in sync with FLYWAY_VERSION
         with:

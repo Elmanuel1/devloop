@@ -128,16 +128,42 @@ jobs:
       - name: Build
         run: ./gradlew :libs:${{ matrix.module }}:build --no-configuration-cache
 
-      - name: Publish Java library to GitHub Packages
+      - name: Check if version already published
+        id: version-check
         if: >-
           (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
           (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          GROUP_PATH=$(echo "${{ steps.props.outputs.group_id }}" | tr '.' '/')
+          ARTIFACT="${{ steps.props.outputs.artifact_id }}"
+          VERSION="${{ steps.props.outputs.version }}"
+          URL="https://maven.pkg.github.com/${GITHUB_REPOSITORY}/${GROUP_PATH}/${ARTIFACT}/${VERSION}/${ARTIFACT}-${VERSION}.pom"
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "$URL")
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "::notice::Version ${VERSION} already published — skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish Java library to GitHub Packages
+        if: >-
+          steps.version-check.outputs.exists != 'true' &&
+          ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+          (github.event_name == 'workflow_dispatch' && inputs.publish))
         env:
           GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: ./gradlew :libs:${{ matrix.module }}:publish --no-configuration-cache
 
       - name: Publish TypeScript client
         if: >-
+          steps.version-check.outputs.exists != 'true' &&
           steps.node-check.outputs.has_node == 'true' &&
           ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
           (github.event_name == 'workflow_dispatch' && inputs.publish))
@@ -153,8 +179,10 @@ jobs:
           ARTIFACT_ID="${{ steps.props.outputs.artifact_id }}"
           MODULE="${{ matrix.module }}"
           PUBLISHED="No (PR or publish not requested)"
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]] || \
-             [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
+          if [[ "${{ steps.version-check.outputs.exists }}" == "true" ]]; then
+            PUBLISHED="Skipped (version already exists)"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]] || \
+               [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.publish }}" == "true" ]]; then
             PUBLISHED="Yes"
           fi
 
