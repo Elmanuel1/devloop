@@ -833,7 +833,8 @@ components:
         file_size:
           type: integer
           minimum: 1
-          description: Expected file size in bytes. Max 209715200 (200MB) for PDF/PNG/JPG, 524288000 (500MB) for ZIP.
+          maximum: 209715200
+          description: Expected file size in bytes. Max 209715200 (200MB).
 
     PresignedUrlResponse:
       type: object
