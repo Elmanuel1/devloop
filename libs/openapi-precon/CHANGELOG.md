@@ -9,8 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `maximum: 209715200` constraint on `PresignedUrlRequest.file_size` — generates `@Max(209715200)` validation
-- `@ValidPresignedUpload` custom Jakarta Bean Validation constraint for upload requests (content type allowlist, max file size, extension-to-content-type match)
-- `TenderFileProperties` configuration class for configurable upload limits
+- `@ValidPresignedUpload` custom Jakarta Bean Validation constraint for upload requests (content type, file size, file extension validated against `FileProperties`)
 
 ## [0.5.0]
 

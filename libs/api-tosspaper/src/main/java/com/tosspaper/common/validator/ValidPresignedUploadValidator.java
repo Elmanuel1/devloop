@@ -1,18 +1,16 @@
 package com.tosspaper.common.validator;
 
-import com.tosspaper.precon.TenderFileProperties;
+import com.tosspaper.models.properties.FileProperties;
 import com.tosspaper.precon.generated.model.ContentType;
 import com.tosspaper.precon.generated.model.PresignedUrlRequest;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import lombok.RequiredArgsConstructor;
 
-import java.util.Set;
-
 @RequiredArgsConstructor
 public class ValidPresignedUploadValidator implements ConstraintValidator<ValidPresignedUpload, PresignedUrlRequest> {
 
-    private final TenderFileProperties fileProperties;
+    private final FileProperties fileProperties;
 
     @Override
     public boolean isValid(PresignedUrlRequest request, ConstraintValidatorContext context) {
@@ -25,7 +23,7 @@ public class ValidPresignedUploadValidator implements ConstraintValidator<ValidP
 
         // Allowed content type
         ContentType contentType = request.getContentType();
-        if (contentType != null && !fileProperties.getAllowedContentTypes().contains(contentType)) {
+        if (contentType != null && !fileProperties.getAllowedContentTypes().contains(contentType.getValue())) {
             context.buildConstraintViolationWithTemplate(
                     "Content type '" + contentType.getValue() + "' is not allowed")
                     .addPropertyNode("contentType")
@@ -44,9 +42,9 @@ public class ValidPresignedUploadValidator implements ConstraintValidator<ValidP
             valid = false;
         }
 
-        // Extension-to-content-type match
+        // File extension
         String fileName = request.getFileName();
-        if (fileName != null && contentType != null) {
+        if (fileName != null) {
             if (!fileName.contains(".") || fileName.endsWith(".")) {
                 context.buildConstraintViolationWithTemplate(
                         "File name must have a valid extension")
@@ -55,10 +53,9 @@ public class ValidPresignedUploadValidator implements ConstraintValidator<ValidP
                 valid = false;
             } else {
                 String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-                Set<String> allowedExtensions = fileProperties.getContentTypeExtensions().get(contentType);
-                if (allowedExtensions == null || !allowedExtensions.contains(extension)) {
+                if (!fileProperties.getAllowedFileExtensions().contains(extension)) {
                     context.buildConstraintViolationWithTemplate(
-                            "File extension '." + extension + "' does not match content type '" + contentType.getValue() + "'")
+                            "File extension '." + extension + "' is not allowed")
                             .addPropertyNode("fileName")
                             .addConstraintViolation();
                     valid = false;
