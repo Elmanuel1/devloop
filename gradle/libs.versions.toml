@@ -4,7 +4,7 @@
 [versions]
 spring-boot = "3.5.5"
 spring-dep-mgmt = "1.1.7"
-flyway-jooq-classes = "0.1.5"
+flyway-jooq-classes = "0.1.6"
 openapi-precon = "0.5.0"
 jooq = "3.19.26"
 jooq-plugin = "9.0"

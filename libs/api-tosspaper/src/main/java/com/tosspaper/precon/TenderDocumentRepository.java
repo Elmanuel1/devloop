@@ -1,0 +1,17 @@
+package com.tosspaper.precon;
+
+import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+
+public interface TenderDocumentRepository {
+
+    TenderDocumentsRecord insert(TenderDocumentsRecord record);
+
+    TenderDocumentsRecord findById(String id);
+
+    List<TenderDocumentsRecord> findByTenderId(String tenderId, String status, int limit, OffsetDateTime cursorCreatedAt, String cursorId);
+
+    int softDelete(String id);
+}

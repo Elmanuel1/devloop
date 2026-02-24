@@ -28,7 +28,8 @@ import com.tosspaper.aiengine.properties.ComparisonProperties;
     JwtClaimProperties.class,
     CsrfCookieProperties.class,
     com.tosspaper.models.config.MailgunProperties.class,
-    com.tosspaper.models.config.AppEmailProperties.class
+    com.tosspaper.models.config.AppEmailProperties.class,
+    com.tosspaper.precon.TenderFileProperties.class
 })
 @ComponentScan(basePackages = "com.tosspaper")
 public class EverythingApplication {
