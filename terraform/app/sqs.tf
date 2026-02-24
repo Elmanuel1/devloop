@@ -213,3 +213,59 @@ resource "aws_sqs_queue" "integration_push" {
     Purpose = "Integration push sync"
   }
 }
+
+# -----------------------------------------------------------------------------
+# tender-upload-events Queue (S3 ObjectCreated notifications)
+# -----------------------------------------------------------------------------
+resource "aws_sqs_queue" "tender_upload_events_dlq" {
+  name                      = "${local.name_prefix}-tender-upload-events-dlq"
+  message_retention_seconds = 1209600 # 14 days
+  sqs_managed_sse_enabled   = true
+
+  tags = {
+    Name    = "${local.name_prefix}-tender-upload-events-dlq"
+    Purpose = "Dead letter queue for tender upload event processing"
+  }
+}
+
+resource "aws_sqs_queue" "tender_upload_events" {
+  name = "${local.name_prefix}-tender-upload-events"
+
+  visibility_timeout_seconds = local.sqs_queues.tender_upload_events.visibility_timeout
+  message_retention_seconds  = 345600 # 4 days
+  receive_wait_time_seconds  = 20    # Long polling
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.tender_upload_events_dlq.arn
+    maxReceiveCount     = local.sqs_queues.tender_upload_events.max_receive_count
+  })
+
+  sqs_managed_sse_enabled = true
+
+  tags = {
+    Name    = "${local.name_prefix}-tender-upload-events"
+    Purpose = "Process S3 upload notifications for tender documents"
+  }
+}
+
+resource "aws_sqs_queue_policy" "allow_s3_tender_notifications" {
+  queue_url = aws_sqs_queue.tender_upload_events.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowS3Notifications"
+        Effect    = "Allow"
+        Principal = { Service = "s3.amazonaws.com" }
+        Action    = "sqs:SendMessage"
+        Resource  = aws_sqs_queue.tender_upload_events.arn
+        Condition = {
+          ArnEquals = {
+            "aws:SourceArn" = aws_s3_bucket.tender_uploads.arn
+          }
+        }
+      }
+    ]
+  })
+}

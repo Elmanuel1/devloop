@@ -77,7 +77,9 @@ resource "aws_iam_role_policy" "s3_access" {
         ]
         Resource = [
           aws_s3_bucket.attachments.arn,
-          "${aws_s3_bucket.attachments.arn}/*"
+          "${aws_s3_bucket.attachments.arn}/*",
+          aws_s3_bucket.tender_uploads.arn,
+          "${aws_s3_bucket.tender_uploads.arn}/*"
         ]
       }
     ]
@@ -119,6 +121,9 @@ resource "aws_iam_role_policy" "sqs_access" {
           aws_sqs_queue.document_approved_dlq.arn,
           aws_sqs_queue.quickbooks_events_dlq.arn,
           aws_sqs_queue.integration_push_dlq.arn,
+          # Tender upload events
+          aws_sqs_queue.tender_upload_events.arn,
+          aws_sqs_queue.tender_upload_events_dlq.arn,
         ]
       }
     ]
