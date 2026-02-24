@@ -10,9 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `maximum: 209715200` constraint on `PresignedUrlRequest.file_size` — generates `@Max(209715200)` validation
 - `x-class-extra-annotation` on `PresignedUrlRequest` — applies `@ValidPresignedUpload` at class level
-- New `libs/file-utils` module with `FileProperties` and `@ValidPresignedUpload` annotation
-- `ValidPresignedUploadValidator` in `libs/api-tosspaper` (content type, file extension validated against `FileProperties`)
-- XML constraint mapping to bind validator to annotation
+- `@ValidPresignedUpload` annotation + `ValidPresignedUploadValidator` in `openapi-precon` (validates content type and file extension against `FileProperties`)
+- New `libs/file-utils` module with `FileProperties` configuration properties
 
 ## [0.5.0]
 

@@ -10,11 +10,8 @@ import java.lang.annotation.Target;
 /**
  * Validates a PresignedUrlRequest against file upload rules:
  * allowed content types and file extension.
- *
- * <p>The consumer must provide the validator implementation
- * and register it via XML constraint mapping.
  */
-@Constraint(validatedBy = {})
+@Constraint(validatedBy = ValidPresignedUploadValidator.class)
 @Target({ ElementType.TYPE, ElementType.PARAMETER })
 @Retention(RetentionPolicy.RUNTIME)
 public @interface ValidPresignedUpload {

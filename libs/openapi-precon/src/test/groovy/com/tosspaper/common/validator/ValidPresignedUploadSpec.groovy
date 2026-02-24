@@ -11,16 +11,17 @@ import java.lang.annotation.Target
 
 class ValidPresignedUploadSpec extends Specification {
 
-    def "should have @Constraint meta-annotation with empty validatedBy"() {
+    def "should have @Constraint meta-annotation with ValidPresignedUploadValidator"() {
         given: "the ValidPresignedUpload annotation class"
             def annotationType = ValidPresignedUpload
 
         when: "reading the @Constraint meta-annotation"
             def constraint = annotationType.getAnnotation(Constraint)
 
-        then: "it is present and has no validatedBy entries"
+        then: "it is present and references ValidPresignedUploadValidator"
             constraint != null
-            constraint.validatedBy().length == 0
+            constraint.validatedBy().length == 1
+            constraint.validatedBy()[0] == ValidPresignedUploadValidator
     }
 
     def "should have @Target with TYPE and PARAMETER element types"() {
