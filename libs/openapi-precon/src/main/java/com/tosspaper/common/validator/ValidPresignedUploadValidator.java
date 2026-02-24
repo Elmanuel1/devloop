@@ -33,17 +33,6 @@ public class ValidPresignedUploadValidator implements ConstraintValidator<ValidP
             valid = false;
         }
 
-        // Max file size
-        Integer fileSize = request.getFileSize();
-        if (fileSize != null && fileSize > fileProperties.getMaxFileSizeBytes()) {
-            long maxMb = fileProperties.getMaxFileSizeBytes() / (1024 * 1024);
-            context.buildConstraintViolationWithTemplate(
-                    "File size must not exceed " + maxMb + " MB")
-                    .addPropertyNode("fileSize")
-                    .addConstraintViolation();
-            valid = false;
-        }
-
         // File extension
         String fileName = request.getFileName();
         if (fileName != null) {
