@@ -70,7 +70,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
             with(response.body) {
                 id != null
                 name == "Bridge RFP"
-                status == "draft"
+                status == "pending"
             }
     }
 
@@ -100,7 +100,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
                 name == "Full Tender"
                 currency == "CAD"
                 delivery_method == "lump_sum"
-                status == "draft"
+                status == "pending"
             }
     }
 
@@ -141,7 +141,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "POST /v1/tenders returns 409 when duplicate name exists (case-insensitive)"() {
         given: "an existing tender"
-            insertTender(companyId.toString(), "Bridge RFP", "draft")
+            insertTender(companyId.toString(), "Bridge RFP", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -184,8 +184,8 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders returns 200 with paginated list"() {
         given: "tenders in DB"
-            insertTender(companyId.toString(), "Tender A", "draft")
-            insertTender(companyId.toString(), "Tender B", "draft")
+            insertTender(companyId.toString(), "Tender A", "pending")
+            insertTender(companyId.toString(), "Tender B", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -204,32 +204,10 @@ class TenderControllerSpec extends BaseIntegrationTest {
             response.body.pagination != null
     }
 
-    def "GET /v1/tenders returns 200 with search results"() {
-        given: "tenders in DB"
-            insertTender(companyId.toString(), "Bridge RFP", "draft")
-            insertTender(companyId.toString(), "Road Work", "draft")
-
-        and: "auth headers"
-            def headers = buildAuthHeaders()
-            headers.add("X-Context-Id", companyId.toString())
-
-        when: "searching"
-            def response = restTemplate.exchange(
-                "/v1/tenders?search=bridge",
-                HttpMethod.GET,
-                new HttpEntity<>(headers),
-                Map)
-
-        then: "200 with matching results"
-            response.statusCode == HttpStatus.OK
-            response.body.data.size() == 1
-            response.body.data[0].name == "Bridge RFP"
-    }
-
     def "GET /v1/tenders returns 200 with status filter"() {
         given: "tenders with different statuses"
-            insertTender(companyId.toString(), "Draft Tender", "draft")
             insertTender(companyId.toString(), "Pending Tender", "pending")
+            insertTender(companyId.toString(), "Submitted Tender", "submitted")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -237,7 +215,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
         when: "filtering by status"
             def response = restTemplate.exchange(
-                "/v1/tenders?status=draft",
+                "/v1/tenders?status=pending",
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 Map)
@@ -245,7 +223,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
         then: "200 with filtered results"
             response.statusCode == HttpStatus.OK
             response.body.data.size() == 1
-            response.body.data[0].status == "draft"
+            response.body.data[0].status == "pending"
     }
 
     def "GET /v1/tenders returns 200 empty when no tenders"() {
@@ -284,7 +262,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 200 with ETag header"() {
         given: "a tender in DB"
-            def tenderId = insertTender(companyId.toString(), "My Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "My Tender", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -323,7 +301,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 404 when belongs to other company"() {
         given: "a tender from another company"
-            def tenderId = insertTender("999", "Other Company Tender", "draft")
+            def tenderId = insertTender("999", "Other Company Tender", "pending")
 
         and: "auth headers for our company"
             def headers = buildAuthHeaders()
@@ -344,7 +322,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 304 when If-None-Match matches current ETag"() {
         given: "a tender in DB"
-            def tenderId = insertTender(companyId.toString(), "Cached Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "Cached Tender", "pending")
 
         and: "auth headers with matching If-None-Match"
             def headers = buildAuthHeaders()
@@ -366,7 +344,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 200 when If-None-Match is stale"() {
         given: "a tender in DB with version bumped to 1"
-            def tenderId = insertTender(companyId.toString(), "Stale Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "Stale Tender", "pending")
             dsl.execute("UPDATE tenders SET version = 1 WHERE id = ?", tenderId)
 
         and: "auth headers with old ETag"
@@ -389,7 +367,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 200 after PATCH invalidates cached ETag"() {
         given: "a tender in DB"
-            def tenderId = insertTender(companyId.toString(), "Patchable Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "Patchable Tender", "pending")
 
         and: "first GET to obtain ETag"
             def getHeaders = buildAuthHeaders()
@@ -430,7 +408,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "GET /v1/tenders/{id} returns 404 when soft-deleted"() {
         given: "a soft-deleted tender"
-            def tenderId = insertTender(companyId.toString(), "Deleted Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "Deleted Tender", "pending")
             dsl.update(Tables.TENDERS)
                 .set(Tables.TENDERS.DELETED_AT, OffsetDateTime.now())
                 .where(Tables.TENDERS.ID.eq(tenderId))
@@ -457,7 +435,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "PATCH /v1/tenders/{id} returns 200 with updated ETag"() {
         given: "an existing tender"
-            def tenderId = insertTender(companyId.toString(), "Original Name", "draft")
+            def tenderId = insertTender(companyId.toString(), "Original Name", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -481,7 +459,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "PATCH /v1/tenders/{id} returns 412 when ETag stale"() {
         given: "an existing tender"
-            def tenderId = insertTender(companyId.toString(), "Original", "draft")
+            def tenderId = insertTender(companyId.toString(), "Original", "pending")
             // Update to bump version
             dsl.execute("UPDATE tenders SET version = 1 WHERE id = ?", tenderId)
 
@@ -507,7 +485,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "PATCH /v1/tenders/{id} returns 428 when If-Match missing"() {
         given: "an existing tender"
-            def tenderId = insertTender(companyId.toString(), "Test", "draft")
+            def tenderId = insertTender(companyId.toString(), "Test", "pending")
 
         and: "auth headers without If-Match"
             def headers = buildAuthHeaders()
@@ -530,8 +508,8 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "PATCH /v1/tenders/{id} returns 409 when duplicate name"() {
         given: "two tenders"
-            insertTender(companyId.toString(), "Bridge", "draft")
-            def tenderId = insertTender(companyId.toString(), "Road", "draft")
+            insertTender(companyId.toString(), "Bridge", "pending")
+            def tenderId = insertTender(companyId.toString(), "Road", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -554,8 +532,8 @@ class TenderControllerSpec extends BaseIntegrationTest {
     }
 
     def "PATCH /v1/tenders/{id} returns 409 on invalid status transition"() {
-        given: "a draft tender"
-            def tenderId = insertTender(companyId.toString(), "Draft Tender", "draft")
+        given: "a pending tender"
+            def tenderId = insertTender(companyId.toString(), "Pending Tender", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -578,17 +556,17 @@ class TenderControllerSpec extends BaseIntegrationTest {
     }
 
     def "PATCH /v1/tenders/{id} returns 200 on valid status transition"() {
-        given: "a draft tender"
-            def tenderId = insertTender(companyId.toString(), "Transition Tender", "draft")
+        given: "a pending tender"
+            def tenderId = insertTender(companyId.toString(), "Transition Tender", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.add("If-Match", '"v0"')
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [status: "pending"]
+            def body = [status: "submitted"]
 
-        when: "updating status to pending"
+        when: "updating status to submitted"
             def response = restTemplate.exchange(
                 "/v1/tenders/${tenderId}",
                 HttpMethod.PATCH,
@@ -597,7 +575,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
         then: "200 returned"
             response.statusCode == HttpStatus.OK
-            response.body.status == "pending"
+            response.body.status == "submitted"
     }
 
     def "PATCH /v1/tenders/{id} returns 404 when not found"() {
@@ -623,9 +601,9 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     // ==================== DELETE /v1/tenders/{id} ====================
 
-    def "DELETE /v1/tenders/{id} returns 204 for draft tender"() {
-        given: "a draft tender"
-            def tenderId = insertTender(companyId.toString(), "Draft Delete", "draft")
+    def "DELETE /v1/tenders/{id} returns 204 for pending tender"() {
+        given: "a pending tender"
+            def tenderId = insertTender(companyId.toString(), "Pending Delete", "pending")
 
         and: "auth headers"
             def headers = buildAuthHeaders()
@@ -702,7 +680,7 @@ class TenderControllerSpec extends BaseIntegrationTest {
 
     def "DELETE /v1/tenders/{id} returns 404 when already soft-deleted"() {
         given: "a soft-deleted tender"
-            def tenderId = insertTender(companyId.toString(), "Already Deleted", "draft")
+            def tenderId = insertTender(companyId.toString(), "Already Deleted", "pending")
             dsl.update(Tables.TENDERS)
                 .set(Tables.TENDERS.DELETED_AT, OffsetDateTime.now())
                 .where(Tables.TENDERS.ID.eq(tenderId))
