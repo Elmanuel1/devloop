@@ -1,14 +1,15 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.common.HeaderUtils;
-import com.tosspaper.generated.api.TendersApi;
-import com.tosspaper.generated.model.Tender;
-import com.tosspaper.generated.model.TenderCreateRequest;
-import com.tosspaper.generated.model.TenderListResponse;
-import com.tosspaper.generated.model.TenderSortDirection;
-import com.tosspaper.generated.model.TenderSortField;
-import com.tosspaper.generated.model.TenderStatus;
-import com.tosspaper.generated.model.TenderUpdateRequest;
+import com.tosspaper.precon.generated.api.TendersApi;
+import com.tosspaper.precon.generated.model.SortDirection;
+import com.tosspaper.precon.generated.model.SortField;
+import com.tosspaper.precon.generated.model.Tender;
+import com.tosspaper.precon.generated.model.TenderCreateRequest;
+import com.tosspaper.precon.generated.model.TenderCreateResponse;
+import com.tosspaper.precon.generated.model.TenderListResponse;
+import com.tosspaper.precon.generated.model.TenderStatus;
+import com.tosspaper.precon.generated.model.TenderUpdateRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,14 +33,16 @@ public class TenderController implements TendersApi {
 
     @Override
     @PreAuthorize("hasPermission(#xContextId, 'company', 'tenders:create')")
-    public ResponseEntity<Tender> createTender(String xContextId, TenderCreateRequest tenderCreateRequest) {
+    public ResponseEntity<TenderCreateResponse> createTender(String xContextId, TenderCreateRequest tenderCreateRequest, UUID idempotencyKey) {
         log.debug("POST /v1/tenders - xContextId={}", xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
-        Tender tender = tenderService.createTender(companyId, tenderCreateRequest);
+        TenderResult result = tenderService.createTender(companyId, tenderCreateRequest);
+        TenderCreateResponse response = new TenderCreateResponse();
+        response.setId(result.tender().getId());
         return ResponseEntity
-                .created(URI.create("/v1/tenders/" + tender.getId()))
-                .eTag(HeaderUtils.formatETag(tender.getVersion()))
-                .body(tender);
+                .created(URI.create("/v1/tenders/" + result.tender().getId()))
+                .eTag(HeaderUtils.formatETag(result.version()))
+                .body(response);
     }
 
     @Override
@@ -49,8 +52,8 @@ public class TenderController implements TendersApi {
             Integer limit,
             String cursor,
             String search,
-            TenderSortField sort,
-            TenderSortDirection direction,
+            SortField sort,
+            SortDirection direction,
             TenderStatus status) {
         log.debug("GET /v1/tenders - xContextId={}", xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
@@ -63,8 +66,8 @@ public class TenderController implements TendersApi {
     public ResponseEntity<Tender> getTender(String xContextId, UUID tenderId) {
         log.debug("GET /v1/tenders/{} - xContextId={}", tenderId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
-        Tender tender = tenderService.getTender(companyId, tenderId.toString());
-        String currentETag = HeaderUtils.formatETag(tender.getVersion());
+        TenderResult result = tenderService.getTender(companyId, tenderId.toString());
+        String currentETag = HeaderUtils.formatETag(result.version());
 
         if (HeaderUtils.isNotModified(request, currentETag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
@@ -72,22 +75,22 @@ public class TenderController implements TendersApi {
                     .build();
         }
 
-        return ResponseEntity.ok().eTag(currentETag).body(tender);
+        return ResponseEntity.ok().eTag(currentETag).body(result.tender());
     }
 
     @Override
     @PreAuthorize("hasPermission(#xContextId, 'company', 'tenders:edit')")
     public ResponseEntity<Tender> updateTender(
             String xContextId,
+            String ifMatch,
             UUID tenderId,
-            TenderUpdateRequest tenderUpdateRequest,
-            String ifMatch) {
+            TenderUpdateRequest tenderUpdateRequest) {
         log.debug("PATCH /v1/tenders/{} - xContextId={}", tenderId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
-        Tender tender = tenderService.updateTender(companyId, tenderId.toString(), tenderUpdateRequest, ifMatch);
+        TenderResult result = tenderService.updateTender(companyId, tenderId.toString(), tenderUpdateRequest, ifMatch);
         return ResponseEntity.ok()
-                .eTag(HeaderUtils.formatETag(tender.getVersion()))
-                .body(tender);
+                .eTag(HeaderUtils.formatETag(result.version()))
+                .body(result.tender());
     }
 
     @Override

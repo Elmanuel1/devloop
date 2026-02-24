@@ -3,15 +3,17 @@ package com.tosspaper.precon;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.tosspaper.generated.model.Tender;
-import com.tosspaper.generated.model.TenderAddress;
-import com.tosspaper.generated.model.TenderBond;
-import com.tosspaper.generated.model.TenderCondition;
-import com.tosspaper.generated.model.TenderCreateRequest;
-import com.tosspaper.generated.model.TenderEvent;
-import com.tosspaper.generated.model.TenderParty;
-import com.tosspaper.generated.model.TenderStatus;
-import com.tosspaper.generated.model.TenderUpdateRequest;
+import com.tosspaper.precon.generated.model.Address;
+import com.tosspaper.precon.generated.model.Bond;
+import com.tosspaper.precon.generated.model.Condition;
+import com.tosspaper.precon.generated.model.Currency;
+import com.tosspaper.precon.generated.model.DeliveryMethod;
+import com.tosspaper.precon.generated.model.Party;
+import com.tosspaper.precon.generated.model.Tender;
+import com.tosspaper.precon.generated.model.TenderCreateRequest;
+import com.tosspaper.precon.generated.model.TenderEvent;
+import com.tosspaper.precon.generated.model.TenderStatus;
+import com.tosspaper.precon.generated.model.TenderUpdateRequest;
 import com.tosspaper.models.jooq.tables.records.TendersRecord;
 import org.jooq.JSONB;
 import org.mapstruct.Mapper;
@@ -20,6 +22,7 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.Named;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +36,9 @@ public interface TenderMapper {
 
     @Mapping(target = "id", source = "id", qualifiedByName = "stringToUuid")
     @Mapping(target = "status", source = "status", qualifiedByName = "stringToStatus")
+    @Mapping(target = "currency", source = "currency", qualifiedByName = "stringToCurrency")
+    @Mapping(target = "deliveryMethod", source = "deliveryMethod", qualifiedByName = "stringToDeliveryMethod")
+    @Mapping(target = "createdBy", source = "createdBy", qualifiedByName = "stringToUuidSafe")
     @Mapping(target = "bonds", source = "bonds", qualifiedByName = "jsonbToBondList")
     @Mapping(target = "conditions", source = "conditions", qualifiedByName = "jsonbToConditionList")
     @Mapping(target = "parties", source = "parties", qualifiedByName = "jsonbToPartyList")
@@ -51,9 +57,9 @@ public interface TenderMapper {
     @Mapping(target = "createdBy", source = "createdBy")
     @Mapping(target = "name", source = "request.name")
     @Mapping(target = "platform", source = "request.platform")
-    @Mapping(target = "currency", source = "request.currency")
+    @Mapping(target = "currency", source = "request.currency", qualifiedByName = "currencyToString")
     @Mapping(target = "closingDate", source = "request.closingDate")
-    @Mapping(target = "deliveryMethod", source = "request.deliveryMethod")
+    @Mapping(target = "deliveryMethod", source = "request.deliveryMethod", qualifiedByName = "deliveryMethodToString")
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
@@ -79,6 +85,8 @@ public interface TenderMapper {
     // ---- UpdateRequest → Record (partial update) ----
 
     @Mapping(target = "status", source = "status", qualifiedByName = "statusToString")
+    @Mapping(target = "currency", source = "currency", qualifiedByName = "currencyToString")
+    @Mapping(target = "deliveryMethod", source = "deliveryMethod", qualifiedByName = "deliveryMethodToString")
     @Mapping(target = "bonds", source = "bonds", qualifiedByName = "bondListToJsonb")
     @Mapping(target = "conditions", source = "conditions", qualifiedByName = "conditionListToJsonb")
     @Mapping(target = "parties", source = "parties", qualifiedByName = "partyListToJsonb")
@@ -103,13 +111,33 @@ public interface TenderMapper {
         return id != null ? UUID.fromString(id) : null;
     }
 
+    @Named("stringToUuidSafe")
+    default UUID stringToUuidSafe(String id) {
+        if (id == null) return null;
+        try {
+            return UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     @Named("stringToStatus")
     default TenderStatus stringToStatus(String status) {
         return status != null ? TenderStatus.fromValue(status) : null;
     }
 
+    @Named("stringToCurrency")
+    default Currency stringToCurrency(String currency) {
+        return currency != null ? Currency.fromValue(currency) : null;
+    }
+
+    @Named("stringToDeliveryMethod")
+    default DeliveryMethod stringToDeliveryMethod(String deliveryMethod) {
+        return deliveryMethod != null ? DeliveryMethod.fromValue(deliveryMethod) : null;
+    }
+
     @Named("jsonbToBondList")
-    default List<TenderBond> jsonbToBondList(JSONB jsonb) {
+    default List<Bond> jsonbToBondList(JSONB jsonb) {
         if (jsonb == null) return null;
         try {
             return OBJECT_MAPPER.readValue(jsonb.data(), new TypeReference<>() {});
@@ -119,7 +147,7 @@ public interface TenderMapper {
     }
 
     @Named("jsonbToConditionList")
-    default List<TenderCondition> jsonbToConditionList(JSONB jsonb) {
+    default List<Condition> jsonbToConditionList(JSONB jsonb) {
         if (jsonb == null) return null;
         try {
             return OBJECT_MAPPER.readValue(jsonb.data(), new TypeReference<>() {});
@@ -129,7 +157,7 @@ public interface TenderMapper {
     }
 
     @Named("jsonbToPartyList")
-    default List<TenderParty> jsonbToPartyList(JSONB jsonb) {
+    default List<Party> jsonbToPartyList(JSONB jsonb) {
         if (jsonb == null) return null;
         try {
             return OBJECT_MAPPER.readValue(jsonb.data(), new TypeReference<>() {});
@@ -139,20 +167,20 @@ public interface TenderMapper {
     }
 
     @Named("jsonbToAddress")
-    default TenderAddress jsonbToAddress(JSONB jsonb) {
+    default Address jsonbToAddress(JSONB jsonb) {
         if (jsonb == null) return null;
         try {
-            return OBJECT_MAPPER.readValue(jsonb.data(), TenderAddress.class);
+            return OBJECT_MAPPER.readValue(jsonb.data(), Address.class);
         } catch (Exception e) {
             return null;
         }
     }
 
     @Named("jsonbToMap")
-    default Map<String, Object> jsonbToMap(JSONB jsonb) {
+    default Object jsonbToMap(JSONB jsonb) {
         if (jsonb == null) return null;
         try {
-            return OBJECT_MAPPER.readValue(jsonb.data(), new TypeReference<>() {});
+            return OBJECT_MAPPER.readValue(jsonb.data(), new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return null;
         }
@@ -175,8 +203,18 @@ public interface TenderMapper {
         return status == null ? null : status.getValue();
     }
 
+    @Named("currencyToString")
+    default String currencyToString(Currency currency) {
+        return currency == null ? null : currency.getValue();
+    }
+
+    @Named("deliveryMethodToString")
+    default String deliveryMethodToString(DeliveryMethod deliveryMethod) {
+        return deliveryMethod == null ? null : deliveryMethod.getValue();
+    }
+
     @Named("bondListToJsonb")
-    default JSONB bondListToJsonb(List<TenderBond> bonds) {
+    default JSONB bondListToJsonb(List<Bond> bonds) {
         if (bonds == null) return null;
         try {
             return JSONB.valueOf(OBJECT_MAPPER.writeValueAsString(bonds));
@@ -186,7 +224,7 @@ public interface TenderMapper {
     }
 
     @Named("conditionListToJsonb")
-    default JSONB conditionListToJsonb(List<TenderCondition> conditions) {
+    default JSONB conditionListToJsonb(List<Condition> conditions) {
         if (conditions == null) return null;
         try {
             return JSONB.valueOf(OBJECT_MAPPER.writeValueAsString(conditions));
@@ -196,7 +234,7 @@ public interface TenderMapper {
     }
 
     @Named("partyListToJsonb")
-    default JSONB partyListToJsonb(List<TenderParty> parties) {
+    default JSONB partyListToJsonb(List<Party> parties) {
         if (parties == null) return null;
         try {
             return JSONB.valueOf(OBJECT_MAPPER.writeValueAsString(parties));
@@ -206,7 +244,7 @@ public interface TenderMapper {
     }
 
     @Named("addressToJsonb")
-    default JSONB addressToJsonb(TenderAddress address) {
+    default JSONB addressToJsonb(Address address) {
         if (address == null) return null;
         try {
             return JSONB.valueOf(OBJECT_MAPPER.writeValueAsString(address));
@@ -233,5 +271,15 @@ public interface TenderMapper {
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize events", e);
         }
+    }
+
+    // ---- URI <-> String converters ----
+
+    default URI stringToUri(String value) {
+        return value != null ? URI.create(value) : null;
+    }
+
+    default String uriToString(URI value) {
+        return value != null ? value.toString() : null;
     }
 }

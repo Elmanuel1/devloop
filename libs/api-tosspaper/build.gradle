@@ -51,6 +51,7 @@ dependencies {
 	implementation libs.jakarta.validation.api
 	implementation libs.swagger.annotations
 	implementation libs.jackson.databind.nullable
+	implementation libs.openapi.precon
 	
 	// Database
 	implementation libs.flyway.core

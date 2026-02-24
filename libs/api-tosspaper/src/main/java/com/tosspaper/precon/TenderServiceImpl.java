@@ -1,18 +1,17 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.common.BadRequestException;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.HeaderUtils;
 import com.tosspaper.common.DuplicateException;
 import com.tosspaper.common.NotFoundException;
-import com.tosspaper.generated.model.Tender;
-import com.tosspaper.generated.model.TenderCreateRequest;
-import com.tosspaper.generated.model.TenderListResponse;
-import com.tosspaper.generated.model.TenderPagination;
-import com.tosspaper.generated.model.TenderSortDirection;
-import com.tosspaper.generated.model.TenderSortField;
-import com.tosspaper.generated.model.TenderStatus;
-import com.tosspaper.generated.model.TenderUpdateRequest;
+import com.tosspaper.precon.generated.model.Pagination;
+import com.tosspaper.precon.generated.model.SortDirection;
+import com.tosspaper.precon.generated.model.SortField;
+import com.tosspaper.precon.generated.model.Tender;
+import com.tosspaper.precon.generated.model.TenderCreateRequest;
+import com.tosspaper.precon.generated.model.TenderListResponse;
+import com.tosspaper.precon.generated.model.TenderStatus;
+import com.tosspaper.precon.generated.model.TenderUpdateRequest;
 import com.tosspaper.models.exception.CannotDeleteException;
 import com.tosspaper.models.exception.IfMatchRequiredException;
 import com.tosspaper.models.exception.InvalidStatusTransitionException;
@@ -25,7 +24,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,12 +46,12 @@ public class TenderServiceImpl implements TenderService {
     private static final Set<String> FINAL_STATUSES = Set.of("won", "lost", "cancelled");
 
     @Override
-    public Tender createTender(Long companyId, TenderCreateRequest request) {
+    public TenderResult createTender(Long companyId, TenderCreateRequest request) {
         TendersRecord record = tenderMapper.toRecord(request, companyId.toString(), getCurrentUserId());
 
         try {
             TendersRecord inserted = tenderRepository.insert(record);
-            return tenderMapper.toDto(inserted);
+            return new TenderResult(tenderMapper.toDto(inserted), inserted.getVersion());
         } catch (DuplicateKeyException e) {
             throw new DuplicateException("api.tender.duplicateName",
                     "A tender with name '" + request.getName() + "' already exists");
@@ -62,7 +60,7 @@ public class TenderServiceImpl implements TenderService {
 
     @Override
     public TenderListResponse listTenders(Long companyId, Integer limit, String cursor, String search,
-                                          TenderSortField sort, TenderSortDirection direction, TenderStatus status) {
+                                          SortField sort, SortDirection direction, TenderStatus status) {
         String companyIdStr = companyId.toString();
 
         // Clamp limit to valid range
@@ -94,16 +92,15 @@ public class TenderServiceImpl implements TenderService {
 
         List<Tender> tenders = tenderMapper.toDtoList(records);
 
-        // Build pagination
+        // Build pagination — cursor is null when no more results
         String nextCursor = null;
         if (hasMore && !records.isEmpty()) {
             TendersRecord lastRecord = records.getLast();
             nextCursor = CursorUtils.encodeCursor(lastRecord.getCreatedAt(), lastRecord.getId());
         }
 
-        TenderPagination pagination = new TenderPagination();
+        Pagination pagination = new Pagination();
         pagination.setCursor(nextCursor);
-        pagination.setHasMore(hasMore);
 
         TenderListResponse response = new TenderListResponse();
         response.setData(tenders);
@@ -113,7 +110,7 @@ public class TenderServiceImpl implements TenderService {
     }
 
     @Override
-    public Tender getTender(Long companyId, String tenderId) {
+    public TenderResult getTender(Long companyId, String tenderId) {
         String companyIdStr = companyId.toString();
 
         TendersRecord record = tenderRepository.findById(tenderId);
@@ -123,11 +120,11 @@ public class TenderServiceImpl implements TenderService {
             throw new NotFoundException("api.tender.notFound", "Tender not found");
         }
 
-        return tenderMapper.toDto(record);
+        return new TenderResult(tenderMapper.toDto(record), record.getVersion());
     }
 
     @Override
-    public Tender updateTender(Long companyId, String tenderId, TenderUpdateRequest request, String ifMatch) {
+    public TenderResult updateTender(Long companyId, String tenderId, TenderUpdateRequest request, String ifMatch) {
         String companyIdStr = companyId.toString();
 
         // If-Match is required
@@ -171,7 +168,7 @@ public class TenderServiceImpl implements TenderService {
         // Reload and return updated tender
         TendersRecord updated = tenderRepository.findById(tenderId);
 
-        return tenderMapper.toDto(updated);
+        return new TenderResult(tenderMapper.toDto(updated), updated.getVersion());
     }
 
     @Override
