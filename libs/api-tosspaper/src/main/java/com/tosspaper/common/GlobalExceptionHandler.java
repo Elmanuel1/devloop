@@ -134,4 +134,46 @@ public class GlobalExceptionHandler {
         var apiError = new ApiError("invalid_secret", ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.FORBIDDEN);
     }
-} 
+
+    @ExceptionHandler(com.tosspaper.models.exception.StaleVersionException.class)
+    public ResponseEntity<Object> handleStaleVersionException(com.tosspaper.models.exception.StaleVersionException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.PRECONDITION_FAILED);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.InvalidStatusTransitionException.class)
+    public ResponseEntity<Object> handleInvalidStatusTransitionException(com.tosspaper.models.exception.InvalidStatusTransitionException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.CannotDeleteException.class)
+    public ResponseEntity<Object> handleCannotDeleteException(com.tosspaper.models.exception.CannotDeleteException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.IfMatchRequiredException.class)
+    public ResponseEntity<Object> handleIfMatchRequiredException(com.tosspaper.models.exception.IfMatchRequiredException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.valueOf(428));
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.InvalidETagException.class)
+    public ResponseEntity<Object> handleInvalidETagException(com.tosspaper.models.exception.InvalidETagException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.InvalidCursorException.class)
+    public ResponseEntity<Object> handleInvalidCursorException(com.tosspaper.models.exception.InvalidCursorException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
+}

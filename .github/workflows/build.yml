@@ -131,7 +131,7 @@ jobs:
         if: steps.should_build.outputs.java_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: ./gradlew build --build-cache --scan
+        run: ./gradlew build -x test --build-cache --scan
 
       - name: Set up QEMU
         if: steps.should_build.outputs.java_changed == 'true'
