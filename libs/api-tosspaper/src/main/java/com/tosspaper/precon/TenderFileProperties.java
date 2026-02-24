@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.precon.generated.model.ContentType;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -28,20 +29,19 @@ public class TenderFileProperties {
      * Allowed content types for tender document uploads.
      */
     @NotEmpty
-    private Set<String> allowedContentTypes = Set.of(
-            "application/pdf",
-            "image/png",
-            "image/jpeg",
-            "application/zip"
+    private Set<ContentType> allowedContentTypes = Set.of(
+            ContentType.APPLICATION_PDF,
+            ContentType.IMAGE_PNG,
+            ContentType.IMAGE_JPEG
     );
 
     /**
      * Maximum file size in bytes.
-     * Default: 50MB
+     * Default: 200MB
      */
     @NotNull
     @Min(1)
-    private Long maxFileSizeBytes = 50 * 1024 * 1024L;
+    private Long maxFileSizeBytes = 200 * 1024 * 1024L;
 
     /**
      * Maximum filename length.
@@ -54,10 +54,9 @@ public class TenderFileProperties {
      * Mapping from content type to allowed file extensions.
      */
     @NotEmpty
-    private Map<String, Set<String>> contentTypeExtensions = Map.of(
-            "application/pdf", Set.of("pdf"),
-            "image/png", Set.of("png"),
-            "image/jpeg", Set.of("jpg", "jpeg"),
-            "application/zip", Set.of("zip")
+    private Map<ContentType, Set<String>> contentTypeExtensions = Map.of(
+            ContentType.APPLICATION_PDF, Set.of("pdf"),
+            ContentType.IMAGE_PNG, Set.of("png"),
+            ContentType.IMAGE_JPEG, Set.of("jpg", "jpeg")
     );
 }
