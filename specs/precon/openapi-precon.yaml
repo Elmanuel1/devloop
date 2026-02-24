@@ -143,10 +143,9 @@ components:
     TenderStatus:
       type: string
       description: >
-        Lifecycle status of a tender. draft — initial state; pending — active and accepting bids;
+        Lifecycle status of a tender. pending — initial state, active and accepting bids;
         submitted — bid has been submitted; won/lost — outcome; cancelled — withdrawn.
       enum:
-        - draft
         - pending
         - submitted
         - won
@@ -229,7 +228,6 @@ components:
       enum:
         - closing_date
         - created_at
-        - name
 
     SortDirection:
       type: string
@@ -339,6 +337,7 @@ components:
         address:
           type: string
           description: Street address
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         city:
           type:
             - string
@@ -366,9 +365,11 @@ components:
           type: string
           maxLength: 100
           description: Party role in the tender. Freeform — suggested values are owner, engineer, architect, purchasing_agent, general_contractor, surety, quantity_surveyor.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         name:
           type: string
           description: Legal or operational name
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         address:
           oneOf:
             - $ref: '#/components/schemas/Address'
@@ -382,6 +383,7 @@ components:
             - string
             - 'null'
           format: email
+          x-field-extra-annotation: "@jakarta.validation.constraints.Email"
 
     Bond:
       type: object
@@ -426,6 +428,7 @@ components:
           type: string
           maxLength: 500
           description: Condition text.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
 
     TenderEvent:
       type: object
@@ -672,6 +675,7 @@ components:
           type: string
           maxLength: 255
           description: Tender name
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         platform:
           type:
             - string
@@ -689,6 +693,7 @@ components:
             - 'null'
           format: date-time
           description: Bid submission deadline
+          x-field-extra-annotation: "@jakarta.validation.constraints.FutureOrPresent"
         delivery_method:
           oneOf:
             - $ref: '#/components/schemas/DeliveryMethod'
@@ -706,6 +711,7 @@ components:
         name:
           type: string
           maxLength: 255
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         platform:
           type:
             - string
@@ -739,6 +745,7 @@ components:
             - string
             - 'null'
           format: date-time
+          x-field-extra-annotation: "@jakarta.validation.constraints.FutureOrPresent"
         events:
           type:
             - array
@@ -820,6 +827,7 @@ components:
           type: string
           maxLength: 255
           description: File name with extension. The backend sanitizes for the S3 key.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
         content_type:
           $ref: '#/components/schemas/ContentType'
         file_size:
