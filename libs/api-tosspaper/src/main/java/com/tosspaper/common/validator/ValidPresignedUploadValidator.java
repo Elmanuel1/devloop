@@ -5,14 +5,12 @@ import com.tosspaper.precon.generated.model.ContentType;
 import com.tosspaper.precon.generated.model.PresignedUrlRequest;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import lombok.RequiredArgsConstructor;
 
+@RequiredArgsConstructor
 public class ValidPresignedUploadValidator implements ConstraintValidator<ValidPresignedUpload, PresignedUrlRequest> {
 
     private final FileProperties fileProperties;
-
-    public ValidPresignedUploadValidator(FileProperties fileProperties) {
-        this.fileProperties = fileProperties;
-    }
 
     @Override
     public boolean isValid(PresignedUrlRequest request, ConstraintValidatorContext context) {

@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly project(':libs:models')
+    api project(':libs:file-utils')
     implementation platform("org.springframework.boot:spring-boot-dependencies:${libs.versions.spring.boot.get()}")
     implementation "io.swagger.core.v3:swagger-annotations:${libs.versions.swagger.annotations.get()}"
     implementation "jakarta.validation:jakarta.validation-api:${libs.versions.jakarta.validation.get()}"

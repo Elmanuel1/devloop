@@ -12,6 +12,7 @@ plugins {
 }
 
 rootProject.name = 'tosspaper-email-engine'
+include('libs:file-utils')
 include('libs:models')
 include('libs:email-engine')
 include('libs:ai-engine')
