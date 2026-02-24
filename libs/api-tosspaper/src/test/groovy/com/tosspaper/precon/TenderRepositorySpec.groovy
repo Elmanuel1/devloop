@@ -8,6 +8,8 @@ import com.tosspaper.models.jooq.tables.records.TendersRecord
 import org.jooq.DSLContext
 import org.springframework.beans.factory.annotation.Autowired
 
+import java.time.OffsetDateTime
+
 class TenderRepositorySpec extends BaseIntegrationTest {
 
     @Autowired
@@ -206,6 +208,144 @@ class TenderRepositorySpec extends BaseIntegrationTest {
 
         then: "returns limit+1 for has_more detection"
             results.size() == 3
+    }
+
+    // ==================== sorting ====================
+
+    def "should sort by created_at desc by default"() {
+        given: "tenders inserted in order"
+            def t1 = tenderRepository.insert(buildRecord(companyIdStr, "First", "user-1"))
+            Thread.sleep(50)
+            def t2 = tenderRepository.insert(buildRecord(companyIdStr, "Second", "user-1"))
+            Thread.sleep(50)
+            def t3 = tenderRepository.insert(buildRecord(companyIdStr, "Third", "user-1"))
+
+        and: "default sort query"
+            def query = TenderQuery.builder().limit(20).sortBy("created_at").sortDirection("desc").build()
+
+        when: "listing"
+            def results = tenderRepository.findByCompanyId(companyIdStr, query)
+
+        then: "newest first"
+            results[0].name == "Third"
+            results[1].name == "Second"
+            results[2].name == "First"
+    }
+
+    def "should sort by created_at asc"() {
+        given: "tenders inserted in order"
+            def t1 = tenderRepository.insert(buildRecord(companyIdStr, "First", "user-1"))
+            Thread.sleep(50)
+            def t2 = tenderRepository.insert(buildRecord(companyIdStr, "Second", "user-1"))
+
+        and: "asc sort query"
+            def query = TenderQuery.builder().limit(20).sortBy("created_at").sortDirection("asc").build()
+
+        when: "listing"
+            def results = tenderRepository.findByCompanyId(companyIdStr, query)
+
+        then: "oldest first"
+            results[0].name == "First"
+            results[1].name == "Second"
+    }
+
+    def "should sort by closing_date desc with nulls last"() {
+        given: "tenders with and without closing dates"
+            def r1 = buildRecord(companyIdStr, "No Date", "user-1")
+            tenderRepository.insert(r1)
+
+            def r2 = buildRecord(companyIdStr, "Far Future", "user-1")
+            r2.setClosingDate(OffsetDateTime.now().plusDays(30))
+            tenderRepository.insert(r2)
+
+            def r3 = buildRecord(companyIdStr, "Soon", "user-1")
+            r3.setClosingDate(OffsetDateTime.now().plusDays(5))
+            tenderRepository.insert(r3)
+
+        and: "closing_date desc query"
+            def query = TenderQuery.builder().limit(20).sortBy("closing_date").sortDirection("desc").build()
+
+        when: "listing"
+            def results = tenderRepository.findByCompanyId(companyIdStr, query)
+
+        then: "furthest date first, nulls last"
+            results[0].name == "Far Future"
+            results[1].name == "Soon"
+            results[2].name == "No Date"
+    }
+
+    def "should sort by closing_date asc with nulls last"() {
+        given: "tenders with and without closing dates"
+            def r1 = buildRecord(companyIdStr, "No Date", "user-1")
+            tenderRepository.insert(r1)
+
+            def r2 = buildRecord(companyIdStr, "Far Future", "user-1")
+            r2.setClosingDate(OffsetDateTime.now().plusDays(30))
+            tenderRepository.insert(r2)
+
+            def r3 = buildRecord(companyIdStr, "Soon", "user-1")
+            r3.setClosingDate(OffsetDateTime.now().plusDays(5))
+            tenderRepository.insert(r3)
+
+        and: "closing_date asc query"
+            def query = TenderQuery.builder().limit(20).sortBy("closing_date").sortDirection("asc").build()
+
+        when: "listing"
+            def results = tenderRepository.findByCompanyId(companyIdStr, query)
+
+        then: "soonest first, nulls last"
+            results[0].name == "Soon"
+            results[1].name == "Far Future"
+            results[2].name == "No Date"
+    }
+
+    // ==================== cursor pagination ====================
+
+    def "should return next page using cursor"() {
+        given: "3 tenders inserted in order"
+            def t1 = tenderRepository.insert(buildRecord(companyIdStr, "First", "user-1"))
+            Thread.sleep(50)
+            def t2 = tenderRepository.insert(buildRecord(companyIdStr, "Second", "user-1"))
+            Thread.sleep(50)
+            def t3 = tenderRepository.insert(buildRecord(companyIdStr, "Third", "user-1"))
+
+        and: "first page with limit 1"
+            def page1Query = TenderQuery.builder().limit(1).sortBy("created_at").sortDirection("desc").build()
+            def page1 = tenderRepository.findByCompanyId(companyIdStr, page1Query)
+
+        and: "cursor from last record of page 1"
+            def lastRecord = page1[0] // "Third" (newest)
+
+        when: "fetching second page using cursor"
+            def page2Query = TenderQuery.builder()
+                .limit(1)
+                .sortBy("created_at")
+                .sortDirection("desc")
+                .cursorCreatedAt(lastRecord.createdAt)
+                .cursorId(lastRecord.id)
+                .build()
+            def page2 = tenderRepository.findByCompanyId(companyIdStr, page2Query)
+
+        then: "returns next records after cursor"
+            page2[0].name == "Second"
+    }
+
+    def "should return empty when cursor is past last record"() {
+        given: "a single tender"
+            def t1 = tenderRepository.insert(buildRecord(companyIdStr, "Only", "user-1"))
+
+        when: "fetching with cursor past this record"
+            def query = TenderQuery.builder()
+                .limit(20)
+                .sortBy("created_at")
+                .sortDirection("desc")
+                .cursorCreatedAt(t1.createdAt)
+                .cursorId(t1.id)
+                .build()
+            def results = tenderRepository.findByCompanyId(companyIdStr, query)
+
+        then: "empty results"
+            results.isEmpty()
     }
 
     // ==================== update ====================

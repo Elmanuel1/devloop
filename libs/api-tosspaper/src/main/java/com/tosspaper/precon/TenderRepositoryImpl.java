@@ -179,12 +179,6 @@ public class TenderRepositoryImpl implements TenderRepository {
                         TENDERS.ID.desc()
                 );
             }
-        } else if ("name".equals(sortBy)) {
-            if (asc) {
-                return List.of(TENDERS.NAME.asc(), TENDERS.CREATED_AT.desc(), TENDERS.ID.desc());
-            } else {
-                return List.of(TENDERS.NAME.desc(), TENDERS.CREATED_AT.desc(), TENDERS.ID.desc());
-            }
         } else {
             // Default: created_at desc
             if (asc) {
