@@ -137,6 +137,54 @@ class TenderServiceSpec extends Specification {
             1 * tenderMapper.toDtoList([]) >> []
     }
 
+    def "should set hasMore true and cursor when more results exist"() {
+        given: "repo returns limit+1 records (indicating more pages)"
+            def companyId = 1L
+            // limit=2, repo returns 3 records → hasMore=true
+            def r1 = createRecord("t1", "1")
+            def r2 = createRecord("t2", "1")
+            def r3 = createRecord("t3", "1")
+            def records = [r1, r2, r3]
+            def dtos = [createTenderDto("t1"), createTenderDto("t2")]
+
+        when: "listing with limit 2"
+            def result = service.listTenders(companyId, 2, null, null, null, null, null)
+
+        then: "repository returns limit+1 records"
+            1 * tenderRepository.findByCompanyId("1", { it.limit == 2 }) >> records
+
+        and: "mapper receives trimmed list"
+            1 * tenderMapper.toDtoList([r1, r2]) >> dtos
+
+        and: "pagination indicates more"
+            result.data.size() == 2
+            result.pagination.hasMore == true
+            result.pagination.cursor != null
+    }
+
+    def "should set hasMore false when no more results"() {
+        given: "repo returns exactly limit records (no extra)"
+            def companyId = 1L
+            def r1 = createRecord("t1", "1")
+            def r2 = createRecord("t2", "1")
+            def records = [r1, r2]
+            def dtos = [createTenderDto("t1"), createTenderDto("t2")]
+
+        when: "listing with limit 2"
+            def result = service.listTenders(companyId, 2, null, null, null, null, null)
+
+        then: "repository returns exactly limit records"
+            1 * tenderRepository.findByCompanyId("1", { it.limit == 2 }) >> records
+
+        and: "mapper receives all records"
+            1 * tenderMapper.toDtoList(records) >> dtos
+
+        and: "pagination indicates no more"
+            result.data.size() == 2
+            result.pagination.hasMore == false
+            result.pagination.cursor == null
+    }
+
     def "should return empty list when no tenders exist"() {
         given: "no tenders"
             def companyId = 1L
