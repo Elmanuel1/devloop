@@ -46,7 +46,7 @@ public interface TenderMapper {
     // ---- CreateRequest → Record ----
 
     @Mapping(target = "id", expression = "java(java.util.UUID.randomUUID().toString())")
-    @Mapping(target = "status", constant = "draft")
+    @Mapping(target = "status", constant = "pending")
     @Mapping(target = "companyId", source = "companyId")
     @Mapping(target = "createdBy", source = "createdBy")
     @Mapping(target = "name", source = "request.name")

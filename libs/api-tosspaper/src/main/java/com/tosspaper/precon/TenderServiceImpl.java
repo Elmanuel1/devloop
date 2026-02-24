@@ -40,7 +40,6 @@ public class TenderServiceImpl implements TenderService {
 
     // Valid status transitions: from -> Set<to>
     private static final Map<String, Set<String>> VALID_TRANSITIONS = Map.of(
-            "draft", Set.of("pending"),
             "pending", Set.of("submitted", "cancelled"),
             "submitted", Set.of("won", "lost")
     );
@@ -66,24 +65,14 @@ public class TenderServiceImpl implements TenderService {
                                           TenderSortField sort, TenderSortDirection direction, TenderStatus status) {
         String companyIdStr = companyId.toString();
 
-        // Validate limit
+        // Clamp limit to valid range
         int effectiveLimit = limit != null ? limit : 20;
         if (effectiveLimit < 1 || effectiveLimit > 100) {
-            throw new BadRequestException("api.validation.invalidLimit", "Limit must be between 1 and 100");
+            effectiveLimit = 20;
         }
 
-        // Decode cursor
-        OffsetDateTime cursorCreatedAt = null;
-        String cursorId = null;
-        if (cursor != null && !cursor.isBlank()) {
-            try {
-                CursorUtils.CursorPair cursorPair = CursorUtils.decodeCursor(cursor);
-                cursorCreatedAt = cursorPair.createdAt();
-                cursorId = cursorPair.id();
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException("api.validation.invalidCursor", "Invalid cursor format");
-            }
-        }
+        // Decode cursor (returns null if absent, throws BadRequestException if malformed)
+        CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
 
         TenderQuery query = TenderQuery.builder()
                 .search(search)
@@ -91,8 +80,8 @@ public class TenderServiceImpl implements TenderService {
                 .sortBy(sort != null ? sort.getValue() : "created_at")
                 .sortDirection(direction != null ? direction.getValue() : "desc")
                 .limit(effectiveLimit)
-                .cursorCreatedAt(cursorCreatedAt)
-                .cursorId(cursorId)
+                .cursorCreatedAt(cursorPair != null ? cursorPair.createdAt() : null)
+                .cursorId(cursorPair != null ? cursorPair.id() : null)
                 .build();
 
         List<TendersRecord> records = tenderRepository.findByCompanyId(companyIdStr, query);
@@ -196,11 +185,11 @@ public class TenderServiceImpl implements TenderService {
             throw new NotFoundException("api.tender.notFound", "Tender not found");
         }
 
-        // Only draft and pending can be deleted
+        // Only pending can be deleted
         String status = record.getStatus();
-        if (!"draft".equals(status) && !"pending".equals(status)) {
+        if (!"pending".equals(status)) {
             throw new CannotDeleteException("api.tender.cannotDelete",
-                    "Only tenders in draft or pending status can be deleted. Current status: " + status);
+                    "Only tenders in pending status can be deleted. Current status: " + status);
         }
 
         tenderRepository.softDelete(tenderId);

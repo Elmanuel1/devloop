@@ -130,10 +130,10 @@ class TenderServiceSpec extends Specification {
             def companyId = 1L
 
         when: "listing tenders with status"
-            service.listTenders(companyId, 20, null, null, null, null, TenderStatus.DRAFT)
+            service.listTenders(companyId, 20, null, null, null, null, TenderStatus.PENDING)
 
         then: "repository is called with status"
-            1 * tenderRepository.findByCompanyId("1", { it.status == "draft" }) >> []
+            1 * tenderRepository.findByCompanyId("1", { it.status == "pending" }) >> []
             1 * tenderMapper.toDtoList([]) >> []
     }
 
@@ -350,20 +350,19 @@ class TenderServiceSpec extends Specification {
             thrown(IfMatchRequiredException)
     }
 
-    def "should validate status transition draft to pending"() {
-        given: "a draft tender"
+    def "should validate status transition pending to submitted"() {
+        given: "a pending tender"
             def companyId = 1L
             def tenderId = "tender-1"
             def existing = createRecord(tenderId, companyId.toString())
-            existing.setStatus("draft")
             def updated = createRecord(tenderId, companyId.toString())
-            updated.setStatus("pending")
+            updated.setStatus("submitted")
             def request = new TenderUpdateRequest()
-            request.setStatus(TenderStatus.PENDING)
+            request.setStatus(TenderStatus.SUBMITTED)
             def dto = createTenderDto(tenderId)
-            dto.setStatus(TenderStatus.PENDING)
+            dto.setStatus(TenderStatus.SUBMITTED)
 
-        when: "updating status to pending"
+        when: "updating status to submitted"
             def result = service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "no exception"
@@ -372,19 +371,18 @@ class TenderServiceSpec extends Specification {
             1 * tenderRepository.update(tenderId, existing, 0) >> 1
             1 * tenderRepository.findById(tenderId) >> updated
             1 * tenderMapper.toDto(updated) >> dto
-            result.status == TenderStatus.PENDING
+            result.status == TenderStatus.SUBMITTED
     }
 
     def "should throw InvalidStatusTransitionException for invalid transition"() {
-        given: "a draft tender"
+        given: "a pending tender"
             def companyId = 1L
             def tenderId = "tender-1"
             def existing = createRecord(tenderId, companyId.toString())
-            existing.setStatus("draft")
             def request = new TenderUpdateRequest()
             request.setStatus(TenderStatus.WON)
 
-        when: "updating status from draft to won"
+        when: "updating status from pending to won"
             service.updateTender(companyId, tenderId, request, '"v0"')
 
         then: "repository finds existing"
@@ -395,23 +393,6 @@ class TenderServiceSpec extends Specification {
     }
 
     // ==================== deleteTender ====================
-
-    def "should soft-delete draft tender"() {
-        given: "a draft tender"
-            def companyId = 1L
-            def tenderId = "tender-1"
-            def record = createRecord(tenderId, companyId.toString())
-            record.setStatus("draft")
-
-        when: "deleting"
-            service.deleteTender(companyId, tenderId)
-
-        then: "repository finds record"
-            1 * tenderRepository.findById(tenderId) >> record
-
-        and: "soft delete called"
-            1 * tenderRepository.softDelete(tenderId)
-    }
 
     def "should soft-delete pending tender"() {
         given: "a pending tender"
@@ -469,7 +450,7 @@ class TenderServiceSpec extends Specification {
         record.setId(id)
         record.setCompanyId(companyId)
         record.setName("Test Tender")
-        record.setStatus("draft")
+        record.setStatus("pending")
         record.setCreatedBy("user-1")
         record.setCreatedAt(OffsetDateTime.now())
         record.setUpdatedAt(OffsetDateTime.now())
@@ -480,7 +461,7 @@ class TenderServiceSpec extends Specification {
         def tender = new Tender()
         tender.setId(UUID.fromString(id.length() == 36 ? id : "00000000-0000-0000-0000-000000000001"))
         tender.setName("Test Tender")
-        tender.setStatus(TenderStatus.DRAFT)
+        tender.setStatus(TenderStatus.PENDING)
         tender.setVersion(0)
         tender.setCreatedAt(OffsetDateTime.now())
         tender.setUpdatedAt(OffsetDateTime.now())

@@ -58,7 +58,7 @@ class TenderRepositorySpec extends BaseIntegrationTest {
             inserted.id != null
             inserted.name == "Bridge RFP"
             inserted.companyId == companyIdStr
-            inserted.status == "draft"
+            inserted.status == "pending"
             inserted.currency == "CAD"
             inserted.deliveryMethod == "lump_sum"
             inserted.platform == "https://bidsandtenders.ca"
@@ -162,20 +162,20 @@ class TenderRepositorySpec extends BaseIntegrationTest {
 
     def "should filter by status"() {
         given: "tenders with different statuses"
-            tenderRepository.insert(buildRecord(companyIdStr, "Draft", "user-1"))
-            def tender2 = tenderRepository.insert(buildRecord(companyIdStr, "Pending", "user-1"))
-            dsl.update(Tables.TENDERS).set(Tables.TENDERS.STATUS, "pending")
+            tenderRepository.insert(buildRecord(companyIdStr, "Pending One", "user-1"))
+            def tender2 = tenderRepository.insert(buildRecord(companyIdStr, "Submitted One", "user-1"))
+            dsl.update(Tables.TENDERS).set(Tables.TENDERS.STATUS, "submitted")
                 .where(Tables.TENDERS.ID.eq(tender2.id)).execute()
 
         and: "status filter query"
-            def query = TenderQuery.builder().status("draft").limit(20).sortBy("created_at").sortDirection("desc").build()
+            def query = TenderQuery.builder().status("pending").limit(20).sortBy("created_at").sortDirection("desc").build()
 
         when: "filtering"
             def results = tenderRepository.findByCompanyId(companyIdStr, query)
 
-        then: "only draft returned"
+        then: "only pending returned"
             results.size() == 1
-            results[0].status == "draft"
+            results[0].status == "pending"
     }
 
     def "should respect limit parameter"() {
@@ -435,7 +435,7 @@ class TenderRepositorySpec extends BaseIntegrationTest {
         record.setId(UUID.randomUUID().toString())
         record.setCompanyId(companyId)
         record.setName(name)
-        record.setStatus("draft")
+        record.setStatus("pending")
         record.setCreatedBy(createdBy)
         return record
     }

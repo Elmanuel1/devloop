@@ -6,6 +6,8 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 
+import com.tosspaper.common.BadRequestException;
+
 /**
  * Utility class for encoding and decoding composite cursors for pagination.
  * Cursor format: URL-safe base64(created_at_iso_string|ulid_id)
@@ -97,6 +99,25 @@ public class CursorUtils {
             return new String(decoded, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid cursor format: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Parse a cursor string, returning a CursorPair or null if the cursor is absent.
+     * Throws BadRequestException if the cursor is present but malformed.
+     *
+     * @param cursor URL-safe base64 encoded cursor string, or null/blank
+     * @return CursorPair with decoded values, or null if cursor is absent
+     * @throws BadRequestException if cursor is present but invalid
+     */
+    public static CursorPair parseCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            return decodeCursor(cursor);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException("api.validation.invalidCursor", "Invalid cursor format");
         }
     }
 
