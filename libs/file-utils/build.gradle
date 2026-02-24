@@ -1,5 +1,7 @@
 plugins {
     id 'java-library'
+    id 'groovy'
+    id 'jacoco'
 }
 
 java {
@@ -19,4 +21,25 @@ dependencies {
 
     compileOnly libs.lombok
     annotationProcessor libs.lombok
+
+    testImplementation libs.groovy.core
+    testImplementation libs.spock.core
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.named('compileTestGroovy') {
+    options.compilerArgs += ['-J-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+    options.forkOptions.jvmArgs += ['-Dspock.iKnowWhatImDoing.disableGroovyVersionCheck=true']
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
 }
