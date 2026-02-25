@@ -1,7 +1,7 @@
 package com.tosspaper.precon
 
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
-import com.tosspaper.models.properties.AwsProperties
+import com.tosspaper.models.validation.MagicByteValidation
 import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.http.AbortableInputStream
 import software.amazon.awssdk.services.s3.S3Client
@@ -14,7 +14,7 @@ class DocumentUploadProcessorSpec extends Specification {
 
     TenderDocumentRepository documentRepository = Mock()
     S3Client s3Client = Mock()
-    AwsProperties awsProperties
+    MagicByteValidation magicByteValidation = new MagicByteValidation()
 
     DocumentUploadProcessor processor
 
@@ -22,18 +22,14 @@ class DocumentUploadProcessorSpec extends Specification {
     String s3Key = "tender-uploads/1/tid-123/did-456/document.pdf"
 
     def setup() {
-        awsProperties = new AwsProperties()
-        awsProperties.bucket = new AwsProperties.Bucket()
-        awsProperties.bucket.name = bucket
-        awsProperties.bucket.region = "us-east-1"
-
-        processor = new DocumentUploadProcessor(documentRepository, s3Client, awsProperties)
+        processor = new DocumentUploadProcessor(documentRepository, s3Client, magicByteValidation)
     }
 
     private TenderDocumentsRecord mockDocumentRecord(String docId, String contentType) {
         def record = Mock(TenderDocumentsRecord)
         record.getId() >> docId
         record.getContentType() >> contentType
+        record.getFileName() >> "document.pdf"
         record.getS3Key() >> s3Key
         return record
     }
@@ -71,6 +67,7 @@ class DocumentUploadProcessorSpec extends Specification {
             def document = Mock(TenderDocumentsRecord)
             document.getId() >> docId
             document.getContentType() >> "image/png"
+            document.getFileName() >> "image.png"
             document.getS3Key() >> pngKey
 
             documentRepository.findByS3Key(pngKey) >> Optional.of(document)
@@ -93,6 +90,7 @@ class DocumentUploadProcessorSpec extends Specification {
             def document = Mock(TenderDocumentsRecord)
             document.getId() >> docId
             document.getContentType() >> "image/jpeg"
+            document.getFileName() >> "photo.jpg"
             document.getS3Key() >> jpegKey
 
             documentRepository.findByS3Key(jpegKey) >> Optional.of(document)
@@ -123,7 +121,7 @@ class DocumentUploadProcessorSpec extends Specification {
         then:
             1 * documentRepository.updateStatusToProcessing(docId)
             0 * documentRepository.updateStatusToReady(_)
-            1 * documentRepository.updateStatusToFailed(docId, { it.contains("Magic bytes do not match") })
+            1 * documentRepository.updateStatusToFailed(docId, { it.contains("magic bytes do not match") })
     }
 
     def "should fail when S3 object not found"() {

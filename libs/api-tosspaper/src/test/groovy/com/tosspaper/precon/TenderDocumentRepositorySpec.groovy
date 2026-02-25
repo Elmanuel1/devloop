@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.tosspaper.common.NotFoundException
 import com.tosspaper.config.BaseIntegrationTest
 import com.tosspaper.config.TestSecurityConfiguration
 import com.tosspaper.models.jooq.Tables
@@ -121,20 +122,20 @@ class TenderDocumentRepositorySpec extends BaseIntegrationTest {
 
         then:
             def found = repository.findById(docId)
-            found.isPresent()
-            found.get().fileName == "test.pdf"
-            found.get().status == "uploading"
+            found.fileName == "test.pdf"
+            found.status == "uploading"
     }
 
-    def "should soft delete and exclude from findById"() {
+    def "should soft delete and throw NotFoundException from findById"() {
         given:
             def docId = insertDocument(tenderAId, "to-delete.pdf", "ready")
 
         when:
             repository.softDelete(docId)
+            repository.findById(docId)
 
         then:
-            repository.findById(docId).isEmpty()
+            thrown(NotFoundException)
     }
 
     // ==================== Helpers ====================

@@ -1,9 +1,9 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.generated.model.DownloadUrlResponse;
-import com.tosspaper.generated.model.PresignedUrlRequest;
-import com.tosspaper.generated.model.PresignedUrlResponse;
-import com.tosspaper.generated.model.TenderDocumentListResponse;
+import com.tosspaper.precon.generated.model.DownloadUrlResponse;
+import com.tosspaper.precon.generated.model.PresignedUrlRequest;
+import com.tosspaper.precon.generated.model.PresignedUrlResponse;
+import com.tosspaper.precon.generated.model.TenderDocumentListResponse;
 
 public interface TenderDocumentService {
 

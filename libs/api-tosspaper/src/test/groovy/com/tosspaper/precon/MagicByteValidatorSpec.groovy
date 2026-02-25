@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.tosspaper.models.validation.MagicByteValidator
 import spock.lang.Specification
 
 class MagicByteValidatorSpec extends Specification {

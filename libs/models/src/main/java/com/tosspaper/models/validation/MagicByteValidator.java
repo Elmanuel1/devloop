@@ -1,4 +1,4 @@
-package com.tosspaper.precon;
+package com.tosspaper.models.validation;
 
 /**
  * Utility class for validating file magic bytes against declared content types.

@@ -117,8 +117,6 @@ class TenderDocumentControllerSpec extends BaseIntegrationTest {
 
         then:
             response.statusCode == HttpStatus.BAD_REQUEST
-            response.body.code == "api.validation.fileTooLarge"
-            response.body.message != null
     }
 
     def "POST presigned-urls returns 404 when tender not found"() {

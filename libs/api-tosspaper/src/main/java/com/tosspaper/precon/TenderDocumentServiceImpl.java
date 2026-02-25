@@ -1,13 +1,15 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.NotFoundException;
-import com.tosspaper.generated.model.DownloadUrlResponse;
-import com.tosspaper.generated.model.PresignedUrlRequest;
-import com.tosspaper.generated.model.PresignedUrlResponse;
-import com.tosspaper.generated.model.TenderDocument;
-import com.tosspaper.generated.model.TenderDocumentListResponse;
-import com.tosspaper.generated.model.TenderPagination;
+import com.tosspaper.models.exception.DocumentNotReadyException;
+import com.tosspaper.precon.generated.model.DownloadUrlResponse;
+import com.tosspaper.precon.generated.model.PresignedUrlRequest;
+import com.tosspaper.precon.generated.model.PresignedUrlResponse;
+import com.tosspaper.precon.generated.model.TenderDocument;
+import com.tosspaper.precon.generated.model.Pagination;
+import com.tosspaper.precon.generated.model.TenderDocumentListResponse;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import com.tosspaper.models.jooq.tables.records.TendersRecord;
 import com.tosspaper.models.properties.AwsProperties;
@@ -37,7 +39,6 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     private final TenderRepository tenderRepository;
     private final TenderDocumentRepository documentRepository;
     private final TenderDocumentMapper documentMapper;
-    private final TenderDocumentValidator validator;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
     private final AwsProperties awsProperties;
@@ -51,9 +52,6 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         // Verify tender exists and belongs to company
         verifyTenderOwnership(tenderId, companyIdStr);
 
-        // Validate file metadata
-        validator.validate(request);
-
         // Generate document ID and S3 key
         String documentId = UUID.randomUUID().toString();
         String sanitizedFileName = sanitizeFileName(request.getFileName());
@@ -65,7 +63,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
                 .bucket(awsProperties.getBucket().getName())
                 .key(s3Key)
                 .contentType(request.getContentType().getValue())
-                .contentLength(request.getFileSize())
+                .contentLength(request.getFileSize().longValue())
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
@@ -122,9 +120,8 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
             nextCursor = CursorUtils.encodeCursor(lastRecord.getCreatedAt(), lastRecord.getId());
         }
 
-        TenderPagination pagination = new TenderPagination();
+        Pagination pagination = new Pagination();
         pagination.setCursor(nextCursor);
-        pagination.setHasMore(hasMore);
 
         TenderDocumentListResponse response = new TenderDocumentListResponse();
         response.setData(documents);
@@ -141,17 +138,16 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         verifyTenderOwnership(tenderId, companyIdStr);
 
         // Verify document exists and belongs to tender
-        TenderDocumentsRecord document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new NotFoundException("api.document.notFound", "Document not found"));
+        TenderDocumentsRecord document = documentRepository.findById(documentId);
 
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.document.notFound", "Document not found");
+            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
         }
 
         // Soft-delete document record
         int deleted = documentRepository.softDelete(documentId);
         if (deleted == 0) {
-            throw new NotFoundException("api.document.notFound", "Document not found");
+            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
         }
 
         // Delete S3 object synchronously
@@ -175,17 +171,16 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         verifyTenderOwnership(tenderId, companyIdStr);
 
         // Verify document exists and belongs to tender
-        TenderDocumentsRecord document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new NotFoundException("api.document.notFound", "Document not found"));
+        TenderDocumentsRecord document = documentRepository.findById(documentId);
 
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.document.notFound", "Document not found");
+            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
         }
 
         // Verify document status is "ready"
         if (!"ready".equals(document.getStatus())) {
-            throw new DocumentNotReadyException("api.document.notReady",
-                    "Document is not ready for download. Current status: " + document.getStatus());
+            throw new DocumentNotReadyException(ApiErrorMessages.DOCUMENT_NOT_READY_CODE,
+                    ApiErrorMessages.DOCUMENT_NOT_READY.formatted(document.getStatus()));
         }
 
         // Generate presigned GET URL
@@ -211,7 +206,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     private void verifyTenderOwnership(String tenderId, String companyIdStr) {
         TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
+            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
         }
     }
 

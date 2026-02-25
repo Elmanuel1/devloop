@@ -112,22 +112,23 @@ class DocumentUploadHandlerSpec extends Specification {
             1 * processor.processUpload("test-bucket", "tender-uploads/1/tid-123/did-456/my document.pdf", 5000)
     }
 
-    def "should handle via MessageHandler interface"() {
+    def "should handle via MessageHandler interface with proper structure"() {
         given:
+            // Simulate the map structure that Jackson's convertValue can handle
             def message = [
-                "Records": '[{"s3":{"bucket":{"name":"test-bucket"},"object":{"key":"tender-uploads/1/t/d/f.pdf","size":100}}}]'
+                "Records": [[
+                    "s3": [
+                        "bucket": ["name": "test-bucket"],
+                        "object": ["key": "tender-uploads/1/t/d/f.pdf", "size": 100]
+                    ]
+                ]]
             ]
-            // The handler re-serializes the map to JSON, but since the map structure
-            // does not directly match S3EventMessage, this tests error handling.
-            // In production, the SQS consumer manager passes the raw message body as a Map.
 
         when:
             handler.handle(message)
 
         then:
-            // The re-serialized map won't have proper "Records" array structure,
-            // so no processing happens, but it should not throw
-            noExceptionThrown()
+            1 * processor.processUpload("test-bucket", "tender-uploads/1/t/d/f.pdf", 100)
     }
 
     def "should return correct queue name"() {

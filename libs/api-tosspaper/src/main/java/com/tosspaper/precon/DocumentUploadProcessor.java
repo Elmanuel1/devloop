@@ -1,7 +1,9 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.domain.FileObject;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
-import com.tosspaper.models.properties.AwsProperties;
+import com.tosspaper.models.validation.MagicByteValidation;
+import com.tosspaper.models.validation.ValidationResult;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +31,7 @@ public class DocumentUploadProcessor {
 
     private final TenderDocumentRepository documentRepository;
     private final S3Client s3Client;
-    private final AwsProperties awsProperties;
+    private final MagicByteValidation magicByteValidation;
 
     /**
      * Processes an uploaded file by validating its magic bytes.
@@ -41,14 +43,14 @@ public class DocumentUploadProcessor {
     public void processUpload(String bucket, String key, long size) {
         log.info("Processing upload - bucket: {}, key: {}, size: {}", bucket, key, size);
 
-        // Parse the S3 key to extract document metadata
         S3KeyMetadata metadata = parseS3Key(key);
         if (metadata == null) {
             log.warn("Could not parse S3 key: {}", key);
             return;
         }
 
-        // Find the document record by S3 key
+        String documentId = metadata.getDocumentId();
+
         Optional<TenderDocumentsRecord> documentOpt = documentRepository.findByS3Key(key);
         if (documentOpt.isEmpty()) {
             log.warn("Document record not found for S3 key: {}, may have been deleted", key);
@@ -56,27 +58,28 @@ public class DocumentUploadProcessor {
         }
 
         TenderDocumentsRecord document = documentOpt.get();
-        String documentId = document.getId();
-
-        // Update status to processing
         documentRepository.updateStatusToProcessing(documentId);
 
         try {
-            // Download first N bytes using range request
             byte[] header = downloadHeader(bucket, key);
-
-            // Validate magic bytes against declared content type
             String contentType = document.getContentType();
-            boolean valid = MagicByteValidator.validate(header, contentType);
 
-            if (valid) {
-                documentRepository.updateStatusToReady(documentId);
-                log.info("Document validated successfully - id: {}, contentType: {}", documentId, contentType);
-            } else {
-                String reason = String.format("Magic bytes do not match declared content type '%s'", contentType);
-                documentRepository.updateStatusToFailed(documentId, reason);
-                log.warn("Document validation failed - id: {}, reason: {}", documentId, reason);
+            FileObject fileObject = FileObject.builder()
+                    .fileName(document.getFileName())
+                    .contentType(contentType)
+                    .content(header)
+                    .build();
+
+            ValidationResult result = magicByteValidation.validate(fileObject);
+
+            if (result.isInvalid()) {
+                documentRepository.updateStatusToFailed(documentId, result.getViolationMessage());
+                log.warn("Document validation failed - id: {}, reason: {}", documentId, result.getViolationMessage());
+                return;
             }
+
+            documentRepository.updateStatusToReady(documentId);
+            log.info("Document validated successfully - id: {}, contentType: {}", documentId, contentType);
 
         } catch (NoSuchKeyException e) {
             String reason = "S3 object not found: " + key;

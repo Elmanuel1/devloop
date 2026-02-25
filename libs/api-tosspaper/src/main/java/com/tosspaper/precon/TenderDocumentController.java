@@ -1,14 +1,13 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.common.BadRequestException;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.HeaderUtils;
-import com.tosspaper.generated.api.TenderDocumentsApi;
-import com.tosspaper.generated.model.DownloadUrlResponse;
-import com.tosspaper.generated.model.PresignedUrlRequest;
-import com.tosspaper.generated.model.PresignedUrlResponse;
-import com.tosspaper.generated.model.TenderDocumentListResponse;
-import com.tosspaper.generated.model.TenderDocumentStatus;
+import com.tosspaper.precon.generated.api.TenderDocumentsApi;
+import com.tosspaper.precon.generated.model.DownloadUrlResponse;
+import com.tosspaper.precon.generated.model.PresignedUrlRequest;
+import com.tosspaper.precon.generated.model.PresignedUrlResponse;
+import com.tosspaper.precon.generated.model.TenderDocumentListResponse;
+import com.tosspaper.precon.generated.model.TenderDocumentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -17,7 +16,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Slf4j
@@ -40,7 +38,7 @@ public class TenderDocumentController implements TenderDocumentsApi {
                 companyId, tenderId.toString(), presignedUrlRequest);
 
         return ResponseEntity
-                .created(URI.create("/v1/tenders/" + tenderId + "/documents/" + response.getDocumentId()))
+                .created(URI.create("/v1/tenders/%s/documents/%s".formatted(tenderId, response.getDocumentId())))
                 .body(response);
     }
 
@@ -53,24 +51,11 @@ public class TenderDocumentController implements TenderDocumentsApi {
 
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
 
-        // Validate limit
-        int effectiveLimit = limit != null ? limit : 20;
-        if (effectiveLimit < 1 || effectiveLimit > 100) {
-            throw new BadRequestException("api.validation.invalidLimit", "Limit must be between 1 and 100");
-        }
+        int effectiveLimit = (limit != null) ? Math.clamp(limit, 1, 100) : 20;
 
-        // Decode cursor
-        String cursorCreatedAt = null;
-        String cursorId = null;
-        if (cursor != null && !cursor.isBlank()) {
-            try {
-                CursorUtils.CursorPair cursorPair = CursorUtils.decodeCursor(cursor);
-                cursorCreatedAt = cursorPair.createdAt().toString();
-                cursorId = cursorPair.id();
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException("api.validation.invalidCursor", "Invalid cursor format");
-            }
-        }
+        CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
+        String cursorCreatedAt = cursorPair != null ? cursorPair.createdAt().toString() : null;
+        String cursorId = cursorPair != null ? cursorPair.id() : null;
 
         String statusValue = status != null ? status.getValue() : null;
 

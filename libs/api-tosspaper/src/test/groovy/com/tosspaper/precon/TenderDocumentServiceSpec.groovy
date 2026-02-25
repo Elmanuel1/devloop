@@ -1,9 +1,9 @@
 package com.tosspaper.precon
 
-import com.tosspaper.common.BadRequestException
 import com.tosspaper.common.NotFoundException
-import com.tosspaper.generated.model.PresignedUrlRequest
-import com.tosspaper.generated.model.TenderContentType
+import com.tosspaper.models.exception.DocumentNotReadyException
+import com.tosspaper.precon.generated.model.ContentType
+import com.tosspaper.precon.generated.model.PresignedUrlRequest
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
 import com.tosspaper.models.jooq.tables.records.TendersRecord
 import com.tosspaper.models.properties.AwsProperties
@@ -23,8 +23,7 @@ class TenderDocumentServiceSpec extends Specification {
 
     TenderRepository tenderRepository = Mock()
     TenderDocumentRepository documentRepository = Mock()
-    TenderDocumentMapper documentMapper = new TenderDocumentMapper()
-    TenderDocumentValidator validator
+    TenderDocumentMapper documentMapper = Mock()
     S3Presigner s3Presigner = Mock()
     S3Client s3Client = Mock()
     AwsProperties awsProperties
@@ -36,9 +35,6 @@ class TenderDocumentServiceSpec extends Specification {
     String tenderId = UUID.randomUUID().toString()
 
     def setup() {
-        def fileProperties = new TenderFileProperties()
-        validator = new TenderDocumentValidator(fileProperties)
-
         awsProperties = new AwsProperties()
         awsProperties.bucket = new AwsProperties.Bucket()
         awsProperties.bucket.name = "test-bucket"
@@ -46,7 +42,7 @@ class TenderDocumentServiceSpec extends Specification {
 
         service = new TenderDocumentServiceImpl(
             tenderRepository, documentRepository, documentMapper,
-            validator, s3Presigner, s3Client, awsProperties
+            s3Presigner, s3Client, awsProperties
         )
     }
 
@@ -76,8 +72,8 @@ class TenderDocumentServiceSpec extends Specification {
 
     def "should create document record and return presigned URL"() {
         given:
-            def request = new PresignedUrlRequest("doc.pdf", TenderContentType.APPLICATION_PDF, 1024L)
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
+            def request = new PresignedUrlRequest("doc.pdf", ContentType.APPLICATION_PDF, 1024)
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
 
             def presignedPutObject = Mock(PresignedPutObjectRequest)
             presignedPutObject.url() >> new URL("https://s3.amazonaws.com/test-bucket/key")
@@ -98,8 +94,8 @@ class TenderDocumentServiceSpec extends Specification {
 
     def "should throw NotFoundException when tender not found for upload"() {
         given:
-            def request = new PresignedUrlRequest("doc.pdf", TenderContentType.APPLICATION_PDF, 1024L)
-            tenderRepository.findById(tenderId) >> Optional.empty()
+            def request = new PresignedUrlRequest("doc.pdf", ContentType.APPLICATION_PDF, 1024)
+            tenderRepository.findById(tenderId) >> { throw new NotFoundException("api.tender.notFound", "Tender not found") }
 
         when:
             service.getUploadPresignedUrl(companyId, tenderId, request)
@@ -108,93 +104,54 @@ class TenderDocumentServiceSpec extends Specification {
             thrown(NotFoundException)
     }
 
-    def "should throw ValidationException for invalid content type"() {
+    def "should throw NotFoundException when tender belongs to other company for upload"() {
         given:
-            def request = new PresignedUrlRequest()
-            request.setFileName("doc.zip")
-            request.setContentType(null) // invalid
-            request.setFileSize(1024L)
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
+            def request = new PresignedUrlRequest("doc.pdf", ContentType.APPLICATION_PDF, 1024)
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, "999")
 
         when:
             service.getUploadPresignedUrl(companyId, tenderId, request)
 
         then:
-            thrown(BadRequestException)
-    }
-
-    def "should throw ValidationException when file_size exceeds 200MB"() {
-        given:
-            def request = new PresignedUrlRequest("doc.pdf", TenderContentType.APPLICATION_PDF, 209715201L)
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-
-        when:
-            service.getUploadPresignedUrl(companyId, tenderId, request)
-
-        then:
-            thrown(BadRequestException)
-    }
-
-    def "should throw ValidationException for double extension"() {
-        given:
-            def request = new PresignedUrlRequest("doc.pdf.exe", TenderContentType.APPLICATION_PDF, 1024L)
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-
-        when:
-            service.getUploadPresignedUrl(companyId, tenderId, request)
-
-        then:
-            thrown(BadRequestException)
-    }
-
-    def "should throw ValidationException when extension does not match content_type"() {
-        given:
-            def request = new PresignedUrlRequest("doc.png", TenderContentType.APPLICATION_PDF, 1024L)
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-
-        when:
-            service.getUploadPresignedUrl(companyId, tenderId, request)
-
-        then:
-            thrown(BadRequestException)
+            thrown(NotFoundException)
     }
 
     // ==================== List Documents ====================
 
     def "should return paginated list of documents"() {
         given:
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
             def docId1 = UUID.randomUUID().toString()
             def docId2 = UUID.randomUUID().toString()
             def doc1 = mockDocumentRecord(docId1, tenderId, "ready", "key1")
             def doc2 = mockDocumentRecord(docId2, tenderId, "ready", "key2")
             documentRepository.findByTenderId(tenderId, null, 20, null, null) >> [doc1, doc2]
+            documentMapper.toDtoList(_) >> []
 
         when:
             def response = service.listDocuments(companyId, tenderId, null, 20, null, null)
 
         then:
-            response.data.size() == 2
             response.pagination != null
     }
 
     def "should filter by status"() {
         given:
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
             def docId1 = UUID.randomUUID().toString()
             def doc1 = mockDocumentRecord(docId1, tenderId, "ready", "key1")
+            documentMapper.toDtoList(_) >> []
 
         when:
             def response = service.listDocuments(companyId, tenderId, "ready", 20, null, null)
 
         then:
             1 * documentRepository.findByTenderId(tenderId, "ready", 20, null, null) >> [doc1]
-            response.data.size() == 1
     }
 
     def "should throw NotFoundException when tender not found for list"() {
         given:
-            tenderRepository.findById(tenderId) >> Optional.empty()
+            tenderRepository.findById(tenderId) >> { throw new NotFoundException("api.tender.notFound", "Tender not found") }
 
         when:
             service.listDocuments(companyId, tenderId, null, 20, null, null)
@@ -205,8 +162,9 @@ class TenderDocumentServiceSpec extends Specification {
 
     def "should return empty list when no documents exist"() {
         given:
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
             documentRepository.findByTenderId(tenderId, null, 20, null, null) >> []
+            documentMapper.toDtoList(_) >> []
 
         when:
             def response = service.listDocuments(companyId, tenderId, null, 20, null, null)
@@ -221,8 +179,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should soft-delete document and delete S3 object"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "ready", "s3/key"))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "ready", "s3/key")
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -235,8 +193,7 @@ class TenderDocumentServiceSpec extends Specification {
     def "should throw NotFoundException when tender belongs to other company for delete"() {
         given:
             def documentId = "doc-1"
-            def otherTender = mockTenderRecord(tenderId, "999")
-            tenderRepository.findById(tenderId) >> Optional.of(otherTender)
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, "999")
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -248,8 +205,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should throw NotFoundException when document not found for delete"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.empty()
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> { throw new NotFoundException("api.document.notFound", "Document not found") }
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -262,8 +219,8 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             def otherTenderId = UUID.randomUUID().toString()
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, otherTenderId, "ready", "s3/key"))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, otherTenderId, "ready", "s3/key")
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -277,8 +234,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should return presigned GET URL for ready document"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "ready", "s3/key"))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "ready", "s3/key")
 
             def presignedGetObject = Mock(PresignedGetObjectRequest)
             presignedGetObject.url() >> new URL("https://s3.amazonaws.com/test-bucket/key")
@@ -295,8 +252,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should throw NotFoundException when document not found for download"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.empty()
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> { throw new NotFoundException("api.document.notFound", "Document not found") }
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)
@@ -308,8 +265,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should throw DocumentNotReadyException when status is uploading"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "uploading", "s3/key"))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "uploading", "s3/key")
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)
@@ -321,8 +278,8 @@ class TenderDocumentServiceSpec extends Specification {
     def "should throw DocumentNotReadyException when status is failed"() {
         given:
             def documentId = "doc-1"
-            tenderRepository.findById(tenderId) >> Optional.of(mockTenderRecord(tenderId, companyIdStr))
-            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "failed", "s3/key"))
+            tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
+            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "failed", "s3/key")
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)

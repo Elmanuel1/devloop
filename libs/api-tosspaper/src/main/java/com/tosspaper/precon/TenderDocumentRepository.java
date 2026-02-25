@@ -10,7 +10,7 @@ public interface TenderDocumentRepository {
     TenderDocumentsRecord insert(String id, String tenderId, String companyId, String fileName,
                                   String contentType, long fileSize, String s3Key, String status);
 
-    Optional<TenderDocumentsRecord> findById(String id);
+    TenderDocumentsRecord findById(String id);
 
     List<TenderDocumentsRecord> findByTenderId(String tenderId, String status, int limit, String cursorCreatedAt, String cursorId);
 
