@@ -180,7 +180,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "ready", "s3/key")
+            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "ready", "s3/key"))
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -206,7 +206,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> { throw new NotFoundException("api.document.notFound", "Document not found") }
+            documentRepository.findById(documentId) >> Optional.empty()
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -220,7 +220,7 @@ class TenderDocumentServiceSpec extends Specification {
             def documentId = "doc-1"
             def otherTenderId = UUID.randomUUID().toString()
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, otherTenderId, "ready", "s3/key")
+            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, otherTenderId, "ready", "s3/key"))
 
         when:
             service.deleteDocument(companyId, tenderId, documentId)
@@ -235,7 +235,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "ready", "s3/key")
+            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "ready", "s3/key"))
 
             def presignedGetObject = Mock(PresignedGetObjectRequest)
             presignedGetObject.url() >> new URL("https://s3.amazonaws.com/test-bucket/key")
@@ -253,7 +253,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> { throw new NotFoundException("api.document.notFound", "Document not found") }
+            documentRepository.findById(documentId) >> Optional.empty()
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)
@@ -266,7 +266,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "uploading", "s3/key")
+            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "uploading", "s3/key"))
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)
@@ -279,7 +279,7 @@ class TenderDocumentServiceSpec extends Specification {
         given:
             def documentId = "doc-1"
             tenderRepository.findById(tenderId) >> mockTenderRecord(tenderId, companyIdStr)
-            documentRepository.findById(documentId) >> mockDocumentRecord(documentId, tenderId, "failed", "s3/key")
+            documentRepository.findById(documentId) >> Optional.of(mockDocumentRecord(documentId, tenderId, "failed", "s3/key"))
 
         when:
             service.getDownloadPresignedUrl(companyId, tenderId, documentId)

@@ -1,7 +1,5 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.common.ApiErrorMessages;
-import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,15 +41,13 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
     }
 
     @Override
-    public TenderDocumentsRecord findById(String id) {
-        TenderDocumentsRecord record = dsl.selectFrom(TENDER_DOCUMENTS)
-                .where(TENDER_DOCUMENTS.ID.eq(id))
-                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
-                .fetchOne();
-        if (record == null) {
-            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
-        }
-        return record;
+    public Optional<TenderDocumentsRecord> findById(String id) {
+        return Optional.ofNullable(
+                dsl.selectFrom(TENDER_DOCUMENTS)
+                        .where(TENDER_DOCUMENTS.ID.eq(id))
+                        .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                        .fetchOne()
+        );
     }
 
     @Override
@@ -126,12 +122,4 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .execute();
     }
 
-    @Override
-    public Optional<TenderDocumentsRecord> findByS3Key(String s3Key) {
-        TenderDocumentsRecord record = dsl.selectFrom(TENDER_DOCUMENTS)
-                .where(TENDER_DOCUMENTS.S3_KEY.eq(s3Key))
-                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
-                .fetchOne();
-        return Optional.ofNullable(record);
-    }
 }

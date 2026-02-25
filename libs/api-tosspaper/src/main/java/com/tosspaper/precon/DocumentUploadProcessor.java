@@ -15,7 +15,6 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import java.io.IOException;
-import java.util.Optional;
 
 /**
  * Processes document uploads triggered by S3 ObjectCreated events.
@@ -51,13 +50,11 @@ public class DocumentUploadProcessor {
 
         String documentId = metadata.getDocumentId();
 
-        Optional<TenderDocumentsRecord> documentOpt = documentRepository.findByS3Key(key);
-        if (documentOpt.isEmpty()) {
-            log.warn("Document record not found for S3 key: {}, may have been deleted", key);
+        TenderDocumentsRecord document = documentRepository.findById(documentId).orElse(null);
+        if (document == null) {
+            log.warn("Document record not found - id: {}, may have been deleted", documentId);
             return;
         }
-
-        TenderDocumentsRecord document = documentOpt.get();
         documentRepository.updateStatusToProcessing(documentId);
 
         try {

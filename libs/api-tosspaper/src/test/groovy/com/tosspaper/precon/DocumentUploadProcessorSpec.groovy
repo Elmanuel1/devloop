@@ -30,7 +30,6 @@ class DocumentUploadProcessorSpec extends Specification {
         record.getId() >> docId
         record.getContentType() >> contentType
         record.getFileName() >> "document.pdf"
-        record.getS3Key() >> s3Key
         return record
     }
 
@@ -43,11 +42,10 @@ class DocumentUploadProcessorSpec extends Specification {
     def "should process valid PDF upload"() {
         given:
             def docId = "did-456"
-            // PDF magic bytes: %PDF
             byte[] pdfHeader = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34] as byte[]
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findByS3Key(s3Key) >> Optional.of(document)
+            documentRepository.findById(docId) >> Optional.of(document)
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pdfHeader)
 
         when:
@@ -68,9 +66,8 @@ class DocumentUploadProcessorSpec extends Specification {
             document.getId() >> docId
             document.getContentType() >> "image/png"
             document.getFileName() >> "image.png"
-            document.getS3Key() >> pngKey
 
-            documentRepository.findByS3Key(pngKey) >> Optional.of(document)
+            documentRepository.findById(docId) >> Optional.of(document)
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pngHeader)
 
         when:
@@ -91,9 +88,8 @@ class DocumentUploadProcessorSpec extends Specification {
             document.getId() >> docId
             document.getContentType() >> "image/jpeg"
             document.getFileName() >> "photo.jpg"
-            document.getS3Key() >> jpegKey
 
-            documentRepository.findByS3Key(jpegKey) >> Optional.of(document)
+            documentRepository.findById(docId) >> Optional.of(document)
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(jpegHeader)
 
         when:
@@ -108,11 +104,10 @@ class DocumentUploadProcessorSpec extends Specification {
     def "should fail for invalid magic bytes"() {
         given:
             def docId = "did-456"
-            // PNG magic bytes but declared as PDF
             byte[] pngHeader = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] as byte[]
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findByS3Key(s3Key) >> Optional.of(document)
+            documentRepository.findById(docId) >> Optional.of(document)
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pngHeader)
 
         when:
@@ -129,7 +124,7 @@ class DocumentUploadProcessorSpec extends Specification {
             def docId = "did-456"
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findByS3Key(s3Key) >> Optional.of(document)
+            documentRepository.findById(docId) >> Optional.of(document)
             s3Client.getObject(_ as GetObjectRequest) >> { throw NoSuchKeyException.builder().message("Not found").build() }
 
         when:
@@ -143,7 +138,7 @@ class DocumentUploadProcessorSpec extends Specification {
 
     def "should skip when document record not found"() {
         given:
-            documentRepository.findByS3Key(s3Key) >> Optional.empty()
+            documentRepository.findById("did-456") >> Optional.empty()
 
         when:
             processor.processUpload(bucket, s3Key, 1024)
@@ -201,7 +196,7 @@ class DocumentUploadProcessorSpec extends Specification {
             processor.processUpload(bucket, invalidKey, 1024)
 
         then:
-            0 * documentRepository.findByS3Key(_)
+            0 * documentRepository.findById(_)
             0 * documentRepository.updateStatusToProcessing(_)
     }
 }
