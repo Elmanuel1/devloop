@@ -39,7 +39,6 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     private final TenderRepository tenderRepository;
     private final TenderDocumentRepository tenderDocumentRepository;
     private final TenderDocumentMapper tenderDocumentMapper;
-    private final TenderDocumentValidator tenderDocumentValidator;
     private final TenderFileProperties fileProperties;
     private final S3Presigner s3Presigner;
     private final S3Client s3Client;
@@ -57,9 +56,6 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         if (!tender.getCompanyId().equals(companyIdStr)) {
             throw new NotFoundException("api.tender.notFound", "Tender not found");
         }
-
-        // Validate the file request
-        tenderDocumentValidator.validate(request);
 
         // Generate document ID and S3 key
         String documentId = UUID.randomUUID().toString();

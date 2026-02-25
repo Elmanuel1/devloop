@@ -31,7 +31,6 @@ class TenderDocumentServiceSpec extends Specification {
     TenderRepository tenderRepository
     TenderDocumentRepository tenderDocumentRepository
     TenderDocumentMapper tenderDocumentMapper
-    TenderDocumentValidator tenderDocumentValidator
     TenderFileProperties fileProperties
     S3Presigner s3Presigner
     S3Client s3Client
@@ -41,14 +40,13 @@ class TenderDocumentServiceSpec extends Specification {
         tenderRepository = Mock()
         tenderDocumentRepository = Mock()
         tenderDocumentMapper = Mock()
-        tenderDocumentValidator = Mock()
         fileProperties = new TenderFileProperties()
         fileProperties.setUploadBucket("test-bucket")
         s3Presigner = Mock()
         s3Client = Mock()
         service = new TenderDocumentServiceImpl(
             tenderRepository, tenderDocumentRepository, tenderDocumentMapper,
-            tenderDocumentValidator, fileProperties, s3Presigner, s3Client)
+            fileProperties, s3Presigner, s3Client)
     }
 
     // ==================== getUploadPresignedUrl ====================
@@ -73,9 +71,6 @@ class TenderDocumentServiceSpec extends Specification {
 
         then: "tender ownership is verified"
             1 * tenderRepository.findById(tenderId) >> tender
-
-        and: "validator is called with the request"
-            1 * tenderDocumentValidator.validate(request)
 
         and: "presigned URL is generated before insert"
             1 * s3Presigner.presignPutObject(_ as PutObjectPresignRequest) >> presignedPut
@@ -116,38 +111,9 @@ class TenderDocumentServiceSpec extends Specification {
             thrown(NotFoundException)
 
         and: "no document is created and no presigned URL is generated"
-            0 * tenderDocumentValidator.validate(_)
             0 * s3Presigner.presignPutObject(_)
             0 * tenderDocumentMapper.toRecord(_, _, _, _, _)
             0 * tenderDocumentRepository.insert(_)
-    }
-
-    def "should call validator with the request on upload"() {
-        given: "a valid upload request"
-            def companyId = 10L
-            def tenderId = "tender-xyz"
-            def tender = createTenderRecord(tenderId, "10")
-
-            def request = new PresignedUrlRequest()
-            request.setFileName("drawing.png")
-            request.setContentType(ContentType.IMAGE_PNG)
-            request.setFileSize(512000)
-
-            def presignedPut = Mock(PresignedPutObjectRequest)
-            presignedPut.url() >> new URL("https://s3.amazonaws.com/test-bucket/key")
-            presignedPut.expiration() >> Instant.now().plusSeconds(600)
-
-        when: "requesting an upload presigned URL"
-            service.getUploadPresignedUrl(companyId, tenderId, request)
-
-        then: "validator receives the exact same request object"
-            1 * tenderRepository.findById(tenderId) >> tender
-            1 * tenderDocumentValidator.validate(request)
-            1 * s3Presigner.presignPutObject(_) >> presignedPut
-            1 * tenderDocumentMapper.toRecord(request, _, tenderId, "10", _) >> { args ->
-                createDocumentRecord(args[1], tenderId, "10")
-            }
-            1 * tenderDocumentRepository.insert(_) >> { TenderDocumentsRecord r -> r }
     }
 
     // ==================== listDocuments ====================
