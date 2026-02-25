@@ -33,13 +33,8 @@ public class DocumentUploadHandler implements MessageHandler<Map<String, String>
 
     @Override
     public void handle(Map<String, String> message) {
-        try {
-            S3EventMessage event = objectMapper.convertValue(message, S3EventMessage.class);
-            processEvent(event);
-        } catch (IllegalArgumentException e) {
-            log.error("Failed to convert message to S3EventMessage", e);
-            throw new RuntimeException("Failed to process S3 event message", e);
-        }
+        S3EventMessage event = objectMapper.convertValue(message, S3EventMessage.class);
+        processEvent(event);
     }
 
     /**
