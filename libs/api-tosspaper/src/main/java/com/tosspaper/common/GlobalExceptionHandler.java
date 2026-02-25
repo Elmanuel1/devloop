@@ -163,6 +163,13 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(apiError, HttpStatus.valueOf(428));
     }
 
+    @ExceptionHandler(com.tosspaper.models.exception.InvalidETagException.class)
+    public ResponseEntity<Object> handleInvalidETagException(com.tosspaper.models.exception.InvalidETagException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(com.tosspaper.models.exception.DocumentNotReadyException.class)
     public ResponseEntity<Object> handleDocumentNotReadyException(com.tosspaper.models.exception.DocumentNotReadyException ex, WebRequest request) {
         log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
