@@ -112,6 +112,7 @@ abstract class BaseIntegrationTest extends Specification {
                         AwsBasicCredentials.create(localstack.getAccessKey(), localstack.getSecretKey())))
                 .build()
         s3.createBucket(CreateBucketRequest.builder().bucket("tosspaper-email-attachments").build())
+        s3.createBucket(CreateBucketRequest.builder().bucket("tosspaper-tender-uploads-test").build())
         s3.close()
     }
 
@@ -137,6 +138,9 @@ abstract class BaseIntegrationTest extends Specification {
         registry.add("aws.bucket.region", localstack::getRegion)
         registry.add("aws.bucket.path-style-access", () -> "true")
         registry.add("aws.bucket.name", () -> "tosspaper-email-attachments")
+
+        // Tender file upload properties
+        registry.add("tender.file.upload-bucket", () -> "tosspaper-tender-uploads-test")
 
         // Use local JWKS file for JWT validation
         def jwksFile = new ClassPathResource("jwks.json").getFile().getAbsolutePath()

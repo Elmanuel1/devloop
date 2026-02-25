@@ -463,6 +463,11 @@ file:
     min-aspect-ratio: ${FILE_MIN_ASPECT_RATIO:0.2}  # Reject images narrower than 1:5 (portrait)
     max-aspect-ratio: ${FILE_MAX_ASPECT_RATIO:5.0}  # Reject images wider than 5:1 (landscape banners)
 
+# Tender File Configuration
+tender:
+  file:
+    upload-bucket: ${TENDER_UPLOAD_BUCKET:tosspaper-${ENV:local}-tender-uploads}
+
     # AI Configuration
 ai:
   provider: ${AI_PROVIDER:reducto}

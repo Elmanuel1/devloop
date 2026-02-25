@@ -13,6 +13,7 @@ import com.tosspaper.precon.generated.model.TenderUpdateRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -71,11 +72,15 @@ public class TenderController implements TendersApi {
 
         if (HeaderUtils.isNotModified(request, currentETag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .cacheControl(CacheControl.noCache())
                     .eTag(currentETag)
                     .build();
         }
 
-        return ResponseEntity.ok().eTag(currentETag).body(result.tender());
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noCache())
+                .eTag(currentETag)
+                .body(result.tender());
     }
 
     @Override

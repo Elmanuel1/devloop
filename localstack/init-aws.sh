@@ -11,14 +11,33 @@ export AWS_DEFAULT_REGION=us-west-2
 # =============================================================================
 # S3 BUCKET CREATION
 # =============================================================================
-BUCKET_NAME="tosspaper-email-attachments"
+BUCKETS=(
+  "tosspaper-email-attachments"
+  "tosspaper-local-tender-uploads"
+)
 
-if ! awslocal s3api head-bucket --bucket "${BUCKET_NAME}" 2>/dev/null; then
-  echo "Creating S3 bucket: ${BUCKET_NAME}"
-  awslocal s3 mb "s3://${BUCKET_NAME}"
-else
-  echo "S3 bucket already exists: ${BUCKET_NAME}"
-fi
+for BUCKET_NAME in "${BUCKETS[@]}"; do
+  if ! awslocal s3api head-bucket --bucket "${BUCKET_NAME}" 2>/dev/null; then
+    echo "Creating S3 bucket: ${BUCKET_NAME}"
+    awslocal s3 mb "s3://${BUCKET_NAME}"
+  else
+    echo "S3 bucket already exists: ${BUCKET_NAME}"
+  fi
+
+  # Set CORS configuration for browser uploads via presigned URLs
+  echo "Setting CORS on bucket: ${BUCKET_NAME}"
+  awslocal s3api put-bucket-cors --bucket "${BUCKET_NAME}" --cors-configuration '{
+    "CORSRules": [
+      {
+        "AllowedOrigins": ["http://localhost:3000", "http://127.0.0.1:3000"],
+        "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+        "AllowedHeaders": ["*"],
+        "ExposeHeaders": ["ETag", "x-amz-meta-custom-header"],
+        "MaxAgeSeconds": 3600
+      }
+    ]
+  }'
+done
 
 echo "S3 buckets:"
 awslocal s3 ls

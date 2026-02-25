@@ -176,4 +176,11 @@ public class GlobalExceptionHandler {
         var apiError = new ApiError(ex.getCode(), ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
     }
+
+    @ExceptionHandler(com.tosspaper.models.exception.DocumentNotReadyException.class)
+    public ResponseEntity<Object> handleDocumentNotReadyException(com.tosspaper.models.exception.DocumentNotReadyException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
 }
