@@ -6,15 +6,13 @@ import com.tosspaper.models.validation.MagicByteValidation;
 import com.tosspaper.models.validation.ValidationResult;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-
-import java.io.IOException;
 
 /**
  * Processes document uploads triggered by S3 ObjectCreated events.
@@ -81,6 +79,7 @@ public class DocumentUploadProcessor {
     /**
      * Downloads the first few bytes of an S3 object using a range request.
      */
+    @SneakyThrows
     byte[] downloadHeader(String bucket, String key) {
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucket)
@@ -90,8 +89,6 @@ public class DocumentUploadProcessor {
 
         try (ResponseInputStream<GetObjectResponse> response = s3Client.getObject(request)) {
             return response.readAllBytes();
-        } catch (IOException e) {
-            throw new java.io.UncheckedIOException("Failed to read S3 object header: " + key, e);
         }
     }
 
