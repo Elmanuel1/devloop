@@ -13,7 +13,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class DocumentUploadHandler implements MessageHandler<Map<String, String>> {
+public class DocumentUploadHandler implements MessageHandler<Map<String, Object>> {
 
     private static final String QUEUE_NAME = "tender-upload-events";
 
@@ -26,7 +26,7 @@ public class DocumentUploadHandler implements MessageHandler<Map<String, String>
     }
 
     @Override
-    public void handle(Map<String, String> message) {
+    public void handle(Map<String, Object> message) {
         S3EventMessage event = objectMapper.convertValue(message, S3EventMessage.class);
         event.getRecords().forEach(this::processRecord);
     }

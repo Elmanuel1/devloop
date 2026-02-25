@@ -19,7 +19,7 @@ class DocumentUploadProcessorSpec extends Specification {
     DocumentUploadProcessor processor
 
     String bucket = "test-bucket"
-    String s3Key = "tender-uploads/1/tid-123/did-456/document.pdf"
+    String s3Key = "tenders/1/tid-123/did-456/document.pdf"
 
     def setup() {
         processor = new DocumentUploadProcessor(documentRepository, s3Client, magicByteValidation)
@@ -60,7 +60,7 @@ class DocumentUploadProcessorSpec extends Specification {
     def "should process valid PNG upload"() {
         given:
             def docId = "did-456"
-            def pngKey = "tender-uploads/1/tid-123/did-456/image.png"
+            def pngKey = "tenders/1/tid-123/did-456/image.png"
             byte[] pngHeader = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] as byte[]
             def document = Mock(TenderDocumentsRecord)
             document.getId() >> docId
@@ -82,7 +82,7 @@ class DocumentUploadProcessorSpec extends Specification {
     def "should process valid JPEG upload"() {
         given:
             def docId = "did-456"
-            def jpegKey = "tender-uploads/1/tid-123/did-456/photo.jpg"
+            def jpegKey = "tenders/1/tid-123/did-456/photo.jpg"
             byte[] jpegHeader = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46] as byte[]
             def document = Mock(TenderDocumentsRecord)
             document.getId() >> docId
@@ -151,7 +151,7 @@ class DocumentUploadProcessorSpec extends Specification {
 
     def "should parse S3 key correctly"() {
         given:
-            def key = "tender-uploads/1/tid/did/file.pdf"
+            def key = "tenders/1/tid/did/file.pdf"
 
         when:
             def metadata = processor.parseS3Key(key)

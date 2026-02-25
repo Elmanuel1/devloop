@@ -120,13 +120,13 @@ public class SqsMessageConsumerManager implements MessageConsumerManager {
         Context traceContext = extractTraceContext(message.messageAttributes());
 
         try (Scope scope = traceContext.makeCurrent()) {
-            Map<String, String> body = parseMessageBody(message.body());
+            Map<String, Object> body = parseMessageBody(message.body());
 
             Observation.createNotStarted("sqs.message.process", observationRegistry)
                     .contextualName("SQS Queue: " + queueName)
                     .lowCardinalityKeyValue("queue", queueName)
                     .highCardinalityKeyValue("message.id", message.messageId())
-                    .observe(() -> ((MessageHandler<Map<String, String>>) handler).handle(body));
+                    .observe(() -> ((MessageHandler<Map<String, Object>>) handler).handle(body));
 
             // Delete on success
             sqsClient.deleteMessage(DeleteMessageRequest.builder()
@@ -194,7 +194,7 @@ public class SqsMessageConsumerManager implements MessageConsumerManager {
         return hex;
     }
 
-    private Map<String, String> parseMessageBody(String body) {
+    private Map<String, Object> parseMessageBody(String body) {
         try {
             return objectMapper.readValue(body, new TypeReference<>() {});
         } catch (JsonProcessingException e) {

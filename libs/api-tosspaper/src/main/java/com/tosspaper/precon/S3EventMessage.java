@@ -16,7 +16,7 @@ import java.util.List;
  *   "Records": [{
  *     "s3": {
  *       "bucket": { "name": "my-bucket" },
- *       "object": { "key": "tender-uploads/1/tid/did/file.pdf", "size": 12345 }
+ *       "object": { "key": "tenders/1/tid/did/file.pdf", "size": 12345 }
  *     }
  *   }]
  * }

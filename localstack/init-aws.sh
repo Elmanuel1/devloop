@@ -17,11 +17,11 @@ BUCKETS=(
 )
 
 for BUCKET_NAME in "${BUCKETS[@]}"; do
-  if ! awslocal s3api head-bucket --bucket "${BUCKET_NAME}" 2>/dev/null; then
-    echo "Creating S3 bucket: ${BUCKET_NAME}"
-    awslocal s3 mb "s3://${BUCKET_NAME}"
-  else
+  if awslocal s3api head-bucket --bucket "${BUCKET_NAME}" 2>/dev/null; then
     echo "S3 bucket already exists: ${BUCKET_NAME}"
+  else
+    echo "Creating S3 bucket: ${BUCKET_NAME}"
+    awslocal s3 mb "s3://${BUCKET_NAME}" || echo "Bucket ${BUCKET_NAME} already exists (ignored)"
   fi
 
   # Set CORS configuration for browser uploads via presigned URLs

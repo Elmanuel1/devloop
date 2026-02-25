@@ -23,7 +23,7 @@ class DocumentUploadHandlerSpec extends Specification {
                     "eventName": "ObjectCreated:Put",
                     "s3": [
                         "bucket": ["name": "test-bucket"],
-                        "object": ["key": "tender-uploads/1/tid-123/did-456/document.pdf", "size": 12345]
+                        "object": ["key": "tenders/1/tid-123/did-456/document.pdf", "size": 12345]
                     ]
                 ]]
             ]
@@ -32,7 +32,7 @@ class DocumentUploadHandlerSpec extends Specification {
             handler.handle(message)
 
         then:
-            1 * processor.processUpload("test-bucket", "tender-uploads/1/tid-123/did-456/document.pdf", 12345)
+            1 * processor.processUpload("test-bucket", "tenders/1/tid-123/did-456/document.pdf", 12345)
     }
 
     def "should handle multiple records in S3 event"() {
@@ -42,13 +42,13 @@ class DocumentUploadHandlerSpec extends Specification {
                     [
                         "s3": [
                             "bucket": ["name": "bucket-1"],
-                            "object": ["key": "tender-uploads/1/t1/d1/file1.pdf", "size": 100]
+                            "object": ["key": "tenders/1/t1/d1/file1.pdf", "size": 100]
                         ]
                     ],
                     [
                         "s3": [
                             "bucket": ["name": "bucket-1"],
-                            "object": ["key": "tender-uploads/1/t1/d2/file2.png", "size": 200]
+                            "object": ["key": "tenders/1/t1/d2/file2.png", "size": 200]
                         ]
                     ]
                 ]
@@ -58,8 +58,8 @@ class DocumentUploadHandlerSpec extends Specification {
             handler.handle(message)
 
         then:
-            1 * processor.processUpload("bucket-1", "tender-uploads/1/t1/d1/file1.pdf", 100)
-            1 * processor.processUpload("bucket-1", "tender-uploads/1/t1/d2/file2.png", 200)
+            1 * processor.processUpload("bucket-1", "tenders/1/t1/d1/file1.pdf", 100)
+            1 * processor.processUpload("bucket-1", "tenders/1/t1/d2/file2.png", 200)
     }
 
     def "should handle empty records array"() {
@@ -80,7 +80,7 @@ class DocumentUploadHandlerSpec extends Specification {
                 "Records": [[
                     "s3": [
                         "bucket": ["name": "test-bucket"],
-                        "object": ["key": "tender-uploads/1/tid-123/did-456/my+document.pdf", "size": 5000]
+                        "object": ["key": "tenders/1/tid-123/did-456/my+document.pdf", "size": 5000]
                     ]
                 ]]
             ]
@@ -89,7 +89,7 @@ class DocumentUploadHandlerSpec extends Specification {
             handler.handle(message)
 
         then:
-            1 * processor.processUpload("test-bucket", "tender-uploads/1/tid-123/did-456/my document.pdf", 5000)
+            1 * processor.processUpload("test-bucket", "tenders/1/tid-123/did-456/my document.pdf", 5000)
     }
 
     def "should return correct queue name"() {

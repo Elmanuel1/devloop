@@ -13,6 +13,7 @@ import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /**
  * Processes document uploads triggered by S3 ObjectCreated events.
@@ -55,7 +56,14 @@ public class DocumentUploadProcessor {
         }
         documentRepository.updateStatusToProcessing(documentId);
 
-        byte[] header = downloadHeader(bucket, key);
+        byte[] header;
+        try {
+            header = downloadHeader(bucket, key);
+        } catch (NoSuchKeyException e) {
+            documentRepository.updateStatusToFailed(documentId, "S3 object not found: " + key);
+            log.warn("S3 object not found - bucket: {}, key: {}", bucket, key);
+            return;
+        }
         String contentType = document.getContentType();
 
         FileObject fileObject = FileObject.builder()
@@ -93,7 +101,7 @@ public class DocumentUploadProcessor {
     }
 
     /**
-     * Parses an S3 key in the format: tender-uploads/{companyId}/{tenderId}/{documentId}/{fileName}
+     * Parses an S3 key in the format: tenders/{companyId}/{tenderId}/{documentId}/{fileName}
      *
      * @param key the S3 object key
      * @return parsed metadata, or null if the key format is invalid
@@ -104,7 +112,7 @@ public class DocumentUploadProcessor {
         }
 
         String[] parts = key.split("/");
-        if (parts.length < 5 || !"tender-uploads".equals(parts[0])) {
+        if (parts.length < 5 || !"tenders".equals(parts[0])) {
             log.warn("Invalid S3 key format: {}", key);
             return null;
         }
