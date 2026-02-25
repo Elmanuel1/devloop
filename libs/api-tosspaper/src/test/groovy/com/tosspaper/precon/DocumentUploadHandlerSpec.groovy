@@ -94,6 +94,6 @@ class DocumentUploadHandlerSpec extends Specification {
 
     def "should return correct queue name"() {
         expect:
-            handler.getQueueName() == "tender-upload-notifications"
+            handler.getQueueName() == "tender-upload-events"
     }
 }

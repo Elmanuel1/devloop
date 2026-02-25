@@ -15,7 +15,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DocumentUploadHandler implements MessageHandler<Map<String, String>> {
 
-    private static final String QUEUE_NAME = "tender-upload-notifications";
+    private static final String QUEUE_NAME = "tender-upload-events";
 
     private final DocumentUploadProcessor processor;
     private final ObjectMapper objectMapper;

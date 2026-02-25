@@ -53,6 +53,7 @@ QUEUES=(
   "document-approved-events"
   "quickbooks-events"
   "integration-push-events"
+  "tender-upload-events"
 )
 
 echo "Creating SQS queues with DLQs..."
@@ -91,6 +92,31 @@ done
 
 echo "SQS queues created successfully!"
 awslocal sqs list-queues
+
+# =============================================================================
+# S3 → SQS EVENT NOTIFICATIONS
+# =============================================================================
+echo "Configuring S3 event notifications..."
+
+UPLOAD_QUEUE_NAME="${QUEUE_PREFIX}-tender-upload-events"
+UPLOAD_QUEUE_URL=$(awslocal sqs get-queue-url --queue-name "${UPLOAD_QUEUE_NAME}" --query 'QueueUrl' --output text)
+UPLOAD_QUEUE_ARN=$(awslocal sqs get-queue-attributes \
+  --queue-url "$UPLOAD_QUEUE_URL" \
+  --attribute-names QueueArn \
+  --query 'Attributes.QueueArn' \
+  --output text)
+
+awslocal s3api put-bucket-notification-configuration \
+  --bucket "tosspaper-local-tender-uploads" \
+  --notification-configuration "{
+    \"QueueConfigurations\": [{
+      \"QueueArn\": \"${UPLOAD_QUEUE_ARN}\",
+      \"Events\": [\"s3:ObjectCreated:*\"],
+      \"Filter\": {\"Key\": {\"FilterRules\": [{\"Name\": \"prefix\", \"Value\": \"tenders/\"}]}}
+    }]
+  }"
+
+echo "S3 event notification configured: tosspaper-local-tender-uploads -> ${UPLOAD_QUEUE_NAME}"
 
 # =============================================================================
 # SSM PARAMETER STORE SETUP
