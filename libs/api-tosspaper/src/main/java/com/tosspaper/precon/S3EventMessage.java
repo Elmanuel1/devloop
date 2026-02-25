@@ -33,6 +33,18 @@ public class S3EventMessage {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Record {
         private S3 s3;
+
+        public String getBucketName() {
+            return s3 != null && s3.bucket != null ? s3.bucket.name : null;
+        }
+
+        public String getObjectKey() {
+            return s3 != null && s3.object != null ? s3.object.key : null;
+        }
+
+        public long getObjectSize() {
+            return s3 != null && s3.object != null ? s3.object.size : 0;
+        }
     }
 
     @Data
