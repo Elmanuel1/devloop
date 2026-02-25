@@ -27,7 +27,7 @@ import java.util.List;
 public class S3EventMessage {
 
     @JsonProperty("Records")
-    private List<Record> records;
+    private List<Record> records = List.of();
 
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)

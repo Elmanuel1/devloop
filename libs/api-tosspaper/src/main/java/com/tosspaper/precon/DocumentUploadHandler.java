@@ -8,9 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 @Slf4j
 @Component
@@ -30,16 +28,7 @@ public class DocumentUploadHandler implements MessageHandler<Map<String, String>
     @Override
     public void handle(Map<String, String> message) {
         S3EventMessage event = objectMapper.convertValue(message, S3EventMessage.class);
-
-        List<S3EventMessage.Record> records = event != null ? event.getRecords() : null;
-        if (records == null || records.isEmpty()) {
-            log.warn("No records found in S3 event message");
-            return;
-        }
-
-        for (S3EventMessage.Record record : records) {
-            processRecord(record);
-        }
+        event.getRecords().forEach(this::processRecord);
     }
 
     private void processRecord(S3EventMessage.Record record) {
