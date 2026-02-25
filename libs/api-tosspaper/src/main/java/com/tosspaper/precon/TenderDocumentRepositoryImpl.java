@@ -23,19 +23,19 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
     private final DSLContext dsl;
 
     @Override
-    public TenderDocumentsRecord insert(String id, String tenderId, String companyId, String fileName,
-                                         String contentType, long fileSize, String s3Key, String status) {
-        log.info("Inserting tender document - id: {}, tenderId: {}, fileName: {}", id, tenderId, fileName);
+    public TenderDocumentsRecord insert(TenderDocumentsRecord record) {
+        log.info("Inserting tender document - id: {}, tenderId: {}, fileName: {}",
+                record.getId(), record.getTenderId(), record.getFileName());
 
         return dsl.insertInto(TENDER_DOCUMENTS)
-                .set(TENDER_DOCUMENTS.ID, id)
-                .set(TENDER_DOCUMENTS.TENDER_ID, tenderId)
-                .set(TENDER_DOCUMENTS.COMPANY_ID, companyId)
-                .set(TENDER_DOCUMENTS.FILE_NAME, fileName)
-                .set(TENDER_DOCUMENTS.CONTENT_TYPE, contentType)
-                .set(TENDER_DOCUMENTS.FILE_SIZE, fileSize)
-                .set(TENDER_DOCUMENTS.S3_KEY, s3Key)
-                .set(TENDER_DOCUMENTS.STATUS, status)
+                .set(TENDER_DOCUMENTS.ID, record.getId())
+                .set(TENDER_DOCUMENTS.TENDER_ID, record.getTenderId())
+                .set(TENDER_DOCUMENTS.COMPANY_ID, record.getCompanyId())
+                .set(TENDER_DOCUMENTS.FILE_NAME, record.getFileName())
+                .set(TENDER_DOCUMENTS.CONTENT_TYPE, record.getContentType())
+                .set(TENDER_DOCUMENTS.FILE_SIZE, record.getFileSize())
+                .set(TENDER_DOCUMENTS.S3_KEY, record.getS3Key())
+                .set(TENDER_DOCUMENTS.STATUS, record.getStatus())
                 .returning()
                 .fetchSingle();
     }
@@ -52,7 +52,7 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
 
     @Override
     public List<TenderDocumentsRecord> findByTenderId(String tenderId, String status, int limit,
-                                                       String cursorCreatedAt, String cursorId) {
+                                                       OffsetDateTime cursorCreatedAt, String cursorId) {
         List<Condition> conditions = new ArrayList<>();
         conditions.add(TENDER_DOCUMENTS.TENDER_ID.eq(tenderId));
         conditions.add(TENDER_DOCUMENTS.DELETED_AT.isNull());
@@ -64,10 +64,9 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
 
         // Cursor pagination
         if (cursorCreatedAt != null && cursorId != null) {
-            OffsetDateTime cursorTime = OffsetDateTime.parse(cursorCreatedAt);
             conditions.add(
                     DSL.row(TENDER_DOCUMENTS.CREATED_AT, TENDER_DOCUMENTS.ID)
-                            .lessThan(DSL.row(cursorTime, cursorId))
+                            .lessThan(DSL.row(cursorCreatedAt, cursorId))
             );
         }
 

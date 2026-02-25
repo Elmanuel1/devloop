@@ -57,42 +57,31 @@ public class DocumentUploadProcessor {
         }
         documentRepository.updateStatusToProcessing(documentId);
 
-        try {
-            byte[] header = downloadHeader(bucket, key);
-            String contentType = document.getContentType();
+        byte[] header = downloadHeader(bucket, key);
+        String contentType = document.getContentType();
 
-            FileObject fileObject = FileObject.builder()
-                    .fileName(document.getFileName())
-                    .contentType(contentType)
-                    .content(header)
-                    .build();
+        FileObject fileObject = FileObject.builder()
+                .fileName(document.getFileName())
+                .contentType(contentType)
+                .content(header)
+                .build();
 
-            ValidationResult result = magicByteValidation.validate(fileObject);
+        ValidationResult result = magicByteValidation.validate(fileObject);
 
-            if (result.isInvalid()) {
-                documentRepository.updateStatusToFailed(documentId, result.getViolationMessage());
-                log.warn("Document validation failed - id: {}, reason: {}", documentId, result.getViolationMessage());
-                return;
-            }
-
-            documentRepository.updateStatusToReady(documentId);
-            log.info("Document validated successfully - id: {}, contentType: {}", documentId, contentType);
-
-        } catch (NoSuchKeyException e) {
-            String reason = "S3 object not found: " + key;
-            documentRepository.updateStatusToFailed(documentId, reason);
-            log.error("S3 object not found during processing - key: {}", key, e);
-        } catch (Exception e) {
-            String reason = "Processing error: " + e.getMessage();
-            documentRepository.updateStatusToFailed(documentId, reason);
-            log.error("Failed to process upload - key: {}", key, e);
+        if (result.isInvalid()) {
+            documentRepository.updateStatusToFailed(documentId, result.getViolationMessage());
+            log.warn("Document validation failed - id: {}, reason: {}", documentId, result.getViolationMessage());
+            return;
         }
+
+        documentRepository.updateStatusToReady(documentId);
+        log.info("Document validated successfully - id: {}, contentType: {}", documentId, contentType);
     }
 
     /**
      * Downloads the first few bytes of an S3 object using a range request.
      */
-    byte[] downloadHeader(String bucket, String key) throws IOException {
+    byte[] downloadHeader(String bucket, String key) {
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)
@@ -101,6 +90,8 @@ public class DocumentUploadProcessor {
 
         try (ResponseInputStream<GetObjectResponse> response = s3Client.getObject(request)) {
             return response.readAllBytes();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Failed to read S3 object header: " + key, e);
         }
     }
 

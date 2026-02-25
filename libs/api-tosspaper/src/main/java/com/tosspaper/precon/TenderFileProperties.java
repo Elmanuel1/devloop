@@ -2,29 +2,21 @@ package com.tosspaper.precon;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
-import java.util.List;
-import java.util.Map;
+import jakarta.validation.constraints.NotEmpty;
 
+/**
+ * Configuration properties for tender file handling.
+ */
+@ConfigurationProperties(prefix = "tender.file")
 @Data
-@Component
-@ConfigurationProperties(prefix = "file.tender")
+@Validated
 public class TenderFileProperties {
 
-    private List<String> allowedContentTypes = List.of(
-            "application/pdf",
-            "image/png",
-            "image/jpeg"
-    );
-
-    private Map<String, List<String>> contentTypeExtensions = Map.of(
-            "application/pdf", List.of("pdf"),
-            "image/png", List.of("png"),
-            "image/jpeg", List.of("jpg", "jpeg")
-    );
-
-    private long maxFileSize = 209715200L; // 200MB
-
-    private int maxFileNameLength = 255;
+    /**
+     * S3 bucket for tender document uploads.
+     */
+    @NotEmpty
+    private String uploadBucket;
 }
