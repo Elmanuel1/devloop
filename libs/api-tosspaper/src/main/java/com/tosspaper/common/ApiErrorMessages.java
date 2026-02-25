@@ -75,4 +75,20 @@ public final class ApiErrorMessages {
     public static final String FORBIDDEN_CODE = "api.forbidden";
     public static final String FORBIDDEN_DOMAIN_CODE = "api.forbidden.domain";
     public static final String INTERNAL_SERVER_ERROR_CODE = "api.internalError";
+
+    // Tender error messages
+    public static final String TENDER_NOT_FOUND_CODE = "api.tender.notFound";
+    public static final String TENDER_NOT_FOUND = "Tender not found";
+
+    // Document error messages
+    public static final String DOCUMENT_NOT_FOUND_CODE = "api.document.notFound";
+    public static final String DOCUMENT_NOT_FOUND = "Document not found";
+    public static final String DOCUMENT_NOT_READY_CODE = "api.document.notReady";
+    public static final String DOCUMENT_NOT_READY = "Document is not ready for download. Current status: %s";
+    public static final String DOCUMENT_CANNOT_DELETE_CODE = "api.document.cannotDelete";
+    public static final String DOCUMENT_CANNOT_DELETE = "Cannot delete documents from a tender in '%s' status";
+
+    // Cursor error messages
+    public static final String INVALID_CURSOR_CODE = "api.validation.invalidCursor";
+    public static final String INVALID_CURSOR = "Invalid cursor format";
 } 

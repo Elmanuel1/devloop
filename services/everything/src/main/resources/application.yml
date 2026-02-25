@@ -429,6 +429,12 @@ aws:
         poll-delay-seconds: 20
         max-messages: 10
         enabled: true
+      tender-upload-events:
+        visibility-timeout-seconds: 60     # 1 min for magic byte validation
+        max-receive-count: 3
+        poll-delay-seconds: 20
+        max-messages: 10
+        enabled: true
 
 # File Configuration
 file:

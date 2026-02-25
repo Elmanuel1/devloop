@@ -1,7 +1,9 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.NotFoundException;
+import com.tosspaper.models.exception.CannotDeleteException;
 import com.tosspaper.models.exception.DocumentNotReadyException;
 import com.tosspaper.precon.generated.model.DownloadUrlResponse;
 import com.tosspaper.precon.generated.model.Pagination;
@@ -20,8 +22,6 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
-
-import com.tosspaper.models.exception.CannotDeleteException;
 
 import java.net.URI;
 import java.time.Duration;
@@ -54,7 +54,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         // Validate tender ownership
         TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
+            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
         }
 
         // Generate document ID and S3 key
@@ -95,7 +95,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         // Validate tender ownership
         TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
+            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
         }
 
         // Clamp limit to valid range
@@ -146,21 +146,22 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         // Validate tender ownership
         TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
+            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
         }
 
         // Reject deletion on final status tenders
         if (FINAL_STATUSES.contains(tender.getStatus())) {
-            throw new CannotDeleteException("api.tenderDocument.cannotDelete",
-                    "Cannot delete documents from a tender in '" + tender.getStatus() + "' status");
+            throw new CannotDeleteException(ApiErrorMessages.DOCUMENT_CANNOT_DELETE_CODE,
+                    ApiErrorMessages.DOCUMENT_CANNOT_DELETE.formatted(tender.getStatus()));
         }
 
-        // Find the document (throws NotFoundException if not found)
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
+        // Find the document
+        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND));
 
         // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found");
+            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
         }
 
         // Soft-delete the record first
@@ -187,21 +188,22 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         // Validate tender ownership
         TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException("api.tender.notFound", "Tender not found");
+            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
         }
 
-        // Find the document (throws NotFoundException if not found)
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
+        // Find the document
+        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND));
 
         // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
-            throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found");
+            throw new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND);
         }
 
         // Check status is ready
         if (!TenderDocumentStatus.READY.getValue().equals(document.getStatus())) {
-            throw new DocumentNotReadyException("api.tenderDocument.notReady",
-                    "Document is not ready for download. Current status: " + document.getStatus());
+            throw new DocumentNotReadyException(ApiErrorMessages.DOCUMENT_NOT_READY_CODE,
+                    ApiErrorMessages.DOCUMENT_NOT_READY.formatted(document.getStatus()));
         }
 
         // Generate presigned download URL

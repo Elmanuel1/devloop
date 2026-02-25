@@ -67,6 +67,7 @@ dependencies {
 	
 	// AWS SDK
 	implementation libs.aws.s3
+	implementation libs.aws.sqs
 	
 	// Mailgun SDK
 	implementation libs.mailgun

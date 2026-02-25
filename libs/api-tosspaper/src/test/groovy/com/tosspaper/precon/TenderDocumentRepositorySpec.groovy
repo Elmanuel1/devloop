@@ -1,6 +1,5 @@
 package com.tosspaper.precon
 
-import com.tosspaper.common.NotFoundException
 import com.tosspaper.config.BaseIntegrationTest
 import com.tosspaper.config.TestSecurityConfiguration
 import com.tosspaper.models.jooq.Tables
@@ -111,29 +110,30 @@ class TenderDocumentRepositorySpec extends BaseIntegrationTest {
             def result = tenderDocumentRepository.findById(inserted.id)
 
         then: "the document is returned"
-            result.id == inserted.id
-            result.fileName == "find-me.pdf"
-            result.tenderId == tenderId
+            result.isPresent()
+            result.get().id == inserted.id
+            result.get().fileName == "find-me.pdf"
+            result.get().tenderId == tenderId
     }
 
-    def "should throw NotFoundException when document not found"() {
+    def "should return empty when document not found"() {
         when: "finding a nonexistent document"
-            tenderDocumentRepository.findById("nonexistent-id")
+            def result = tenderDocumentRepository.findById("nonexistent-id")
 
-        then: "NotFoundException is thrown"
-            thrown(NotFoundException)
+        then: "empty Optional is returned"
+            result.isEmpty()
     }
 
-    def "should throw NotFoundException when document is soft-deleted"() {
+    def "should return empty when document is soft-deleted"() {
         given: "a soft-deleted document"
             def inserted = tenderDocumentRepository.insert(buildDocumentRecord(tenderId, companyIdStr, "deleted.pdf"))
             tenderDocumentRepository.softDelete(inserted.id)
 
         when: "finding the deleted document by id"
-            tenderDocumentRepository.findById(inserted.id)
+            def result = tenderDocumentRepository.findById(inserted.id)
 
-        then: "NotFoundException is thrown"
-            thrown(NotFoundException)
+        then: "empty Optional is returned"
+            result.isEmpty()
     }
 
     // ==================== findByTenderId ====================

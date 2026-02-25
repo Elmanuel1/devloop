@@ -247,7 +247,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found by ID"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "document is soft-deleted first"
             1 * tenderDocumentRepository.softDelete(documentId) >> 1
@@ -273,7 +273,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document lookup returns empty"
-            1 * tenderDocumentRepository.findById(documentId) >> { throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found") }
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.empty()
 
         and: "NotFoundException is thrown"
             thrown(NotFoundException)
@@ -298,7 +298,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found but belongs to a different tender"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "NotFoundException is thrown"
             thrown(NotFoundException)
@@ -323,7 +323,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "soft delete executes successfully"
             1 * tenderDocumentRepository.softDelete(documentId) >> 1
@@ -380,7 +380,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "presigned GET URL is generated with the correct S3 key and bucket"
             1 * s3Presigner.presignGetObject(_ as GetObjectPresignRequest) >> presignedGet
@@ -409,7 +409,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found with non-ready status"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "DocumentNotReadyException is thrown"
             thrown(DocumentNotReadyException)
@@ -434,7 +434,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found with processing status"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "DocumentNotReadyException is thrown"
             thrown(DocumentNotReadyException)
@@ -457,7 +457,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document lookup returns empty"
-            1 * tenderDocumentRepository.findById(documentId) >> { throw new NotFoundException("api.tenderDocument.notFound", "Tender document not found") }
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.empty()
 
         and: "NotFoundException is thrown"
             thrown(NotFoundException)
@@ -482,7 +482,7 @@ class TenderDocumentServiceSpec extends Specification {
             1 * tenderRepository.findById(tenderId) >> tender
 
         and: "document is found but belongs to a different tender"
-            1 * tenderDocumentRepository.findById(documentId) >> document
+            1 * tenderDocumentRepository.findById(documentId) >> Optional.of(document)
 
         and: "NotFoundException is thrown"
             thrown(NotFoundException)
