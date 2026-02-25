@@ -209,9 +209,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
     }
 
     private void verifyTenderOwnership(String tenderId, String companyIdStr) {
-        TendersRecord tender = tenderRepository.findById(tenderId)
-                .orElseThrow(() -> new NotFoundException("api.tender.notFound", "Tender not found"));
-
+        TendersRecord tender = tenderRepository.findById(tenderId);
         if (!tender.getCompanyId().equals(companyIdStr)) {
             throw new NotFoundException("api.tender.notFound", "Tender not found");
         }
