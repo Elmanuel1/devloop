@@ -91,4 +91,26 @@ public final class ApiErrorMessages {
     // Cursor error messages
     public static final String INVALID_CURSOR_CODE = "api.validation.invalidCursor";
     public static final String INVALID_CURSOR = "Invalid cursor format";
+
+    // ── Extraction ──
+    public static final String EXTRACTION_NOT_FOUND_CODE      = "api.extraction.notFound";
+    public static final String EXTRACTION_NOT_FOUND           = "Extraction not found.";
+    public static final String EXTRACTION_CANNOT_CANCEL_CODE  = "api.extraction.cannotCancel";
+    public static final String EXTRACTION_CANNOT_CANCEL       = "Cannot cancel extraction in '%s' status.";
+    public static final String EXTRACTION_NO_READY_DOCS_CODE  = "api.extraction.noReadyDocuments";
+    public static final String EXTRACTION_NO_READY_DOCS       = "No ready documents found for entity '%s'. Upload and wait for documents to reach ready status before starting extraction.";
+    public static final String EXTRACTION_DOC_NOT_OWNED_CODE  = "api.extraction.documentNotOwned";
+    public static final String EXTRACTION_DOC_NOT_OWNED       = "Document '%s' does not belong to entity '%s'.";
+    public static final String EXTRACTION_INVALID_FIELD_CODE  = "api.extraction.invalidField";
+    public static final String EXTRACTION_INVALID_FIELD       = "Field name '%s' is not valid for entity type '%s'.";
+    public static final String EXTRACTION_FIELD_NOT_FOUND_CODE = "api.extraction.field.notFound";
+    public static final String EXTRACTION_FIELD_NOT_FOUND      = "Extraction field not found.";
+
+    // ── Application ──
+    public static final String APPLICATION_UNRESOLVED_CONFLICTS_CODE = "api.application.unresolvedConflicts";
+    public static final String APPLICATION_UNRESOLVED_CONFLICTS      = "Cannot apply extraction — %d field(s) have conflicts that must be resolved before applying. Set edited_value on each conflicted field via PATCH /v1/extractions/{id}/fields.";
+    public static final String APPLICATION_ENTITY_STALE_CODE = "api.application.entityStale";
+    public static final String APPLICATION_ENTITY_STALE      = "Cannot apply extraction — the target entity was modified after this extraction was created. Please review the current state and start a new extraction if needed.";
+    public static final String APPLICATION_NO_FIELDS_CODE    = "api.application.noFields";
+    public static final String APPLICATION_NO_FIELDS         = "No extraction fields found targeting entity '%s'.";
 } 
