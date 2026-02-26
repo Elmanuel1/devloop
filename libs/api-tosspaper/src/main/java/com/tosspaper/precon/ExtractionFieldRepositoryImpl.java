@@ -5,7 +5,6 @@ import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.ExtractionFieldsRecord;
 import lombok.RequiredArgsConstructor;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -136,8 +135,11 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
         return new BulkUpdateResult(updatedRecords, rowsUpdated);
     }
 
-    @SneakyThrows
     private String serializeCitationFilter(String documentId) {
-        return objectMapper.writeValueAsString(List.of(Map.of("document_id", documentId)));
+        try {
+            return objectMapper.writeValueAsString(List.of(Map.of("document_id", documentId)));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(ApiErrorMessages.SERIALIZATION_ERROR, e);
+        }
     }
 }
