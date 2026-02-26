@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,13 +35,9 @@ public class TenderExtractionAdapter implements EntityExtractionAdapter {
     }
 
     @Override
-    public void verifyOwnership(String companyId, String entityId) {
+    public boolean verifyOwnership(String companyId, String entityId) {
         TendersRecord tender = tenderRepository.findById(entityId);
-        if (!tender.getCompanyId().equals(companyId)) {
-            throw new NotFoundException(
-                    ApiErrorMessages.TENDER_NOT_FOUND_CODE,
-                    ApiErrorMessages.TENDER_NOT_FOUND);
-        }
+        return tender.getCompanyId().equals(companyId);
     }
 
     @Override
@@ -53,27 +48,30 @@ public class TenderExtractionAdapter implements EntityExtractionAdapter {
                     .toList();
 
             List<TenderDocumentsRecord> docs = tenderDocumentRepository.findByIds(requestedIds);
-            Map<String, TenderDocumentsRecord> docMap = docs.stream()
-                    .collect(Collectors.toMap(TenderDocumentsRecord::getId, d -> d));
 
-            for (String docId : requestedIds) {
-                TenderDocumentsRecord doc = docMap.get(docId);
-                if (doc == null) {
-                    throw new NotFoundException(
-                            ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE,
-                            ApiErrorMessages.DOCUMENT_NOT_FOUND);
-                }
-                if (!doc.getTenderId().equals(entityId)) {
-                    throw new BadRequestException(
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED_CODE,
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED.formatted(docId, entityId));
-                }
-                if (!TenderDocumentStatus.READY.getValue().equals(doc.getStatus())) {
-                    throw new BadRequestException(
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_READY_CODE,
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_READY.formatted(docId, doc.getStatus()));
-                }
+            if (docs.size() != requestedIds.size()) {
+                throw new NotFoundException(
+                        ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE,
+                        ApiErrorMessages.DOCUMENT_NOT_FOUND);
             }
+
+            docs.stream()
+                    .filter(d -> !d.getTenderId().equals(entityId))
+                    .findFirst()
+                    .ifPresent(d -> {
+                        throw new BadRequestException(
+                                ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED_CODE,
+                                ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED.formatted(d.getId(), entityId));
+                    });
+
+            docs.stream()
+                    .filter(d -> !TenderDocumentStatus.READY.getValue().equals(d.getStatus()))
+                    .findFirst()
+                    .ifPresent(d -> {
+                        throw new BadRequestException(
+                                ApiErrorMessages.EXTRACTION_DOC_NOT_READY_CODE,
+                                ApiErrorMessages.EXTRACTION_DOC_NOT_READY.formatted(d.getId(), d.getStatus()));
+                    });
 
             return requestedIds;
         }

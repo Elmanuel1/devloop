@@ -9,7 +9,7 @@ public interface EntityExtractionAdapter {
 
     EntityType entityType();
 
-    void verifyOwnership(String companyId, String entityId);
+    boolean verifyOwnership(String companyId, String entityId);
 
     List<String> resolveDocumentIds(String entityId, ExtractionCreateRequest request);
 

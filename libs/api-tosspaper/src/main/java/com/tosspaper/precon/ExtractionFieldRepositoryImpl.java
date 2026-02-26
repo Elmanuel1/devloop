@@ -1,9 +1,11 @@
 package com.tosspaper.precon;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.ExtractionFieldsRecord;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTION_FIELDS;
 
@@ -22,6 +25,7 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTION_FIELDS;
 public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository {
 
     private final DSLContext dsl;
+    private final ObjectMapper objectMapper;
 
     @Override
     public List<ExtractionFieldsRecord> findByExtractionId(ExtractionFieldQuery query) {
@@ -34,10 +38,9 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
         }
 
         // Optional document_id filter via JSONB containment on citations
-        // citations is a JSONB array of {document_id, ...} objects
+        // citations is a JSONB array of Citation objects with document_id field
         if (query.getDocumentId() != null && !query.getDocumentId().isBlank()) {
-            // Use JSONB @> operator: citations @> '[{"document_id":"<uuid>"}]'
-            String containsJson = "[{\"document_id\":\"" + query.getDocumentId() + "\"}]";
+            String containsJson = serializeCitationFilter(query.getDocumentId());
             conditions.add(
                     DSL.condition(
                             "{0} @> {1}::jsonb",
@@ -97,5 +100,10 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
         return dsl.deleteFrom(EXTRACTION_FIELDS)
                 .where(EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
                 .execute();
+    }
+
+    @SneakyThrows
+    private String serializeCitationFilter(String documentId) {
+        return objectMapper.writeValueAsString(List.of(Map.of("document_id", documentId)));
     }
 }

@@ -75,6 +75,7 @@ public class ExtractionRepositoryImpl implements ExtractionRepository {
         log.info("Updating extraction status - id: {}, status: {}", id, status);
         return dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.STATUS, status)
+                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(EXTRACTIONS.ID.eq(id))
                 .and(EXTRACTIONS.DELETED_AT.isNull())
@@ -82,8 +83,7 @@ public class ExtractionRepositoryImpl implements ExtractionRepository {
     }
 
     @Override
-    public int incrementVersion(String id, int expectedVersion) {
-        log.info("Incrementing extraction version - id: {}, expectedVersion: {}", id, expectedVersion);
+    public int updateVersion(String id, int expectedVersion) {
         return dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
@@ -96,6 +96,7 @@ public class ExtractionRepositoryImpl implements ExtractionRepository {
     @Override
     public int softDelete(String id) {
         return dsl.update(EXTRACTIONS)
+                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.DELETED_AT, DSL.currentOffsetDateTime())
                 .where(EXTRACTIONS.ID.eq(id))
                 .and(EXTRACTIONS.DELETED_AT.isNull())

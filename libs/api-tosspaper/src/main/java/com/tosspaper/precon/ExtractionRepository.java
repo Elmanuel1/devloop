@@ -12,13 +12,16 @@ public interface ExtractionRepository {
 
     List<ExtractionsRecord> findByEntityId(String companyId, String entityId, ExtractionQuery query);
 
+    /**
+     * Updates status and increments version atomically.
+     */
     int updateStatus(String id, String status);
 
     /**
-     * Atomically increments version where version = expectedVersion.
+     * Increments version with optimistic lock check.
      * Returns number of rows updated (0 = stale version).
      */
-    int incrementVersion(String id, int expectedVersion);
+    int updateVersion(String id, int expectedVersion);
 
     int softDelete(String id);
 }

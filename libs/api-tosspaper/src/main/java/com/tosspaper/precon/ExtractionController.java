@@ -32,6 +32,7 @@ import java.util.UUID;
 public class ExtractionController implements ExtractionsApi {
 
     private final ExtractionService extractionService;
+    private final ExtractionFieldService extractionFieldService;
     private final ExtractionApplicationService extractionApplicationService;
     private final HttpServletRequest request;
 
@@ -98,7 +99,7 @@ public class ExtractionController implements ExtractionsApi {
         log.debug("DELETE /v1/extractions/{} - xContextId={}", extractionId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
         extractionService.cancelExtraction(companyId, extractionId.toString());
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.accepted().build();
     }
 
     @Override
@@ -112,7 +113,7 @@ public class ExtractionController implements ExtractionsApi {
             String cursor) {
         log.debug("GET /v1/extractions/{}/fields - xContextId={}", extractionId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
-        ExtractionFieldListResponse response = extractionService.listExtractionFields(
+        ExtractionFieldListResponse response = extractionFieldService.listExtractionFields(
                 companyId, extractionId.toString(), fieldName, documentId, limit, cursor);
         return ResponseEntity.ok(response);
     }
@@ -126,7 +127,7 @@ public class ExtractionController implements ExtractionsApi {
             ExtractionFieldBulkUpdateRequest extractionFieldBulkUpdateRequest) {
         log.debug("PATCH /v1/extractions/{}/fields - xContextId={}", extractionId, xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
-        ExtractionFieldBulkUpdateResponse response = extractionService.bulkUpdateFields(
+        ExtractionFieldBulkUpdateResponse response = extractionFieldService.bulkUpdateFields(
                 companyId, extractionId.toString(), ifMatch, extractionFieldBulkUpdateRequest);
         return ResponseEntity.ok(response);
     }
