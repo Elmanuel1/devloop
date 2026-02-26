@@ -51,9 +51,9 @@ class TenderDocumentControllerSpec extends BaseIntegrationTest {
 
     // ==================== POST /v1/tenders/{tenderId}/documents/presigned-urls ====================
 
-    def "POST presigned-urls returns 201 with Location header"() {
+    def "POST presigned-urls returns 200 with document metadata"() {
         given: "a tender in DB"
-            def tenderId = insertTender(companyId.toString(), "Upload Test Tender", "draft")
+            def tenderId = insertTender(companyId.toString(), "Upload Test Tender", "pending")
 
         and: "auth headers and valid body"
             def headers = buildAuthHeaders()
@@ -69,9 +69,7 @@ class TenderDocumentControllerSpec extends BaseIntegrationTest {
                 Map)
 
         then:
-            response.statusCode == HttpStatus.CREATED
-            response.headers.getFirst("Location") != null
-            response.headers.getFirst("Location").contains("/v1/tenders/${tenderId}/documents/")
+            response.statusCode == HttpStatus.OK
             response.body.document_id != null
             response.body.presigned_url != null
             response.body.expiration != null

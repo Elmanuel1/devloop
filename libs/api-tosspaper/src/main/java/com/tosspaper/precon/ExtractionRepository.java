@@ -3,15 +3,14 @@ package com.tosspaper.precon;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface ExtractionRepository {
 
     ExtractionsRecord insert(ExtractionsRecord record);
 
-    Optional<ExtractionsRecord> findById(String id);
+    ExtractionsRecord findById(String id);
 
-    List<ExtractionsRecord> findByEntityId(String entityId, ExtractionQuery query);
+    List<ExtractionsRecord> findByEntityId(String companyId, String entityId, ExtractionQuery query);
 
     int updateStatus(String id, String status);
 

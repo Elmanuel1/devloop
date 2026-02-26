@@ -1,6 +1,9 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
+import com.tosspaper.precon.generated.model.TenderDocumentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
@@ -11,7 +14,6 @@ import org.springframework.stereotype.Repository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.TENDER_DOCUMENTS;
 
@@ -36,18 +38,32 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .set(TENDER_DOCUMENTS.FILE_SIZE, record.getFileSize())
                 .set(TENDER_DOCUMENTS.S3_KEY, record.getS3Key())
                 .set(TENDER_DOCUMENTS.STATUS, record.getStatus())
+                .set(TENDER_DOCUMENTS.ERROR_REASON, record.getErrorReason())
+                .set(TENDER_DOCUMENTS.UPLOADED_AT, record.getUploadedAt())
                 .returning()
                 .fetchSingle();
     }
 
     @Override
-    public Optional<TenderDocumentsRecord> findById(String id) {
-        return Optional.ofNullable(
-                dsl.selectFrom(TENDER_DOCUMENTS)
-                        .where(TENDER_DOCUMENTS.ID.eq(id))
-                        .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
-                        .fetchOne()
-        );
+    public TenderDocumentsRecord findById(String id) {
+        return dsl.selectFrom(TENDER_DOCUMENTS)
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .fetchOptional()
+                .orElseThrow(() -> new NotFoundException(
+                        ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE,
+                        ApiErrorMessages.DOCUMENT_NOT_FOUND));
+    }
+
+    @Override
+    public List<TenderDocumentsRecord> findByIds(List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return dsl.selectFrom(TENDER_DOCUMENTS)
+                .where(TENDER_DOCUMENTS.ID.in(ids))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .fetch();
     }
 
     @Override
@@ -101,7 +117,7 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
     public int updateStatusToReady(String id) {
         log.info("Updating document status to ready - id: {}", id);
         return dsl.update(TENDER_DOCUMENTS)
-                .set(TENDER_DOCUMENTS.STATUS, "ready")
+                .set(TENDER_DOCUMENTS.STATUS, TenderDocumentStatus.READY.getValue())
                 .set(TENDER_DOCUMENTS.UPLOADED_AT, DSL.currentOffsetDateTime())
                 .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(TENDER_DOCUMENTS.ID.eq(id))
@@ -113,7 +129,7 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
     public int updateStatusToFailed(String id, String errorReason) {
         log.info("Updating document status to failed - id: {}, reason: {}", id, errorReason);
         return dsl.update(TENDER_DOCUMENTS)
-                .set(TENDER_DOCUMENTS.STATUS, "failed")
+                .set(TENDER_DOCUMENTS.STATUS, TenderDocumentStatus.FAILED.getValue())
                 .set(TENDER_DOCUMENTS.ERROR_REASON, errorReason)
                 .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(TENDER_DOCUMENTS.ID.eq(id))

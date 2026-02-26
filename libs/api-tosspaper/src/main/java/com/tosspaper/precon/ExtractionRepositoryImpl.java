@@ -1,5 +1,7 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.NotFoundException;
+import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,10 +10,8 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
 
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 
@@ -33,18 +33,20 @@ public class ExtractionRepositoryImpl implements ExtractionRepository {
     }
 
     @Override
-    public Optional<ExtractionsRecord> findById(String id) {
-        return Optional.ofNullable(
-                dsl.selectFrom(EXTRACTIONS)
-                        .where(EXTRACTIONS.ID.eq(id))
-                        .and(EXTRACTIONS.DELETED_AT.isNull())
-                        .fetchOne()
-        );
+    public ExtractionsRecord findById(String id) {
+        return dsl.selectFrom(EXTRACTIONS)
+                .where(EXTRACTIONS.ID.eq(id))
+                .and(EXTRACTIONS.DELETED_AT.isNull())
+                .fetchOptional()
+                .orElseThrow(() -> new NotFoundException(
+                        ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE,
+                        ApiErrorMessages.EXTRACTION_NOT_FOUND));
     }
 
     @Override
-    public List<ExtractionsRecord> findByEntityId(String entityId, ExtractionQuery query) {
+    public List<ExtractionsRecord> findByEntityId(String companyId, String entityId, ExtractionQuery query) {
         List<Condition> conditions = new ArrayList<>();
+        conditions.add(EXTRACTIONS.COMPANY_ID.eq(companyId));
         conditions.add(EXTRACTIONS.ENTITY_ID.eq(entityId));
         conditions.add(EXTRACTIONS.DELETED_AT.isNull());
 

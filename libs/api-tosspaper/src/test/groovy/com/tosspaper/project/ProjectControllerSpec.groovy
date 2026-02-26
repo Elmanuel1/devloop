@@ -37,6 +37,7 @@ class ProjectControllerSpec extends BaseIntegrationTest {
                         name: "Test Company",
                         email: TestSecurityConfiguration.TEST_USER_EMAIL
                 ])
+                .onDuplicateKeyIgnore()
                 .execute()
         companyId = TestSecurityConfiguration.TEST_COMPANY_ID
         projectRecord = dsl.insertInto(Tables.PROJECTS)

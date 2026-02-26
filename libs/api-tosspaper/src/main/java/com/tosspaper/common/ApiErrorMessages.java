@@ -99,6 +99,8 @@ public final class ApiErrorMessages {
     public static final String EXTRACTION_CANNOT_CANCEL       = "Cannot cancel extraction in '%s' status.";
     public static final String EXTRACTION_NO_READY_DOCS_CODE  = "api.extraction.noReadyDocuments";
     public static final String EXTRACTION_NO_READY_DOCS       = "No ready documents found for entity '%s'. Upload and wait for documents to reach ready status before starting extraction.";
+    public static final String EXTRACTION_DOC_NOT_READY_CODE  = "api.extraction.documentNotReady";
+    public static final String EXTRACTION_DOC_NOT_READY       = "Document '%s' is not ready for extraction. Current status: '%s'.";
     public static final String EXTRACTION_DOC_NOT_OWNED_CODE  = "api.extraction.documentNotOwned";
     public static final String EXTRACTION_DOC_NOT_OWNED       = "Document '%s' does not belong to entity '%s'.";
     public static final String EXTRACTION_INVALID_FIELD_CODE  = "api.extraction.invalidField";
@@ -115,6 +117,10 @@ public final class ApiErrorMessages {
     // ── Serialization ──
     public static final String SERIALIZATION_ERROR_CODE = "api.internal.serializationError";
     public static final String SERIALIZATION_ERROR = "Failed to serialize value.";
+
+    // ── Entity adapter ──
+    public static final String ENTITY_TYPE_NOT_SUPPORTED_CODE = "api.extraction.entityTypeNotSupported";
+    public static final String ENTITY_TYPE_NOT_SUPPORTED = "Entity type '%s' is not supported for extraction.";
 
     // ── Not Implemented ──
     public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";

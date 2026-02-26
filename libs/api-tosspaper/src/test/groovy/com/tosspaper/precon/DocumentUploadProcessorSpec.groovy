@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
 import com.tosspaper.models.validation.MagicByteValidation
 import software.amazon.awssdk.core.ResponseInputStream
@@ -45,7 +46,7 @@ class DocumentUploadProcessorSpec extends Specification {
             byte[] pdfHeader = [0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34] as byte[]
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findById(docId) >> Optional.of(document)
+            documentRepository.findById(docId) >> document
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pdfHeader)
 
         when:
@@ -67,7 +68,7 @@ class DocumentUploadProcessorSpec extends Specification {
             document.getContentType() >> "image/png"
             document.getFileName() >> "image.png"
 
-            documentRepository.findById(docId) >> Optional.of(document)
+            documentRepository.findById(docId) >> document
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pngHeader)
 
         when:
@@ -89,7 +90,7 @@ class DocumentUploadProcessorSpec extends Specification {
             document.getContentType() >> "image/jpeg"
             document.getFileName() >> "photo.jpg"
 
-            documentRepository.findById(docId) >> Optional.of(document)
+            documentRepository.findById(docId) >> document
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(jpegHeader)
 
         when:
@@ -107,7 +108,7 @@ class DocumentUploadProcessorSpec extends Specification {
             byte[] pngHeader = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] as byte[]
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findById(docId) >> Optional.of(document)
+            documentRepository.findById(docId) >> document
             s3Client.getObject(_ as GetObjectRequest) >> mockS3Response(pngHeader)
 
         when:
@@ -124,7 +125,7 @@ class DocumentUploadProcessorSpec extends Specification {
             def docId = "did-456"
             def document = mockDocumentRecord(docId, "application/pdf")
 
-            documentRepository.findById(docId) >> Optional.of(document)
+            documentRepository.findById(docId) >> document
             s3Client.getObject(_ as GetObjectRequest) >> { throw NoSuchKeyException.builder().message("Not found").build() }
 
         when:
@@ -138,7 +139,7 @@ class DocumentUploadProcessorSpec extends Specification {
 
     def "should skip when document record not found"() {
         given:
-            documentRepository.findById("did-456") >> Optional.empty()
+            documentRepository.findById("did-456") >> { throw new NotFoundException("api.document.notFound", "Document not found") }
 
         when:
             processor.processUpload(bucket, s3Key, 1024)

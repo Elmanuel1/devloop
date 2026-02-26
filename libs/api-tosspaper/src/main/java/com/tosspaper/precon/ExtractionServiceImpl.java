@@ -11,8 +11,7 @@ import com.tosspaper.models.exception.IfMatchRequiredException;
 import com.tosspaper.models.exception.StaleVersionException;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 import com.tosspaper.models.jooq.tables.records.ExtractionFieldsRecord;
-import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
-import com.tosspaper.models.jooq.tables.records.TendersRecord;
+import com.tosspaper.precon.generated.model.ExtractionFieldUpdateItem;
 import com.tosspaper.precon.generated.model.EntityType;
 import com.tosspaper.precon.generated.model.Extraction;
 import com.tosspaper.precon.generated.model.ExtractionCreateRequest;
@@ -24,8 +23,7 @@ import com.tosspaper.precon.generated.model.ExtractionFieldListResponse;
 import com.tosspaper.precon.generated.model.ExtractionListResponse;
 import com.tosspaper.precon.generated.model.ExtractionStatus;
 import com.tosspaper.precon.generated.model.Pagination;
-import com.tosspaper.precon.generated.model.TenderFieldName;
-import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.JSONB;
 import org.jooq.impl.DSL;
@@ -33,34 +31,46 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ExtractionServiceImpl implements ExtractionService {
 
     private final ExtractionRepository extractionRepository;
     private final ExtractionFieldRepository extractionFieldRepository;
-    private final TenderRepository tenderRepository;
-    private final TenderDocumentRepository tenderDocumentRepository;
     private final ExtractionMapper extractionMapper;
     private final ExtractionFieldMapper extractionFieldMapper;
     private final ObjectMapper objectMapper;
+    private final Map<EntityType, EntityExtractionAdapter> adapterMap;
 
     // Valid statuses for cancellation (any non-final, non-cancelled)
     private static final Set<String> CANCELLABLE_STATUSES = Set.of(
             ExtractionStatus.PENDING.getValue(),
             ExtractionStatus.PROCESSING.getValue());
 
-    // Set of valid tender field names (derived from TenderFieldName enum)
-    private static final Set<String> VALID_TENDER_FIELD_NAMES = Arrays.stream(TenderFieldName.values())
-            .map(TenderFieldName::getValue)
-            .collect(Collectors.toSet());
+    public ExtractionServiceImpl(ExtractionRepository extractionRepository,
+                                  ExtractionFieldRepository extractionFieldRepository,
+                                  ExtractionMapper extractionMapper,
+                                  ExtractionFieldMapper extractionFieldMapper,
+                                  ObjectMapper objectMapper,
+                                  List<EntityExtractionAdapter> adapters) {
+        this.extractionRepository = extractionRepository;
+        this.extractionFieldRepository = extractionFieldRepository;
+        this.extractionMapper = extractionMapper;
+        this.extractionFieldMapper = extractionFieldMapper;
+        this.objectMapper = objectMapper;
+        Map<EntityType, EntityExtractionAdapter> map = new HashMap<>();
+        for (EntityExtractionAdapter adapter : adapters) {
+            map.put(adapter.entityType(), adapter);
+        }
+        this.adapterMap = Map.copyOf(map);
+    }
 
     @Override
     @Transactional
@@ -68,16 +78,16 @@ public class ExtractionServiceImpl implements ExtractionService {
         String companyIdStr = companyId.toString();
         String entityIdStr = request.getEntityId().toString();
 
-        TendersRecord tender = tenderRepository.findById(entityIdStr);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
-        }
+        // Entity type is resolved server-side: ExtractionCreateRequest does not expose entityType.
+        // Currently only TENDER is supported; the adapter registry enforces this.
+        EntityExtractionAdapter adapter = resolveAdapter(EntityType.TENDER);
+        adapter.verifyOwnership(companyIdStr, entityIdStr);
 
-        List<String> documentIdStrings = resolveDocumentIds(tender, request, entityIdStr);
-        List<String> fieldNames = validateFieldNames(request.getFields(), "tender");
+        List<String> documentIdStrings = adapter.resolveDocumentIds(entityIdStr, request);
+        List<String> fieldNames = adapter.validateFieldNames(request.getFields());
 
         ExtractionsRecord inserted = buildAndInsertRecord(
-                companyIdStr, entityIdStr, documentIdStrings, fieldNames);
+                adapter.entityType(), companyIdStr, entityIdStr, documentIdStrings, fieldNames);
 
         Extraction dto = buildExtractionDto(inserted);
         return new ExtractionResult(dto, inserted.getVersion());
@@ -90,11 +100,6 @@ public class ExtractionServiceImpl implements ExtractionService {
         String companyIdStr = companyId.toString();
         String entityIdStr = entityId.toString();
 
-        TendersRecord tender = tenderRepository.findById(entityIdStr);
-        if (!tender.getCompanyId().equals(companyIdStr)) {
-            throw new NotFoundException(ApiErrorMessages.TENDER_NOT_FOUND_CODE, ApiErrorMessages.TENDER_NOT_FOUND);
-        }
-
         int effectiveLimit = clampLimit(limit);
         CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
 
@@ -106,7 +111,7 @@ public class ExtractionServiceImpl implements ExtractionService {
                 .cursorId(cursorPair != null ? cursorPair.id() : null)
                 .build();
 
-        List<ExtractionsRecord> records = extractionRepository.findByEntityId(entityIdStr, query);
+        List<ExtractionsRecord> records = extractionRepository.findByEntityId(companyIdStr, entityIdStr, query);
 
         boolean hasMore = records.size() > effectiveLimit;
         if (hasMore) {
@@ -225,50 +230,12 @@ public class ExtractionServiceImpl implements ExtractionService {
                 .map(item -> item.getFieldId().toString())
                 .toList();
 
-        List<ExtractionFieldsRecord> existingFields = extractionFieldRepository.findAllByIds(fieldIds);
+        validateFieldsOwnedByExtraction(fieldIds, extractionId);
 
-        Set<String> foundIds = existingFields.stream()
-                .map(ExtractionFieldsRecord::getId)
-                .collect(Collectors.toSet());
-
-        for (String fieldId : fieldIds) {
-            if (!foundIds.contains(fieldId)) {
-                throw new NotFoundException(
-                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
-                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND);
-            }
-        }
-
-        for (ExtractionFieldsRecord field : existingFields) {
-            if (!field.getExtractionId().equals(extractionId)) {
-                throw new NotFoundException(
-                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
-                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND);
-            }
-        }
-
-        request.getUpdates().forEach(item -> {
-            String fieldId = item.getFieldId().toString();
-            JSONB editedValueJsonb = serializeObject(item.getEditedValue());
-            extractionFieldRepository.updateEditedValue(fieldId, editedValueJsonb);
-        });
-
-        int rowsUpdated = extractionRepository.incrementVersion(extractionId, expectedVersion);
-        if (rowsUpdated == 0) {
-            throw new StaleVersionException(
-                    ApiErrorMessages.EXTRACTION_STALE_VERSION_CODE,
-                    ApiErrorMessages.EXTRACTION_STALE_VERSION);
-        }
+        applyFieldUpdates(request, fieldIds, extractionId, expectedVersion);
 
         List<ExtractionFieldsRecord> updatedFields = extractionFieldRepository.findAllByIds(fieldIds);
-        List<ExtractionFieldsRecord> orderedFields = fieldIds.stream()
-                .map(id -> updatedFields.stream()
-                        .filter(f -> f.getId().equals(id))
-                        .findFirst()
-                        .orElseThrow(() -> new NotFoundException(
-                                ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
-                                ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND)))
-                .toList();
+        List<ExtractionFieldsRecord> orderedFields = refetchFieldsInOrder(fieldIds, updatedFields);
 
         EntityType entityType = EntityType.fromValue(extraction.getEntityType());
         UUID entityId = UUID.fromString(extraction.getEntityId());
@@ -280,6 +247,16 @@ public class ExtractionServiceImpl implements ExtractionService {
     }
 
     // ---- Private helpers ----
+
+    private EntityExtractionAdapter resolveAdapter(EntityType entityType) {
+        EntityExtractionAdapter adapter = adapterMap.get(entityType);
+        if (adapter == null) {
+            throw new BadRequestException(
+                    ApiErrorMessages.ENTITY_TYPE_NOT_SUPPORTED_CODE,
+                    ApiErrorMessages.ENTITY_TYPE_NOT_SUPPORTED.formatted(entityType.getValue()));
+        }
+        return adapter;
+    }
 
     private ExtractionsRecord findExtractionForCompany(String companyIdStr, String extractionId) {
         ExtractionsRecord record = extractionRepository.findById(extractionId);
@@ -293,58 +270,8 @@ public class ExtractionServiceImpl implements ExtractionService {
         return record;
     }
 
-    private List<String> resolveDocumentIds(TendersRecord tender, ExtractionCreateRequest request,
-                                             String entityIdStr) {
-        if (request.getDocumentIds() != null && !request.getDocumentIds().isEmpty()) {
-            List<String> docIds = request.getDocumentIds().stream()
-                    .map(UUID::toString)
-                    .toList();
-            for (String docId : docIds) {
-                TenderDocumentsRecord doc = tenderDocumentRepository.findById(docId)
-                        .orElseThrow(() -> new NotFoundException(
-                                ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE,
-                                ApiErrorMessages.DOCUMENT_NOT_FOUND));
-                if (!doc.getTenderId().equals(entityIdStr)) {
-                    throw new BadRequestException(
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED_CODE,
-                            ApiErrorMessages.EXTRACTION_DOC_NOT_OWNED.formatted(docId, entityIdStr));
-                }
-                if (!"ready".equals(doc.getStatus())) {
-                    throw new BadRequestException(
-                            ApiErrorMessages.EXTRACTION_NO_READY_DOCS_CODE,
-                            ApiErrorMessages.EXTRACTION_NO_READY_DOCS.formatted(entityIdStr));
-                }
-            }
-            return docIds;
-        }
-
-        List<TenderDocumentsRecord> readyDocs = tenderDocumentRepository.findByTenderId(
-                entityIdStr, "ready", 200, null, null);
-        if (readyDocs.isEmpty()) {
-            throw new BadRequestException(
-                    ApiErrorMessages.EXTRACTION_NO_READY_DOCS_CODE,
-                    ApiErrorMessages.EXTRACTION_NO_READY_DOCS.formatted(entityIdStr));
-        }
-        return readyDocs.stream()
-                .map(TenderDocumentsRecord::getId)
-                .toList();
-    }
-
-    private List<String> validateFieldNames(List<String> fields, String entityType) {
-        if (fields == null || fields.isEmpty()) {
-            return null;
-        }
-        for (String fieldName : fields) {
-            if (!VALID_TENDER_FIELD_NAMES.contains(fieldName)) {
-                throw new BadRequestException(
-                        ApiErrorMessages.EXTRACTION_INVALID_FIELD_CODE,
-                        ApiErrorMessages.EXTRACTION_INVALID_FIELD.formatted(fieldName, entityType));
-            }
-        }
-        return fields;
-    }
-
-    private ExtractionsRecord buildAndInsertRecord(String companyIdStr, String entityIdStr,
+    private ExtractionsRecord buildAndInsertRecord(EntityType entityType,
+                                                    String companyIdStr, String entityIdStr,
                                                     List<String> documentIdStrings,
                                                     List<String> fieldNames) {
         String extractionId = UUID.randomUUID().toString();
@@ -354,7 +281,7 @@ public class ExtractionServiceImpl implements ExtractionService {
         ExtractionsRecord record = new ExtractionsRecord();
         record.setId(extractionId);
         record.setCompanyId(companyIdStr);
-        record.setEntityType(EntityType.TENDER.getValue());
+        record.setEntityType(entityType.getValue());
         record.setEntityId(entityIdStr);
         record.setStatus(ExtractionStatus.PENDING.getValue());
         record.setDocumentIds(documentIdsJsonb);
@@ -370,7 +297,6 @@ public class ExtractionServiceImpl implements ExtractionService {
      * which are not in the generated jOOQ record — accessed via DSL.field on the raw record.
      */
     private Extraction buildExtractionDto(ExtractionsRecord record) {
-        // Access V3.5 columns via DSL.field since they are not in the generated record
         OffsetDateTime startedAt = record.get(
                 DSL.field("started_at", OffsetDateTime.class));
         OffsetDateTime completedAt = record.get(
@@ -392,25 +318,20 @@ public class ExtractionServiceImpl implements ExtractionService {
         try {
             return objectMapper.readValue(jsonb.data(), new TypeReference<>() {});
         } catch (Exception e) {
+            log.warn("Failed to parse extraction errors JSONB: {}", e.getMessage());
             return List.of();
         }
     }
 
+    @SneakyThrows
     private JSONB serializeStringList(List<String> strings) {
-        try {
-            return JSONB.valueOf(objectMapper.writeValueAsString(strings));
-        } catch (Exception e) {
-            throw new RuntimeException(ApiErrorMessages.SERIALIZATION_ERROR, e);
-        }
+        return JSONB.valueOf(objectMapper.writeValueAsString(strings));
     }
 
+    @SneakyThrows
     private JSONB serializeObject(Object obj) {
         if (obj == null) return null;
-        try {
-            return JSONB.valueOf(objectMapper.writeValueAsString(obj));
-        } catch (Exception e) {
-            throw new RuntimeException(ApiErrorMessages.SERIALIZATION_ERROR, e);
-        }
+        return JSONB.valueOf(objectMapper.writeValueAsString(obj));
     }
 
     private int clampLimit(Integer limit) {
@@ -419,5 +340,57 @@ public class ExtractionServiceImpl implements ExtractionService {
             effective = 20;
         }
         return effective;
+    }
+
+    private void validateFieldsOwnedByExtraction(List<String> fieldIds, String extractionId) {
+        List<ExtractionFieldsRecord> existingFields = extractionFieldRepository.findAllByIds(fieldIds);
+
+        Set<String> foundIds = existingFields.stream()
+                .map(ExtractionFieldsRecord::getId)
+                .collect(Collectors.toSet());
+
+        for (String fieldId : fieldIds) {
+            if (!foundIds.contains(fieldId)) {
+                throw new NotFoundException(
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND);
+            }
+        }
+
+        for (ExtractionFieldsRecord field : existingFields) {
+            if (!field.getExtractionId().equals(extractionId)) {
+                throw new NotFoundException(
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND);
+            }
+        }
+    }
+
+    private void applyFieldUpdates(ExtractionFieldBulkUpdateRequest request,
+                                    List<String> fieldIds,
+                                    String extractionId,
+                                    int expectedVersion) {
+        request.getUpdates().forEach(item -> {
+            String fieldId = item.getFieldId().toString();
+            JSONB editedValueJsonb = serializeObject(item.getEditedValue());
+            extractionFieldRepository.updateEditedValue(fieldId, editedValueJsonb);
+        });
+
+        int rowsUpdated = extractionRepository.incrementVersion(extractionId, expectedVersion);
+        if (rowsUpdated == 0) {
+            throw new StaleVersionException(
+                    ApiErrorMessages.EXTRACTION_STALE_VERSION_CODE,
+                    ApiErrorMessages.EXTRACTION_STALE_VERSION);
+        }
+    }
+
+    private List<ExtractionFieldsRecord> refetchFieldsInOrder(List<String> fieldIds,
+                                                               List<ExtractionFieldsRecord> updatedFields) {
+        return fieldIds.stream()
+                .map(id -> updatedFields.stream()
+                        .filter(f -> f.getId().equals(id))
+                        .findFirst()
+                        .orElseThrow())
+                .toList();
     }
 }

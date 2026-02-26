@@ -110,18 +110,18 @@ class TenderDocumentRepositorySpec extends BaseIntegrationTest {
             def result = tenderDocumentRepository.findById(inserted.id)
 
         then: "the document is returned"
-            result.isPresent()
-            result.get().id == inserted.id
-            result.get().fileName == "find-me.pdf"
-            result.get().tenderId == tenderId
+            result != null
+            result.id == inserted.id
+            result.fileName == "find-me.pdf"
+            result.tenderId == tenderId
     }
 
     def "should return empty when document not found"() {
         when: "finding a nonexistent document"
-            def result = tenderDocumentRepository.findById("nonexistent-id")
+            tenderDocumentRepository.findById("nonexistent-id")
 
-        then: "empty Optional is returned"
-            result.isEmpty()
+        then: "NotFoundException is thrown"
+            thrown(com.tosspaper.common.NotFoundException)
     }
 
     def "should return empty when document is soft-deleted"() {
@@ -130,10 +130,10 @@ class TenderDocumentRepositorySpec extends BaseIntegrationTest {
             tenderDocumentRepository.softDelete(inserted.id)
 
         when: "finding the deleted document by id"
-            def result = tenderDocumentRepository.findById(inserted.id)
+            tenderDocumentRepository.findById(inserted.id)
 
-        then: "empty Optional is returned"
-            result.isEmpty()
+        then: "NotFoundException is thrown"
+            thrown(com.tosspaper.common.NotFoundException)
     }
 
     // ==================== findByTenderId ====================

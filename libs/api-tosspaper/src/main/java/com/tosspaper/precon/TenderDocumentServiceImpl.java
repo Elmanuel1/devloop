@@ -156,8 +156,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         }
 
         // Find the document
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND));
+        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
 
         // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
@@ -192,8 +191,7 @@ public class TenderDocumentServiceImpl implements TenderDocumentService {
         }
 
         // Find the document
-        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId)
-                .orElseThrow(() -> new NotFoundException(ApiErrorMessages.DOCUMENT_NOT_FOUND_CODE, ApiErrorMessages.DOCUMENT_NOT_FOUND));
+        TenderDocumentsRecord document = tenderDocumentRepository.findById(documentId);
 
         // Verify the document belongs to the tender
         if (!document.getTenderId().equals(tenderId)) {
