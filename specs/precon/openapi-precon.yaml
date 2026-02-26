@@ -1211,12 +1211,15 @@ components:
       type: object
       additionalProperties: false
       required:
+        - entity_type
         - entity_id
       description: >
         Start an extraction job. Each POST creates a new, independent extraction.
-        The server resolves entity_type from the entity_id. document_ids optionally
+        The caller must supply entity_type explicitly. document_ids optionally
         scopes the job to a subset of documents on the entity.
       properties:
+        entity_type:
+          $ref: '#/components/schemas/EntityType'
         entity_id:
           type: string
           format: uuid
