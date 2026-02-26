@@ -183,4 +183,25 @@ public class GlobalExceptionHandler {
         var apiError = new ApiError(ex.getCode(), ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
     }
+
+    @ExceptionHandler(com.tosspaper.models.exception.EntityStaleException.class)
+    public ResponseEntity<Object> handleEntityStaleException(com.tosspaper.models.exception.EntityStaleException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.UnresolvedConflictsException.class)
+    public ResponseEntity<Object> handleUnresolvedConflictsException(com.tosspaper.models.exception.UnresolvedConflictsException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.ExtractionNotApplicableException.class)
+    public ResponseEntity<Object> handleExtractionNotApplicableException(com.tosspaper.models.exception.ExtractionNotApplicableException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
 }
