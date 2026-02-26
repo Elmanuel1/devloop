@@ -1,5 +1,7 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.ExtractionFieldsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +13,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTION_FIELDS;
 
@@ -62,12 +63,13 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
     }
 
     @Override
-    public Optional<ExtractionFieldsRecord> findById(String id) {
-        return Optional.ofNullable(
-                dsl.selectFrom(EXTRACTION_FIELDS)
-                        .where(EXTRACTION_FIELDS.ID.eq(id))
-                        .fetchOne()
-        );
+    public ExtractionFieldsRecord findById(String id) {
+        return dsl.selectFrom(EXTRACTION_FIELDS)
+                .where(EXTRACTION_FIELDS.ID.eq(id))
+                .fetchOptional()
+                .orElseThrow(() -> new NotFoundException(
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND_CODE,
+                        ApiErrorMessages.EXTRACTION_FIELD_NOT_FOUND));
     }
 
     @Override

@@ -1,5 +1,7 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.models.exception.NotImplementedException;
 import com.tosspaper.precon.generated.model.Application;
 import com.tosspaper.precon.generated.model.ApplicationCreateRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,6 @@ public class ExtractionApplicationServiceStub implements ExtractionApplicationSe
 
     @Override
     public Application apply(Long companyId, String extractionId, ApplicationCreateRequest request) {
-        throw new UnsupportedOperationException("Apply extraction not yet implemented");
+        throw new NotImplementedException(ApiErrorMessages.NOT_IMPLEMENTED_CODE, ApiErrorMessages.NOT_IMPLEMENTED);
     }
 }

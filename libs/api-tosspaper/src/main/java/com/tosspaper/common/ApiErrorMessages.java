@@ -106,6 +106,20 @@ public final class ApiErrorMessages {
     public static final String EXTRACTION_FIELD_NOT_FOUND_CODE = "api.extraction.field.notFound";
     public static final String EXTRACTION_FIELD_NOT_FOUND      = "Extraction field not found.";
 
+    // ── Extraction optimistic locking ──
+    public static final String IF_MATCH_REQUIRED_CODE        = "api.validation.ifMatchRequired";
+    public static final String IF_MATCH_REQUIRED             = "If-Match header is required for field updates. Use the ETag from GET /v1/extractions/{id}.";
+    public static final String EXTRACTION_STALE_VERSION_CODE = "api.extraction.staleVersion";
+    public static final String EXTRACTION_STALE_VERSION      = "Extraction has been modified by another request. Please refresh and try again.";
+
+    // ── Serialization ──
+    public static final String SERIALIZATION_ERROR_CODE = "api.internal.serializationError";
+    public static final String SERIALIZATION_ERROR = "Failed to serialize value.";
+
+    // ── Not Implemented ──
+    public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";
+    public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
+
     // ── Application ──
     public static final String APPLICATION_UNRESOLVED_CONFLICTS_CODE = "api.application.unresolvedConflicts";
     public static final String APPLICATION_UNRESOLVED_CONFLICTS      = "Cannot apply extraction — %d field(s) have conflicts that must be resolved before applying. Set edited_value on each conflicted field via PATCH /v1/extractions/{id}/fields.";
