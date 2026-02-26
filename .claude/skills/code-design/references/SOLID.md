@@ -284,3 +284,67 @@ public class ContextAdvisor {
 - Fewer dependencies = simpler testing
 - No database calls in advisors = faster, deterministic tests
 - Domain objects already validated by caller
+
+---
+
+## Common Anti-Patterns (Extraction API)
+
+### Anti-Pattern 1: Manual DTO Construction in Controllers (SRP Violation)
+
+Controllers should be thin — parsing headers and delegating to the service layer. Manually constructing response DTOs in the controller mixes UI/transport concerns with mapping logic.
+
+```java
+// ❌ BAD — controller manually constructs DTO
+ExtractionResult result = extractionService.createExtraction(companyId, request);
+ExtractionCreateResponse response = new ExtractionCreateResponse();
+response.setId(result.extraction().getId());
+
+// ✅ GOOD — delegate mapping to MapStruct mapper
+ExtractionResult result = extractionService.createExtraction(companyId, request);
+ExtractionCreateResponse response = extractionMapper.toCreateResponse(result.extraction());
+```
+
+**Fix:** Add a `toCreateResponse(Extraction)` method to the MapStruct mapper and inject the mapper into the controller.
+
+---
+
+### Anti-Pattern 2: Fire-and-Forget Update Then Re-Fetch (DIP + SRP Violation)
+
+Updating records and then immediately re-fetching them to build the response is wasteful and error-prone. Use `RETURNING` in jOOQ to get the updated records atomically.
+
+```java
+// ❌ BAD — update fields, then re-fetch from DB
+request.getUpdates().forEach(item -> {
+    extractionFieldRepository.updateEditedValue(fieldId, jsonb);
+});
+extractionRepository.updateVersion(extractionId, expectedVersion);
+List<ExtractionFieldsRecord> updatedFields = extractionFieldRepository.findAllByIds(fieldIds); // re-fetch!
+
+// ✅ GOOD — bulkUpdateEditedValues uses RETURNING and returns updated records directly
+BulkUpdateResult result = extractionFieldRepository.bulkUpdateEditedValues(updates, extractionId, expectedVersion);
+// result.fields() already contains the updated records — no re-fetch needed
+```
+
+**Fix:** Move `updateVersion` logic into `bulkUpdateEditedValues` and use jOOQ's `.returning().fetchSingle()` to get updated records in the same DB round-trip.
+
+---
+
+### Anti-Pattern 3: Null-Checking Lists from Generated API Models (LSP Violation)
+
+OpenAPI-generated models with default-empty list fields should never be null. Adding `!= null` checks at call sites implies distrust of the contract and pollutes code with unnecessary guards.
+
+```java
+// ❌ BAD — unnecessary null guard on API-generated list
+if (request.getDocumentIds() != null && !request.getDocumentIds().isEmpty()) {
+
+// ❌ BAD — unnecessary null guard on validated field list
+if (fields == null || fields.isEmpty()) {
+
+// ✅ GOOD — trust the OpenAPI-generated model contract
+if (!request.getDocumentIds().isEmpty()) {
+
+// ✅ GOOD — clean early return
+if (fields.isEmpty()) {
+```
+
+**Fix:** Remove null checks on list fields that are guaranteed non-null by the OpenAPI specification (using `x-field-extra-annotation` or default values in the model). If the field CAN be null (e.g., caller passes null from a test), handle that at the boundary (service layer) rather than in the adapter/validator.
