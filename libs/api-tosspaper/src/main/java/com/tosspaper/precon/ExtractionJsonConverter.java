@@ -2,6 +2,7 @@ package com.tosspaper.precon;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.precon.generated.model.Citation;
 import com.tosspaper.precon.generated.model.CompetingValue;
 import com.tosspaper.precon.generated.model.ExtractionError;
@@ -86,21 +87,33 @@ public class ExtractionJsonConverter {
     }
 
     @Named("stringListToJsonb")
-    public JSONB stringListToJsonb(List<String> strings) throws Exception {
+    public JSONB stringListToJsonb(List<String> strings) {
         if (strings == null || strings.isEmpty()) return null;
-        return JSONB.valueOf(objectMapper.writeValueAsString(strings));
+        try {
+            return JSONB.valueOf(objectMapper.writeValueAsString(strings));
+        } catch (Exception e) {
+            throw new IllegalStateException(ApiErrorMessages.SERIALIZATION_ERROR, e);
+        }
     }
 
     @Named("uuidListToJsonb")
-    public JSONB uuidListToJsonb(List<UUID> uuids) throws Exception {
+    public JSONB uuidListToJsonb(List<UUID> uuids) {
         if (uuids == null || uuids.isEmpty()) return JSONB.valueOf("[]");
         List<String> strings = uuids.stream().map(UUID::toString).toList();
-        return JSONB.valueOf(objectMapper.writeValueAsString(strings));
+        try {
+            return JSONB.valueOf(objectMapper.writeValueAsString(strings));
+        } catch (Exception e) {
+            throw new IllegalStateException(ApiErrorMessages.SERIALIZATION_ERROR, e);
+        }
     }
 
     @Named("objectToJsonb")
-    public JSONB objectToJsonb(Object obj) throws Exception {
+    public JSONB objectToJsonb(Object obj) {
         if (obj == null) return null;
-        return JSONB.valueOf(objectMapper.writeValueAsString(obj));
+        try {
+            return JSONB.valueOf(objectMapper.writeValueAsString(obj));
+        } catch (Exception e) {
+            throw new IllegalStateException(ApiErrorMessages.SERIALIZATION_ERROR, e);
+        }
     }
 }

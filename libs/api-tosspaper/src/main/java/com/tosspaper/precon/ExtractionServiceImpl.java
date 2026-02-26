@@ -136,11 +136,6 @@ public class ExtractionServiceImpl implements ExtractionService {
     public void cancelExtraction(Long companyId, String extractionId) {
         ExtractionsRecord record = findExtractionForCompany(companyId.toString(), extractionId);
 
-        // Idempotent: already cancelled → no-op
-        if (ExtractionStatus.CANCELLED.getValue().equals(record.getStatus())) {
-            return;
-        }
-
         if (!CANCELLABLE_STATUSES.contains(record.getStatus())) {
             throw new BadRequestException(
                     ApiErrorMessages.EXTRACTION_CANNOT_CANCEL_CODE,
@@ -180,38 +175,32 @@ public class ExtractionServiceImpl implements ExtractionService {
                                                     List<String> documentIdStrings,
                                                     List<String> fieldNames) {
         String extractionId = UUID.randomUUID().toString();
-        try {
-            JSONB documentIdsJsonb = jsonConverter.stringListToJsonb(documentIdStrings);
-            JSONB fieldNamesJsonb = fieldNames != null ? jsonConverter.stringListToJsonb(fieldNames) : null;
+        JSONB documentIdsJsonb = jsonConverter.stringListToJsonb(documentIdStrings);
+        JSONB fieldNamesJsonb = fieldNames != null ? jsonConverter.stringListToJsonb(fieldNames) : null;
 
-            ExtractionsRecord record = new ExtractionsRecord();
-            record.setId(extractionId);
-            record.setCompanyId(companyIdStr);
-            record.setEntityType(entityType.getValue());
-            record.setEntityId(entityIdStr);
-            record.setStatus(ExtractionStatus.PENDING.getValue());
-            record.setDocumentIds(documentIdsJsonb);
-            record.setFieldNames(fieldNamesJsonb);
-            record.setVersion(0);
-            record.setCreatedBy(companyIdStr);
+        ExtractionsRecord record = new ExtractionsRecord();
+        record.setId(extractionId);
+        record.setCompanyId(companyIdStr);
+        record.setEntityType(entityType.getValue());
+        record.setEntityId(entityIdStr);
+        record.setStatus(ExtractionStatus.PENDING.getValue());
+        record.setDocumentIds(documentIdsJsonb);
+        record.setFieldNames(fieldNamesJsonb);
+        record.setVersion(0);
+        record.setCreatedBy(companyIdStr);
 
-            return extractionRepository.insert(record);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to build extraction record", e);
-        }
+        return extractionRepository.insert(record);
     }
 
     /**
-     * Build an Extraction DTO including the three V3.5 columns (started_at, completed_at, errors)
-     * which are not in the generated jOOQ record — accessed via DSL.field on the raw record.
+     * Build an Extraction DTO including the three V3.5 columns (started_at, completed_at, errors).
+     * These columns are not in the jOOQ-generated ExtractionsRecord schema; they are accessed
+     * via field-name lookup which safely returns null when not present in the result set.
      */
     private Extraction buildExtractionDto(ExtractionsRecord record) {
-        OffsetDateTime startedAt = record.get(
-                DSL.field("started_at", OffsetDateTime.class));
-        OffsetDateTime completedAt = record.get(
-                DSL.field("completed_at", OffsetDateTime.class));
-        JSONB errorsJsonb = record.get(
-                DSL.field("errors", JSONB.class));
+        OffsetDateTime startedAt = safeGet(record, "started_at", OffsetDateTime.class);
+        OffsetDateTime completedAt = safeGet(record, "completed_at", OffsetDateTime.class);
+        JSONB errorsJsonb = safeGet(record, "errors", JSONB.class);
 
         List<ExtractionError> errors = jsonConverter.jsonbToErrorList(errorsJsonb);
 
@@ -220,6 +209,20 @@ public class ExtractionServiceImpl implements ExtractionService {
         dto.setCompletedAt(completedAt);
         dto.setErrors(errors);
         return dto;
+    }
+
+    /**
+     * Safely retrieves a field value from a record by name, returning null if the field
+     * is not present in the record's field set (e.g., columns added after jOOQ code-gen).
+     */
+    @SuppressWarnings("unchecked")
+    private <T> T safeGet(ExtractionsRecord record, String fieldName, Class<T> type) {
+        for (org.jooq.Field<?> f : record.fields()) {
+            if (f.getName().equals(fieldName)) {
+                return (T) record.get(f);
+            }
+        }
+        return null;
     }
 
     private int clampLimit(Integer limit) {

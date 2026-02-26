@@ -9,6 +9,7 @@ import com.tosspaper.precon.generated.model.EntityType;
 import com.tosspaper.precon.generated.model.ExtractionCreateRequest;
 import com.tosspaper.precon.generated.model.TenderDocumentStatus;
 import com.tosspaper.precon.generated.model.TenderFieldName;
+import com.tosspaper.precon.generated.model.TenderStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +30,11 @@ public class TenderExtractionAdapter implements EntityExtractionAdapter {
             .map(TenderFieldName::getValue)
             .collect(Collectors.toSet());
 
+    private static final Set<String> INACTIVE_TENDER_STATUSES = Set.of(
+            TenderStatus.WON.getValue(),
+            TenderStatus.LOST.getValue(),
+            TenderStatus.CANCELLED.getValue());
+
     @Override
     public EntityType entityType() {
         return EntityType.TENDER;
@@ -37,6 +43,13 @@ public class TenderExtractionAdapter implements EntityExtractionAdapter {
     @Override
     public boolean verifyOwnership(String companyId, String entityId) {
         TendersRecord tender = tenderRepository.findById(entityId);
+
+        if (INACTIVE_TENDER_STATUSES.contains(tender.getStatus())) {
+            throw new BadRequestException(
+                    ApiErrorMessages.EXTRACTION_TENDER_NOT_ACTIVE_CODE,
+                    ApiErrorMessages.EXTRACTION_TENDER_NOT_ACTIVE.formatted(tender.getStatus()));
+        }
+
         return tender.getCompanyId().equals(companyId);
     }
 

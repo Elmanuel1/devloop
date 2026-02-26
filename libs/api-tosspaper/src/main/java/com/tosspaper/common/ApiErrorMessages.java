@@ -122,6 +122,9 @@ public final class ApiErrorMessages {
     public static final String ENTITY_TYPE_NOT_SUPPORTED_CODE = "api.extraction.entityTypeNotSupported";
     public static final String ENTITY_TYPE_NOT_SUPPORTED = "Entity type '%s' is not supported for extraction.";
 
+    public static final String EXTRACTION_TENDER_NOT_ACTIVE_CODE = "api.extraction.tenderNotActive";
+    public static final String EXTRACTION_TENDER_NOT_ACTIVE = "Cannot start extraction — tender is in '%s' status. Extractions can only be started for active tenders (pending or submitted).";
+
     // ── Not Implemented ──
     public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";
     public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
