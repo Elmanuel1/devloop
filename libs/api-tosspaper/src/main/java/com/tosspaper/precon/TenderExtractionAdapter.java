@@ -104,7 +104,7 @@ public class TenderExtractionAdapter implements EntityExtractionAdapter {
     @Override
     public List<String> validateFieldNames(List<String> fields) {
         if (fields == null || fields.isEmpty()) {
-            return null;
+            return List.of();
         }
         for (String fieldName : fields) {
             if (!VALID_TENDER_FIELD_NAMES.contains(fieldName)) {

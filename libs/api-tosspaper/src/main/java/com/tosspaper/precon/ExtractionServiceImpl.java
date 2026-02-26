@@ -18,6 +18,8 @@ import org.jooq.JSONB;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.Nullable;
+
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -175,7 +177,7 @@ public class ExtractionServiceImpl implements ExtractionService {
                                                     List<String> fieldNames) {
         String extractionId = UUID.randomUUID().toString();
         JSONB documentIdsJsonb = jsonConverter.stringListToJsonb(documentIdStrings);
-        JSONB fieldNamesJsonb = fieldNames != null ? jsonConverter.stringListToJsonb(fieldNames) : null;
+        JSONB fieldNamesJsonb = fieldNames.isEmpty() ? null : jsonConverter.stringListToJsonb(fieldNames);
 
         ExtractionInsertParams params = new ExtractionInsertParams(
                 extractionId, companyIdStr, entityType, entityIdStr,
