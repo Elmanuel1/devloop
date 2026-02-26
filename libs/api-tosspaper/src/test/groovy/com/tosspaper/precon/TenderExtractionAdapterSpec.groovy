@@ -343,20 +343,20 @@ class TenderExtractionAdapterSpec extends Specification {
             ex.message.contains(EntityType.TENDER.getValue())
     }
 
-    def "TC-A-FN03: should return null when fields is null"() {
+    def "TC-A-FN03: should return empty list when fields is null"() {
         when: "validating null fields"
             def result = adapter.validateFieldNames(null)
 
-        then: "null is returned — no exception"
-            result == null
+        then: "empty list is returned — no exception"
+            result == []
     }
 
-    def "TC-A-FN04: should return null when fields list is empty"() {
+    def "TC-A-FN04: should return empty list when fields list is empty"() {
         when: "validating an empty fields list"
             def result = adapter.validateFieldNames([])
 
-        then: "null is returned — empty means no filter"
-            result == null
+        then: "empty list is returned — empty means no filter"
+            result == []
     }
 
     def "TC-A-FN05: should accept every TenderFieldName enum value without throwing"() {

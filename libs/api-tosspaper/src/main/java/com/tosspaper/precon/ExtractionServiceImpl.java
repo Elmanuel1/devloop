@@ -18,8 +18,6 @@ import org.jooq.JSONB;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.annotation.Nullable;
-
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;

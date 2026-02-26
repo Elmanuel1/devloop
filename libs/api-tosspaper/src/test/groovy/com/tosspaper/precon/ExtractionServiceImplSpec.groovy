@@ -124,14 +124,14 @@ class ExtractionServiceImplSpec extends Specification {
         and: "adapter resolves documents"
             1 * tenderAdapter.resolveDocumentIds(ENTITY_ID_STR, request) >> resolvedDocIds
 
-        and: "adapter validates null fields and returns null"
-            1 * tenderAdapter.validateFieldNames(null) >> null
+        and: "adapter validates null fields and returns empty list (no field filter)"
+            1 * tenderAdapter.validateFieldNames(null) >> []
 
-        and: "document IDs serialized but field names NOT serialized (null fieldNames)"
+        and: "document IDs serialized but field names NOT serialized (empty fieldNames)"
             1 * jsonConverter.stringListToJsonb(resolvedDocIds) >> JSONB.valueOf('["doc-111"]')
-            0 * jsonConverter.stringListToJsonb(null)
+            0 * jsonConverter.stringListToJsonb(_)
 
-        and: "mapper builds record with null fieldNames"
+        and: "mapper builds record with null fieldNames (empty list results in null JSONB)"
             1 * extractionMapper.toRecord({ ExtractionInsertParams p ->
                 p.fieldNames() == null
             }) >> insertedRecord
@@ -167,8 +167,8 @@ class ExtractionServiceImplSpec extends Specification {
         and: "adapter resolves documents (auto-resolve because list is empty)"
             1 * tenderAdapter.resolveDocumentIds(ENTITY_ID_STR, request) >> autoResolvedDocIds
 
-        and: "adapter validates fields"
-            1 * tenderAdapter.validateFieldNames(_) >> null
+        and: "adapter validates fields (no fields requested, returns empty list)"
+            1 * tenderAdapter.validateFieldNames(_) >> []
 
         and: "auto-resolved IDs are serialized"
             1 * jsonConverter.stringListToJsonb(autoResolvedDocIds) >> JSONB.valueOf('["auto-doc-1","auto-doc-2","auto-doc-3"]')
@@ -291,7 +291,7 @@ class ExtractionServiceImplSpec extends Specification {
 
             tenderAdapter.verifyOwnership(COMPANY_ID_STR, ENTITY_ID_STR) >> true
             tenderAdapter.resolveDocumentIds(ENTITY_ID_STR, request) >> ["doc-1"]
-            tenderAdapter.validateFieldNames(_) >> null
+            tenderAdapter.validateFieldNames(_) >> []
             jsonConverter.stringListToJsonb(["doc-1"]) >> JSONB.valueOf('["doc-1"]')
             extractionMapper.toRecord(_) >> new ExtractionsRecord()
 
