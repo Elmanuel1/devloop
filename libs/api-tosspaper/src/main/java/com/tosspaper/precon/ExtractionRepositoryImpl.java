@@ -83,17 +83,6 @@ public class ExtractionRepositoryImpl implements ExtractionRepository {
     }
 
     @Override
-    public int updateVersion(String id, int expectedVersion) {
-        return dsl.update(EXTRACTIONS)
-                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
-                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
-                .where(EXTRACTIONS.ID.eq(id))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .and(EXTRACTIONS.VERSION.eq(expectedVersion))
-                .execute();
-    }
-
-    @Override
     public int softDelete(String id) {
         return dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))

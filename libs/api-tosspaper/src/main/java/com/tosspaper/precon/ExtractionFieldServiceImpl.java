@@ -4,6 +4,7 @@ import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.HeaderUtils;
 import com.tosspaper.common.NotFoundException;
+import com.tosspaper.common.PaginationUtils;
 import com.tosspaper.models.exception.IfMatchRequiredException;
 import com.tosspaper.models.exception.StaleVersionException;
 import com.tosspaper.models.jooq.tables.records.ExtractionFieldsRecord;
@@ -16,7 +17,6 @@ import com.tosspaper.precon.generated.model.ExtractionFieldListResponse;
 import com.tosspaper.precon.generated.model.Pagination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.jooq.JSONB;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,7 +41,7 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
                                                              Integer limit, String cursor) {
         ExtractionsRecord extraction = findExtractionForCompany(companyId.toString(), extractionId);
 
-        int effectiveLimit = clampLimit(limit);
+        int effectiveLimit = PaginationUtils.clampLimit(limit);
         CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
 
         ExtractionFieldQuery query = ExtractionFieldQuery.builder()
@@ -55,10 +55,8 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
 
         List<ExtractionFieldsRecord> records = extractionFieldRepository.findByExtractionId(query);
 
-        boolean hasMore = records.size() > effectiveLimit;
-        if (hasMore) {
-            records = records.subList(0, effectiveLimit);
-        }
+        boolean hasMore = PaginationUtils.hasMore(records, effectiveLimit);
+        records = PaginationUtils.truncate(records, effectiveLimit);
 
         EntityType entityType = EntityType.fromValue(extraction.getEntityType());
         UUID entityId = UUID.fromString(extraction.getEntityId());
@@ -93,7 +91,6 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
         }
 
         int expectedVersion = HeaderUtils.parseETagVersion(ifMatch);
-
         ExtractionsRecord extraction = findExtractionForCompany(companyId.toString(), extractionId);
 
         List<String> fieldIds = request.getUpdates().stream()
@@ -102,10 +99,8 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
 
         validateFieldsOwnedByExtraction(fieldIds, extractionId);
 
-        applyFieldUpdates(request, extractionId, expectedVersion);
-
-        List<ExtractionFieldsRecord> updatedFields = extractionFieldRepository.findAllByIds(fieldIds);
-        List<ExtractionFieldsRecord> orderedFields = refetchFieldsInOrder(fieldIds, updatedFields);
+        List<ExtractionFieldsRecord> updatedFields = applyFieldUpdates(request, extractionId, expectedVersion);
+        List<ExtractionFieldsRecord> orderedFields = reorderByRequestOrder(fieldIds, updatedFields);
 
         EntityType entityType = EntityType.fromValue(extraction.getEntityType());
         UUID entityId = UUID.fromString(extraction.getEntityId());
@@ -154,42 +149,34 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
         }
     }
 
-    private void applyFieldUpdates(ExtractionFieldBulkUpdateRequest request,
-                                    String extractionId,
-                                    int expectedVersion) {
-        request.getUpdates().forEach(item -> {
-            String fieldId = item.getFieldId().toString();
-            try {
-                JSONB editedValueJsonb = jsonConverter.objectToJsonb(item.getEditedValue());
-                extractionFieldRepository.updateEditedValue(fieldId, editedValueJsonb);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to serialize edited value for field " + fieldId, e);
-            }
-        });
+    private List<ExtractionFieldsRecord> applyFieldUpdates(ExtractionFieldBulkUpdateRequest request,
+                                                            String extractionId,
+                                                            int expectedVersion) {
+        List<FieldEditUpdate> updates = request.getUpdates().stream()
+                .map(item -> new FieldEditUpdate(
+                        item.getFieldId().toString(),
+                        jsonConverter.objectToJsonb(item.getEditedValue())))
+                .toList();
 
-        int rowsUpdated = extractionRepository.updateVersion(extractionId, expectedVersion);
-        if (rowsUpdated == 0) {
+        BulkUpdateResult result = extractionFieldRepository.bulkUpdateEditedValues(
+                updates, extractionId, expectedVersion);
+
+        if (result.versionRowsUpdated() == 0) {
             throw new StaleVersionException(
                     ApiErrorMessages.EXTRACTION_STALE_VERSION_CODE,
                     ApiErrorMessages.EXTRACTION_STALE_VERSION);
         }
+
+        return result.fields();
     }
 
-    private List<ExtractionFieldsRecord> refetchFieldsInOrder(List<String> fieldIds,
-                                                               List<ExtractionFieldsRecord> updatedFields) {
+    private List<ExtractionFieldsRecord> reorderByRequestOrder(List<String> fieldIds,
+                                                                List<ExtractionFieldsRecord> updatedFields) {
         return fieldIds.stream()
                 .map(id -> updatedFields.stream()
                         .filter(f -> f.getId().equals(id))
                         .findFirst()
                         .orElseThrow())
                 .toList();
-    }
-
-    private int clampLimit(Integer limit) {
-        int effective = limit != null ? limit : 20;
-        if (effective < 1 || effective > 100) {
-            effective = 20;
-        }
-        return effective;
     }
 }

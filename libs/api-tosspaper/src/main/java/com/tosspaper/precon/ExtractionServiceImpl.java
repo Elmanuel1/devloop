@@ -4,6 +4,7 @@ import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.BadRequestException;
 import com.tosspaper.common.CursorUtils;
 import com.tosspaper.common.NotFoundException;
+import com.tosspaper.common.PaginationUtils;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 import com.tosspaper.precon.generated.model.EntityType;
 import com.tosspaper.precon.generated.model.Extraction;
@@ -14,7 +15,6 @@ import com.tosspaper.precon.generated.model.ExtractionStatus;
 import com.tosspaper.precon.generated.model.Pagination;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.JSONB;
-import org.jooq.impl.DSL;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,7 +62,7 @@ public class ExtractionServiceImpl implements ExtractionService {
         String companyIdStr = companyId.toString();
         String entityIdStr = request.getEntityId().toString();
 
-        EntityExtractionAdapter adapter = resolveAdapter(EntityType.TENDER);
+        EntityExtractionAdapter adapter = resolveAdapter(request.getEntityType());
         if (!adapter.verifyOwnership(companyIdStr, entityIdStr)) {
             throw new NotFoundException(
                     ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE,
@@ -86,7 +86,7 @@ public class ExtractionServiceImpl implements ExtractionService {
         String companyIdStr = companyId.toString();
         String entityIdStr = entityId.toString();
 
-        int effectiveLimit = clampLimit(limit);
+        int effectiveLimit = PaginationUtils.clampLimit(limit);
         CursorUtils.CursorPair cursorPair = CursorUtils.parseCursor(cursor);
 
         ExtractionQuery query = ExtractionQuery.builder()
@@ -99,10 +99,8 @@ public class ExtractionServiceImpl implements ExtractionService {
 
         List<ExtractionsRecord> records = extractionRepository.findByEntityId(companyIdStr, entityIdStr, query);
 
-        boolean hasMore = records.size() > effectiveLimit;
-        if (hasMore) {
-            records = records.subList(0, effectiveLimit);
-        }
+        boolean hasMore = PaginationUtils.hasMore(records, effectiveLimit);
+        records = PaginationUtils.truncate(records, effectiveLimit);
 
         List<Extraction> extractions = records.stream()
                 .map(this::buildExtractionDto)
@@ -153,7 +151,8 @@ public class ExtractionServiceImpl implements ExtractionService {
         if (adapter == null) {
             throw new BadRequestException(
                     ApiErrorMessages.ENTITY_TYPE_NOT_SUPPORTED_CODE,
-                    ApiErrorMessages.ENTITY_TYPE_NOT_SUPPORTED.formatted(entityType.getValue()));
+                    ApiErrorMessages.ENTITY_TYPE_NOT_SUPPORTED.formatted(
+                            entityType != null ? entityType.getValue() : "null"));
         }
         return adapter;
     }
@@ -178,17 +177,10 @@ public class ExtractionServiceImpl implements ExtractionService {
         JSONB documentIdsJsonb = jsonConverter.stringListToJsonb(documentIdStrings);
         JSONB fieldNamesJsonb = fieldNames != null ? jsonConverter.stringListToJsonb(fieldNames) : null;
 
-        ExtractionsRecord record = new ExtractionsRecord();
-        record.setId(extractionId);
-        record.setCompanyId(companyIdStr);
-        record.setEntityType(entityType.getValue());
-        record.setEntityId(entityIdStr);
-        record.setStatus(ExtractionStatus.PENDING.getValue());
-        record.setDocumentIds(documentIdsJsonb);
-        record.setFieldNames(fieldNamesJsonb);
-        record.setVersion(0);
-        record.setCreatedBy(companyIdStr);
-
+        ExtractionInsertParams params = new ExtractionInsertParams(
+                extractionId, companyIdStr, entityType, entityIdStr,
+                documentIdsJsonb, fieldNamesJsonb);
+        ExtractionsRecord record = extractionMapper.toRecord(params);
         return extractionRepository.insert(record);
     }
 
@@ -223,13 +215,5 @@ public class ExtractionServiceImpl implements ExtractionService {
             }
         }
         return null;
-    }
-
-    private int clampLimit(Integer limit) {
-        int effective = limit != null ? limit : 20;
-        if (effective < 1 || effective > 100) {
-            effective = 20;
-        }
-        return effective;
     }
 }

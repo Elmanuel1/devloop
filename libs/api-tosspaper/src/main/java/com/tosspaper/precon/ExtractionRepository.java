@@ -17,11 +17,5 @@ public interface ExtractionRepository {
      */
     int updateStatus(String id, String status);
 
-    /**
-     * Increments version with optimistic lock check.
-     * Returns number of rows updated (0 = stale version).
-     */
-    int updateVersion(String id, int expectedVersion);
-
     int softDelete(String id);
 }

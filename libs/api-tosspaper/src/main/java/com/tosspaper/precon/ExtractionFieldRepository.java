@@ -15,4 +15,11 @@ public interface ExtractionFieldRepository {
     int updateEditedValue(String id, org.jooq.JSONB editedValue);
 
     int deleteByExtractionId(String extractionId);
+
+    /**
+     * Updates each field's edited_value (returns updated records via RETURNING),
+     * then atomically increments the parent extraction's version with an
+     * optimistic-lock check.
+     */
+    BulkUpdateResult bulkUpdateEditedValues(List<FieldEditUpdate> updates, String extractionId, int expectedVersion);
 }

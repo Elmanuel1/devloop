@@ -3,8 +3,10 @@ package com.tosspaper.precon;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 import com.tosspaper.precon.generated.model.EntityType;
 import com.tosspaper.precon.generated.model.Extraction;
+import com.tosspaper.precon.generated.model.ExtractionCreateResponse;
 import com.tosspaper.precon.generated.model.ExtractionStatus;
 import org.jooq.JSONB;
+import org.mapstruct.BeanMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.Named;
@@ -31,6 +33,25 @@ public interface ExtractionMapper {
 
     List<Extraction> toDtoList(List<ExtractionsRecord> records);
 
+    // ---- DTO → CreateResponse ----
+
+    @Mapping(target = "id", source = "id")
+    ExtractionCreateResponse toCreateResponse(Extraction extraction);
+
+    // ---- Params → Record for insertion ----
+
+    @BeanMapping(ignoreByDefault = true)
+    @Mapping(target = "id", source = "id")
+    @Mapping(target = "companyId", source = "companyId")
+    @Mapping(target = "entityType", source = "entityType", qualifiedByName = "entityTypeToString")
+    @Mapping(target = "entityId", source = "entityId")
+    @Mapping(target = "status", expression = "java(com.tosspaper.precon.generated.model.ExtractionStatus.PENDING.getValue())")
+    @Mapping(target = "version", expression = "java(0)")
+    @Mapping(target = "documentIds", source = "documentIds")
+    @Mapping(target = "fieldNames", source = "fieldNames")
+    @Mapping(target = "createdBy", source = "companyId")
+    ExtractionsRecord toRecord(ExtractionInsertParams params);
+
     // ---- Named converters (simple type coercions — no ObjectMapper needed) ----
 
     @Named("stringToUuid")
@@ -46,5 +67,10 @@ public interface ExtractionMapper {
     @Named("stringToExtractionStatus")
     default ExtractionStatus stringToExtractionStatus(String status) {
         return status != null ? ExtractionStatus.fromValue(status) : null;
+    }
+
+    @Named("entityTypeToString")
+    default String entityTypeToString(EntityType entityType) {
+        return entityType != null ? entityType.getValue() : null;
     }
 }

@@ -34,6 +34,7 @@ public class ExtractionController implements ExtractionsApi {
     private final ExtractionService extractionService;
     private final ExtractionFieldService extractionFieldService;
     private final ExtractionApplicationService extractionApplicationService;
+    private final ExtractionMapper extractionMapper;
     private final HttpServletRequest request;
 
     @Override
@@ -45,8 +46,7 @@ public class ExtractionController implements ExtractionsApi {
         log.debug("POST /v1/extractions - xContextId={}", xContextId);
         Long companyId = HeaderUtils.parseCompanyId(xContextId);
         ExtractionResult result = extractionService.createExtraction(companyId, extractionCreateRequest);
-        ExtractionCreateResponse response = new ExtractionCreateResponse();
-        response.setId(result.extraction().getId());
+        ExtractionCreateResponse response = extractionMapper.toCreateResponse(result.extraction());
         return ResponseEntity
                 .created(URI.create("/v1/extractions/" + result.extraction().getId()))
                 .eTag(HeaderUtils.formatETag(result.version()))

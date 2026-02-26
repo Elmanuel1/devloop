@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTION_FIELDS;
+import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 
 @Slf4j
 @Repository
@@ -37,8 +38,15 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
             conditions.add(EXTRACTION_FIELDS.FIELD_NAME.eq(query.getFieldName()));
         }
 
-        // Optional document_id filter via JSONB containment on citations
-        // citations is a JSONB array of Citation objects with document_id field
+        // Filter by document_id using PostgreSQL's JSONB containment operator (@>).
+        //
+        // The `citations` column stores a JSONB array of Citation objects, e.g.:
+        //   [{"document_id": "abc", "page": 3}, {"document_id": "xyz", "page": 7}]
+        //
+        // The @> operator checks whether the left operand contains the right operand.
+        // We build the right-hand filter as: [{"document_id": "<targetId>"}]
+        // PostgreSQL matches any row whose citations array contains at least one
+        // element with that document_id, regardless of other fields in the object.
         if (query.getDocumentId() != null && !query.getDocumentId().isBlank()) {
             String containsJson = serializeCitationFilter(query.getDocumentId());
             conditions.add(
@@ -100,6 +108,32 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
         return dsl.deleteFrom(EXTRACTION_FIELDS)
                 .where(EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
                 .execute();
+    }
+
+    @Override
+    public BulkUpdateResult bulkUpdateEditedValues(List<FieldEditUpdate> updates,
+                                                    String extractionId,
+                                                    int expectedVersion) {
+        List<ExtractionFieldsRecord> updatedRecords = new ArrayList<>();
+        for (FieldEditUpdate update : updates) {
+            ExtractionFieldsRecord updated = dsl.update(EXTRACTION_FIELDS)
+                    .set(EXTRACTION_FIELDS.EDITED_VALUE, update.editedValue())
+                    .set(EXTRACTION_FIELDS.UPDATED_AT, DSL.currentOffsetDateTime())
+                    .where(EXTRACTION_FIELDS.ID.eq(update.fieldId()))
+                    .returning()
+                    .fetchSingle();
+            updatedRecords.add(updated);
+        }
+
+        int rowsUpdated = dsl.update(EXTRACTIONS)
+                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
+                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(EXTRACTIONS.ID.eq(extractionId))
+                .and(EXTRACTIONS.DELETED_AT.isNull())
+                .and(EXTRACTIONS.VERSION.eq(expectedVersion))
+                .execute();
+
+        return new BulkUpdateResult(updatedRecords, rowsUpdated);
     }
 
     @SneakyThrows
