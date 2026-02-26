@@ -238,11 +238,11 @@ class TenderExtractionAdapterSpec extends Specification {
             ex.message.contains(TENDER_ID)
     }
 
-    def "TC-A-R08: should fall through to auto-resolve when documentIds is null"() {
-        given: "a request with null documentIds"
+    def "TC-A-R08: should fall through to auto-resolve when documentIds is empty list"() {
+        given: "a request with an empty documentIds list (the API-generated default)"
             def request = new ExtractionCreateRequest()
             request.setEntityId(UUID.randomUUID())
-            request.setDocumentIds(null)  // null — triggers auto-resolve
+            request.setDocumentIds([])  // empty list — same auto-resolve path as no explicit IDs
 
             def readyDoc = buildDocumentRecord(UUID.randomUUID().toString(), TENDER_ID, "ready")
             tenderDocumentRepository.findByTenderId(TENDER_ID, TenderDocumentStatus.READY.getValue(), 200, null, null) >> [readyDoc]
@@ -260,10 +260,10 @@ class TenderExtractionAdapterSpec extends Specification {
     // ==================== resolveDocumentIds — auto-resolve ====================
 
     def "TC-A-A01: should return list of 3 IDs when auto-resolve finds 3 ready documents"() {
-        given: "a request with no document IDs"
+        given: "a request with no document IDs (empty list triggers auto-resolve)"
             def request = new ExtractionCreateRequest()
             request.setEntityId(UUID.randomUUID())
-            request.setDocumentIds(null)
+            request.setDocumentIds([])
 
             def doc1 = buildDocumentRecord(UUID.randomUUID().toString(), TENDER_ID, "ready")
             def doc2 = buildDocumentRecord(UUID.randomUUID().toString(), TENDER_ID, "ready")
@@ -279,10 +279,10 @@ class TenderExtractionAdapterSpec extends Specification {
     }
 
     def "TC-A-A02: should throw BadRequestException when no ready documents are available"() {
-        given: "a request with no document IDs and no ready docs in DB"
+        given: "a request with empty documentIds list and no ready docs in DB"
             def request = new ExtractionCreateRequest()
             request.setEntityId(UUID.randomUUID())
-            request.setDocumentIds(null)
+            request.setDocumentIds([])
 
             tenderDocumentRepository.findByTenderId(TENDER_ID, TenderDocumentStatus.READY.getValue(), 200, null, null) >> []
 
@@ -296,10 +296,10 @@ class TenderExtractionAdapterSpec extends Specification {
     }
 
     def "TC-A-A03: should call findByTenderId with correct params during auto-resolve"() {
-        given: "a request triggering auto-resolve"
+        given: "a request with empty documentIds triggering auto-resolve"
             def request = new ExtractionCreateRequest()
             request.setEntityId(UUID.randomUUID())
-            request.setDocumentIds(null)
+            request.setDocumentIds([])
 
             def readyDoc = buildDocumentRecord(UUID.randomUUID().toString(), TENDER_ID, "ready")
 

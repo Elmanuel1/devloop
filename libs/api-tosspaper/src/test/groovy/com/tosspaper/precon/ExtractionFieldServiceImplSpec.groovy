@@ -268,15 +268,15 @@ class ExtractionFieldServiceImplSpec extends Specification {
             1 * jsonConverter.objectToJsonb("2026-03-31") >> JSONB.valueOf('"2026-03-31"')
             1 * jsonConverter.objectToJsonb("Vancouver") >> JSONB.valueOf('"Vancouver"')
 
-        and: "each field updated"
-            1 * extractionFieldRepository.updateEditedValue(fieldId1.toString(), JSONB.valueOf('"2026-03-31"'))
-            1 * extractionFieldRepository.updateEditedValue(fieldId2.toString(), JSONB.valueOf('"Vancouver"'))
-
-        and: "version incremented with optimistic lock"
-            1 * extractionRepository.updateVersion(EXTRACTION_ID, 0) >> 1
-
-        and: "fields re-fetched after update"
-            1 * extractionFieldRepository.findAllByIds([fieldId1.toString(), fieldId2.toString()]) >> [field1, field2]
+        and: "bulkUpdateEditedValues called with updates and expected version"
+            1 * extractionFieldRepository.bulkUpdateEditedValues(
+                { List<FieldEditUpdate> updates ->
+                    updates.size() == 2 &&
+                    updates[0].fieldId() == fieldId1.toString() &&
+                    updates[1].fieldId() == fieldId2.toString()
+                },
+                EXTRACTION_ID, 0
+            ) >> new BulkUpdateResult([field1, field2], 1)
 
         and: "mapper converts in request order"
             1 * extractionFieldMapper.toDtoList([field1, field2], EntityType.TENDER, ENTITY_ID) >> [dto1, dto2]
@@ -305,7 +305,7 @@ class ExtractionFieldServiceImplSpec extends Specification {
         and: "no DB operations performed"
             0 * extractionRepository.findById(_)
             0 * extractionFieldRepository.findAllByIds(_)
-            0 * extractionRepository.updateVersion(_, _)
+            0 * extractionFieldRepository.bulkUpdateEditedValues(_, _, _)
     }
 
     def "TC-S-B03: should throw IfMatchRequiredException when If-Match header is blank"() {
@@ -343,12 +343,9 @@ class ExtractionFieldServiceImplSpec extends Specification {
         and: "ownership validated"
             1 * extractionFieldRepository.findAllByIds([fieldId.toString()]) >> [field1]
 
-        and: "serialization called"
+        and: "serialization called and bulkUpdateEditedValues returns 0 rows updated (stale)"
             1 * jsonConverter.objectToJsonb("Toronto") >> JSONB.valueOf('"Toronto"')
-            1 * extractionFieldRepository.updateEditedValue(fieldId.toString(), _)
-
-        and: "updateVersion returns 0 (stale)"
-            1 * extractionRepository.updateVersion(EXTRACTION_ID, 0) >> 0
+            1 * extractionFieldRepository.bulkUpdateEditedValues(_, EXTRACTION_ID, 0) >> new BulkUpdateResult([field1], 0)
 
         and: "StaleVersionException thrown"
             def ex = thrown(StaleVersionException)
@@ -383,8 +380,7 @@ class ExtractionFieldServiceImplSpec extends Specification {
             thrown(NotFoundException)
 
         and: "no updates applied"
-            0 * extractionFieldRepository.updateEditedValue(_, _)
-            0 * extractionRepository.updateVersion(_, _)
+            0 * extractionFieldRepository.bulkUpdateEditedValues(_, _, _)
     }
 
     def "TC-S-B06: should propagate NotFoundException when extraction not found"() {
@@ -407,7 +403,7 @@ class ExtractionFieldServiceImplSpec extends Specification {
 
         and: "no field operations"
             0 * extractionFieldRepository.findAllByIds(_)
-            0 * extractionFieldRepository.updateEditedValue(_, _)
+            0 * extractionFieldRepository.bulkUpdateEditedValues(_, _, _)
     }
 
     def "TC-S-B07: should throw NotFoundException when extraction belongs to different company"() {
@@ -462,23 +458,18 @@ class ExtractionFieldServiceImplSpec extends Specification {
                 fieldId3.toString()
             ]) >> [f1, f2, f3]
 
-        and: "all 3 fields serialized and updated"
+        and: "all 3 fields serialized"
             1 * jsonConverter.objectToJsonb("Vancouver") >> JSONB.valueOf('"Vancouver"')
             1 * jsonConverter.objectToJsonb("2026-06-30") >> JSONB.valueOf('"2026-06-30"')
             1 * jsonConverter.objectToJsonb("CAD") >> JSONB.valueOf('"CAD"')
-            1 * extractionFieldRepository.updateEditedValue(fieldId1.toString(), _)
-            1 * extractionFieldRepository.updateEditedValue(fieldId2.toString(), _)
-            1 * extractionFieldRepository.updateEditedValue(fieldId3.toString(), _)
 
-        and: "version updated with version=1"
-            1 * extractionRepository.updateVersion(EXTRACTION_ID, 1) >> 1
+        and: "bulkUpdateEditedValues called with version=1 and returns updated records"
+            1 * extractionFieldRepository.bulkUpdateEditedValues(
+                { List<FieldEditUpdate> updates -> updates.size() == 3 },
+                EXTRACTION_ID, 1
+            ) >> new BulkUpdateResult([f1, f2, f3], 1)
 
-        and: "re-fetch for response"
-            1 * extractionFieldRepository.findAllByIds([
-                fieldId1.toString(),
-                fieldId2.toString(),
-                fieldId3.toString()
-            ]) >> [f1, f2, f3]
+        and: "mapper called with results"
             1 * extractionFieldMapper.toDtoList([f1, f2, f3], EntityType.TENDER, ENTITY_ID) >> [
                 new ExtractionField(), new ExtractionField(), new ExtractionField()
             ]
@@ -524,17 +515,9 @@ class ExtractionFieldServiceImplSpec extends Specification {
             1 * jsonConverter.objectToJsonb("2026-03-31") >> JSONB.valueOf('"2026-03-31"')
             1 * jsonConverter.objectToJsonb("Vancouver") >> JSONB.valueOf('"Vancouver"')
             1 * jsonConverter.objectToJsonb("CAD") >> JSONB.valueOf('"CAD"')
-            1 * extractionFieldRepository.updateEditedValue(fieldIdB.toString(), _)
-            1 * extractionFieldRepository.updateEditedValue(fieldIdA.toString(), _)
-            1 * extractionFieldRepository.updateEditedValue(fieldIdC.toString(), _)
 
-        and: "version incremented"
-            1 * extractionRepository.updateVersion(EXTRACTION_ID, 0) >> 1
-
-        and: "re-fetch returns fields in any order"
-            1 * extractionFieldRepository.findAllByIds([
-                fieldIdB.toString(), fieldIdA.toString(), fieldIdC.toString()
-            ]) >> [fieldA, fieldB, fieldC]  // A, B, C from DB
+        and: "bulkUpdateEditedValues returns fields in any order (A, B, C from repo)"
+            1 * extractionFieldRepository.bulkUpdateEditedValues(_, EXTRACTION_ID, 0) >> new BulkUpdateResult([fieldA, fieldB, fieldC], 1)
 
         and: "mapper receives fields reordered to B, A, C (request order)"
             1 * extractionFieldMapper.toDtoList([fieldB, fieldA, fieldC], EntityType.TENDER, ENTITY_ID) >> [dtoB, dtoA, dtoC]
@@ -563,7 +546,7 @@ class ExtractionFieldServiceImplSpec extends Specification {
 
         and: "no field operations"
             0 * extractionFieldRepository.findAllByIds(_)
-            0 * extractionRepository.updateVersion(_, _)
+            0 * extractionFieldRepository.bulkUpdateEditedValues(_, _, _)
     }
 
     // ==================== Helper Methods ====================

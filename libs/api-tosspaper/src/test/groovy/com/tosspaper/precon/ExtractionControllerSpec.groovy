@@ -70,7 +70,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // Explicitly null optional fields so @Size(min=1) is not triggered on empty defaults
-            def body = [entity_id: tenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: null]
 
         when: "creating extraction"
             def response = restTemplate.exchange(
@@ -96,7 +96,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // fields=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_id: tenderId, document_ids: [docId1, docId2], fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: [docId1, docId2], fields: null]
 
         when: "creating extraction with explicit document IDs"
             def response = restTemplate.exchange(
@@ -119,7 +119,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // document_ids=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_id: tenderId, document_ids: null, fields: ["closing_date", "currency"]]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: ["closing_date", "currency"]]
 
         when: "creating extraction with explicit field names"
             def response = restTemplate.exchange(
@@ -139,7 +139,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             def nonExistentId = UUID.randomUUID().toString()
-            def body = [entity_id: nonExistentId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: nonExistentId, document_ids: null, fields: null]
 
         when: "creating extraction for non-existent tender"
             def response = restTemplate.exchange(
@@ -163,7 +163,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [entity_id: otherTenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: otherTenderId, document_ids: null, fields: null]
 
         when: "creating extraction for tender owned by different company"
             def response = restTemplate.exchange(
@@ -181,7 +181,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [entity_id: tenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: null]
 
         when: "creating extraction when no ready documents exist"
             def response = restTemplate.exchange(
@@ -205,7 +205,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // fields=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_id: tenderId, document_ids: [docId], fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: [docId], fields: null]
 
         when: "creating extraction with non-ready document"
             def response = restTemplate.exchange(
@@ -230,7 +230,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // fields=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_id: tenderId, document_ids: [otherDocId], fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: [otherDocId], fields: null]
 
         when: "creating extraction with document from different tender"
             def response = restTemplate.exchange(
@@ -254,7 +254,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
             // document_ids=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_id: tenderId, document_ids: null, fields: ["not_a_real_field"]]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: ["not_a_real_field"]]
 
         when: "creating extraction with invalid field name"
             def response = restTemplate.exchange(
@@ -273,7 +273,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
         given: "auth headers without X-Context-Id"
             def headers = buildAuthHeaders()
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [entity_id: tenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: null]
 
         when: "creating extraction without company context header"
             def response = restTemplate.exchange(
@@ -291,7 +291,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", "not-a-number")
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [entity_id: tenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: null]
 
         when: "creating extraction — PreAuthorize rejects because permission evaluator cannot parse non-numeric ID"
             def response = restTemplate.exchange(
@@ -313,7 +313,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            def body = [entity_id: cancelledTenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: cancelledTenderId, document_ids: null, fields: null]
 
         when: "creating extraction for a cancelled tender"
             def response = restTemplate.exchange(

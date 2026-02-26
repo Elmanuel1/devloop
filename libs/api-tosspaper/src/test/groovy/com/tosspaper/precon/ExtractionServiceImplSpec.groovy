@@ -53,6 +53,7 @@ class ExtractionServiceImplSpec extends Specification {
             def docId2 = UUID.fromString("bbbb2222-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([docId1, docId2])
             request.setFields(["closing_date", "location"])
 
@@ -79,14 +80,15 @@ class ExtractionServiceImplSpec extends Specification {
         and: "JSON converter serializes field names"
             1 * jsonConverter.stringListToJsonb(validatedFields) >> JSONB.valueOf('["closing_date","location"]')
 
-        and: "repository inserts the record"
-            1 * extractionRepository.insert({ ExtractionsRecord r ->
-                r.companyId == COMPANY_ID_STR &&
-                r.entityType == "tender" &&
-                r.entityId == ENTITY_ID_STR &&
-                r.status == "pending" &&
-                r.version == 0
+        and: "mapper builds the record from params"
+            1 * extractionMapper.toRecord({ ExtractionInsertParams p ->
+                p.companyId() == COMPANY_ID_STR &&
+                p.entityType() == EntityType.TENDER &&
+                p.entityId() == ENTITY_ID_STR
             }) >> insertedRecord
+
+        and: "repository inserts the record"
+            1 * extractionRepository.insert(insertedRecord) >> insertedRecord
 
         and: "mapper converts to DTO"
             1 * extractionMapper.toDto(insertedRecord) >> dto
@@ -106,6 +108,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "a create request without field filter"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setFields(null)
 
             def resolvedDocIds = ["doc-111"]
@@ -128,10 +131,13 @@ class ExtractionServiceImplSpec extends Specification {
             1 * jsonConverter.stringListToJsonb(resolvedDocIds) >> JSONB.valueOf('["doc-111"]')
             0 * jsonConverter.stringListToJsonb(null)
 
-        and: "record is inserted with null fieldNamesJsonb"
-            1 * extractionRepository.insert({ ExtractionsRecord r ->
-                r.fieldNames == null
+        and: "mapper builds record with null fieldNames"
+            1 * extractionMapper.toRecord({ ExtractionInsertParams p ->
+                p.fieldNames() == null
             }) >> insertedRecord
+
+        and: "record is inserted"
+            1 * extractionRepository.insert(insertedRecord) >> insertedRecord
 
         and: "mapper and converter called"
             1 * extractionMapper.toDto(insertedRecord) >> dto
@@ -145,6 +151,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "a create request with empty documentIds (auto-resolve path)"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])  // empty list, not null
 
             def autoResolvedDocIds = ["auto-doc-1", "auto-doc-2", "auto-doc-3"]
@@ -166,8 +173,9 @@ class ExtractionServiceImplSpec extends Specification {
         and: "auto-resolved IDs are serialized"
             1 * jsonConverter.stringListToJsonb(autoResolvedDocIds) >> JSONB.valueOf('["auto-doc-1","auto-doc-2","auto-doc-3"]')
 
-        and: "record inserted with adapter-resolved IDs"
-            1 * extractionRepository.insert(_) >> insertedRecord
+        and: "mapper builds record and repository inserts"
+            1 * extractionMapper.toRecord(_) >> insertedRecord
+            1 * extractionRepository.insert(insertedRecord) >> insertedRecord
 
         and: "mapper and converter called"
             1 * extractionMapper.toDto(insertedRecord) >> dto
@@ -186,6 +194,7 @@ class ExtractionServiceImplSpec extends Specification {
             )
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
 
         when: "creating extraction with no registered adapters"
             serviceNoAdapter.createExtraction(COMPANY_ID, request)
@@ -199,6 +208,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "adapter reports entity does not belong to company"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])
             request.setFields([])
 
@@ -220,6 +230,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "adapter finds no ready documents and throws"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])
 
         when: "creating extraction"
@@ -245,6 +256,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "adapter rejects invalid field name"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])
             request.setFields(["invalid_field_xyz"])
 
@@ -274,12 +286,14 @@ class ExtractionServiceImplSpec extends Specification {
         given: "repository will throw on insert"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])
 
             tenderAdapter.verifyOwnership(COMPANY_ID_STR, ENTITY_ID_STR) >> true
             tenderAdapter.resolveDocumentIds(ENTITY_ID_STR, request) >> ["doc-1"]
             tenderAdapter.validateFieldNames(_) >> null
             jsonConverter.stringListToJsonb(["doc-1"]) >> JSONB.valueOf('["doc-1"]')
+            extractionMapper.toRecord(_) >> new ExtractionsRecord()
 
         when: "creating extraction and DB fails"
             service.createExtraction(COMPANY_ID, request)
@@ -295,6 +309,7 @@ class ExtractionServiceImplSpec extends Specification {
         given: "adapter rejects tender in won/lost/cancelled status"
             def request = new ExtractionCreateRequest()
             request.setEntityId(ENTITY_ID)
+            request.setEntityType(EntityType.TENDER)
             request.setDocumentIds([])
 
         when: "creating extraction for terminal-status tender"
