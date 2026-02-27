@@ -22,7 +22,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 import java.util.UUID;
 
 @Slf4j
@@ -48,7 +47,7 @@ public class ExtractionController implements ExtractionsApi {
         ExtractionResult result = extractionService.createExtraction(companyId, extractionCreateRequest);
         ExtractionCreateResponse response = extractionMapper.toCreateResponse(result.extraction());
         return ResponseEntity
-                .created(URI.create("/v1/extractions/" + result.extraction().getId()))
+                .status(HttpStatus.ACCEPTED)
                 .eTag(HeaderUtils.formatETag(result.version()))
                 .body(response);
     }

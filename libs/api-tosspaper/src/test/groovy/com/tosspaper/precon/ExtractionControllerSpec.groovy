@@ -61,7 +61,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
 
     // ==================== POST /v1/extractions ====================
 
-    def "TC-C-CR01: POST /v1/extractions returns 201 with Location and ETag v0"() {
+    def "TC-C-CR01: POST /v1/extractions returns 202 Accepted with ETag v0"() {
         given: "a tender with one ready document"
             def docId = insertDocument(tenderId, companyId.toString(), "spec.pdf", "ready")
 
@@ -69,8 +69,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            // Explicitly null optional fields so @Size(min=1) is not triggered on empty defaults
-            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId]
 
         when: "creating extraction"
             def response = restTemplate.exchange(
@@ -79,14 +78,13 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
                 new HttpEntity<>(body, headers),
                 Map)
 
-        then: "201 with Location header and ETag v0"
-            response.statusCode == HttpStatus.CREATED
-            response.headers.getFirst("Location") =~ /\/v1\/extractions\/.+/
+        then: "202 Accepted with ETag v0"
+            response.statusCode == HttpStatus.ACCEPTED
             response.headers.getFirst("ETag") == '"v0"'
             response.body.id != null
     }
 
-    def "TC-C-CR02: POST /v1/extractions returns 201 with explicit documentIds"() {
+    def "TC-C-CR02: POST /v1/extractions returns 202 with explicit documentIds"() {
         given: "a tender with two ready documents"
             def docId1 = insertDocument(tenderId, companyId.toString(), "vol1.pdf", "ready")
             def docId2 = insertDocument(tenderId, companyId.toString(), "vol2.pdf", "ready")
@@ -95,8 +93,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            // fields=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_type: "tender", entity_id: tenderId, document_ids: [docId1, docId2], fields: null]
+            def body = [entity_type: "tender", entity_id: tenderId, document_ids: [docId1, docId2]]
 
         when: "creating extraction with explicit document IDs"
             def response = restTemplate.exchange(
@@ -105,12 +102,12 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
                 new HttpEntity<>(body, headers),
                 Map)
 
-        then: "201 returned"
-            response.statusCode == HttpStatus.CREATED
+        then: "202 returned"
+            response.statusCode == HttpStatus.ACCEPTED
             response.body.id != null
     }
 
-    def "TC-C-CR03: POST /v1/extractions returns 201 with explicit field names"() {
+    def "TC-C-CR03: POST /v1/extractions returns 202 with explicit field names"() {
         given: "a tender with one ready document"
             insertDocument(tenderId, companyId.toString(), "spec.pdf", "ready")
 
@@ -118,8 +115,7 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            // document_ids=null so @Size(min=1) is not triggered on the empty default
-            def body = [entity_type: "tender", entity_id: tenderId, document_ids: null, fields: ["closing_date", "currency"]]
+            def body = [entity_type: "tender", entity_id: tenderId, fields: ["closing_date", "currency"]]
 
         when: "creating extraction with explicit field names"
             def response = restTemplate.exchange(
@@ -128,8 +124,8 @@ class ExtractionControllerSpec extends BaseIntegrationTest {
                 new HttpEntity<>(body, headers),
                 Map)
 
-        then: "201 returned"
-            response.statusCode == HttpStatus.CREATED
+        then: "202 returned"
+            response.statusCode == HttpStatus.ACCEPTED
             response.body.id != null
     }
 
