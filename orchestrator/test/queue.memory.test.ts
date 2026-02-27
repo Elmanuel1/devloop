@@ -2,30 +2,12 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { MemoryQueueFactory } from "../src/queue.memory.ts";
 import type { OrchestratorEvent, TaskQueue } from "../src/types.ts";
 
-function makeEvent(type: OrchestratorEvent["type"] = "task:requested"): OrchestratorEvent {
-  if (type === "task:requested") {
-    return {
-      type: "task:requested",
-      slackChannelId: "C123",
-      slackThreadTs: "111.222",
-      requestText: "Build something",
-      requestedBy: "U001",
-      timestamp: Date.now(),
-    };
-  }
-  // fallback generic event for other types
+function makeEvent(seq?: number): OrchestratorEvent {
   return {
-    type: "retry",
-    originalEvent: {
-      type: "task:requested",
-      slackChannelId: "C123",
-      slackThreadTs: "111.222",
-      requestText: "Build something",
-      requestedBy: "U001",
-      timestamp: Date.now(),
-    },
-    attempt: 1,
-    timestamp: Date.now(),
+    id: `evt-${seq ?? 0}`,
+    source: "test",
+    type: "task:requested",
+    raw: { seq: seq ?? 0 },
   };
 }
 
@@ -49,7 +31,7 @@ describe("MemoryQueueFactory", () => {
       received.push(event);
     }, 1);
 
-    const event = makeEvent("task:requested");
+    const event = makeEvent(1);
     queue.push(event);
 
     await waitForDrain(queue);
@@ -67,9 +49,9 @@ describe("MemoryQueueFactory", () => {
       received.push(event);
     }, 2);
 
-    queue.push(makeEvent("task:requested"));
-    queue.push(makeEvent("task:requested"));
-    queue.push(makeEvent("task:requested"));
+    queue.push(makeEvent(1));
+    queue.push(makeEvent(2));
+    queue.push(makeEvent(3));
 
     await waitForDrain(queue);
 
@@ -82,21 +64,16 @@ describe("MemoryQueueFactory", () => {
     const order: number[] = [];
 
     const queue = factory.create("test", async (event) => {
-      order.push((event as { timestamp: number }).timestamp);
+      order.push((event.raw as { seq: number }).seq);
     }, 1);
 
-    const now = Date.now();
-    const e1: OrchestratorEvent = { ...makeEvent("task:requested"), timestamp: now + 1 };
-    const e2: OrchestratorEvent = { ...makeEvent("task:requested"), timestamp: now + 2 };
-    const e3: OrchestratorEvent = { ...makeEvent("task:requested"), timestamp: now + 3 };
-
-    queue.push(e1);
-    queue.push(e2);
-    queue.push(e3);
+    queue.push(makeEvent(1));
+    queue.push(makeEvent(2));
+    queue.push(makeEvent(3));
 
     await waitForDrain(queue);
 
-    expect(order).toEqual([now + 1, now + 2, now + 3]);
+    expect(order).toEqual([1, 2, 3]);
 
     queue.destroy();
   });
@@ -113,8 +90,8 @@ describe("MemoryQueueFactory", () => {
       received.push(event);
     }, 1);
 
-    queue.push(makeEvent("task:requested"));
-    queue.push(makeEvent("task:requested"));
+    queue.push(makeEvent(1));
+    queue.push(makeEvent(2));
 
     await waitForDrain(queue);
 
@@ -140,7 +117,7 @@ describe("MemoryQueueFactory", () => {
     }, CONCURRENCY);
 
     for (let i = 0; i < N; i++) {
-      queue.push(makeEvent("task:requested"));
+      queue.push(makeEvent(i));
     }
 
     return new Promise<void>((resolve, reject) => {
@@ -168,7 +145,7 @@ describe("MemoryQueueFactory", () => {
     }, 1);
 
     // Push one event and wait for it to drain
-    queue.push(makeEvent("task:requested"));
+    queue.push(makeEvent(1));
     await waitForDrain(queue);
 
     expect(received).toHaveLength(1);

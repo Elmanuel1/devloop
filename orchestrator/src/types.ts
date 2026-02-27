@@ -1,154 +1,146 @@
-// ─── Base Event ─────────────────────────────────────────────────────────────
+import type { Context } from "hono";
 
-export interface BaseEvent {
+// ─── Base Event ───────────────────────────────────────────────────────────────
+
+export interface OrchestratorEvent {
+  id: string;
+  source: string;
   type: string;
-  designId?: string;
-  timestamp: number;
+  raw: unknown;
 }
 
-// ─── Concrete Events ─────────────────────────────────────────────────────────
+// ─── Abstract by domain (tool-agnostic names, NOT tool-specific) ──────────────
 
-export interface TaskRequestEvent extends BaseEvent {
+export interface MessagingEvent extends OrchestratorEvent {
+  message: string;
+  senderId: string;
+  senderName: string;
+  ack: (text: string) => Promise<void>; // immediate reply only
+}
+
+export interface SourceControlEvent extends OrchestratorEvent {
+  prNumber: number;
+  branch: string;
+}
+
+export interface DocumentEvent extends OrchestratorEvent {
+  pageId: string;
+  designId: string;
+}
+
+// ─── Concrete Events ──────────────────────────────────────────────────────────
+
+export interface TaskRequestEvent extends MessagingEvent {
   type: "task:requested";
-  slackChannelId: string;
-  slackThreadTs: string;
-  requestText: string;
-  requestedBy: string;
 }
 
-export interface PageApprovedEvent extends BaseEvent {
+export interface CiFailedEvent extends SourceControlEvent {
+  type: "ci:failed";
+  logs: string;
+}
+
+export interface CiPassedEvent extends SourceControlEvent {
+  type: "ci:passed";
+}
+
+export interface PrApprovedEvent extends SourceControlEvent {
+  type: "pr:approved";
+}
+
+export interface ChangesRequestedEvent extends SourceControlEvent {
+  type: "pr:changes_requested";
+  comments: string[];
+}
+
+export interface PrMergedEvent extends SourceControlEvent {
+  type: "pr:merged";
+}
+
+export interface PrCommentEvent extends SourceControlEvent {
+  type: "pr:comment";
+  comments: string[];
+}
+
+export interface PageApprovedEvent extends DocumentEvent {
   type: "page:approved";
-  designId: string;
-  pageId: string;
 }
 
-export interface NewCommentEvent extends BaseEvent {
+export interface NewCommentEvent extends DocumentEvent {
   type: "page:comment";
-  designId: string;
-  pageId: string;
-  commentId: string;
-  commentBody: string;
-  author: string;
+  comments: string[];
 }
 
-export interface StageCompletedEvent extends BaseEvent {
+// ─── Internal orchestrator events ─────────────────────────────────────────────
+
+export interface AgentCompletedEvent extends OrchestratorEvent {
+  type: "agent:completed";
+  agentName: string;
+  designId: string;
+  outputKey: string;
+  outputPath: string; // file path, not content
+}
+
+export interface StageCompletedEvent extends OrchestratorEvent {
   type: "stage:completed";
   designId: string;
-  stage: "architect" | "code_writer" | "reviewer";
-  outputId: string;
-}
-
-export interface CIFailedEvent extends BaseEvent {
-  type: "ci:failed";
-  designId: string;
-  prNumber: number;
-  runId: string;
-  branch: string;
-}
-
-export interface CIPassedEvent extends BaseEvent {
-  type: "ci:passed";
-  designId: string;
-  prNumber: number;
-  branch: string;
-}
-
-export interface PRChangesRequestedEvent extends BaseEvent {
-  type: "pr:changes_requested";
-  designId: string;
-  prNumber: number;
-  reviewBody: string;
-  reviewer: string;
-}
-
-export interface PRCommentEvent extends BaseEvent {
-  type: "pr:comment";
-  designId: string;
-  prNumber: number;
-  commentBody: string;
-  commentPath?: string;
-  commentLine?: number;
-  author: string;
-}
-
-export interface PRApprovedEvent extends BaseEvent {
-  type: "pr:approved";
-  designId: string;
-  prNumber: number;
-}
-
-export interface ReviewCodeEvent extends BaseEvent {
-  type: "review:code";
-  designId: string;
-  prNumber: number;
-  branch: string;
-}
-
-export interface RetryEvent extends BaseEvent {
-  type: "retry";
-  originalEvent: OrchestratorEvent;
-  attempt: number;
+  stage: string;
 }
 
 // ─── Union Type ───────────────────────────────────────────────────────────────
 
-export type OrchestratorEvent =
+export type OrchestratorEventUnion =
   | TaskRequestEvent
+  | CiFailedEvent
+  | CiPassedEvent
+  | PrApprovedEvent
+  | ChangesRequestedEvent
+  | PrMergedEvent
+  | PrCommentEvent
   | PageApprovedEvent
   | NewCommentEvent
-  | StageCompletedEvent
-  | CIFailedEvent
-  | CIPassedEvent
-  | PRChangesRequestedEvent
-  | PRCommentEvent
-  | PRApprovedEvent
-  | ReviewCodeEvent
-  | RetryEvent;
+  | AgentCompletedEvent
+  | StageCompletedEvent;
 
 // ─── Task Handler ─────────────────────────────────────────────────────────────
 
-export interface TaskHandler<E extends OrchestratorEvent> {
-  matches(event: OrchestratorEvent): event is E;
-  handle(event: E): Promise<void>;
+export interface TaskHandler {
+  queue: string;
+  matches(event: OrchestratorEvent): boolean;
+  handle(event: OrchestratorEvent): Promise<void>;
 }
 
 // ─── Route Key ────────────────────────────────────────────────────────────────
 
-export type RouteKey =
-  | "post:architect"
-  | "post:code_writer"
-  | "post:reviewer"
-  | "post:approval"
-  | "post:ci_passed"
-  | "post:merge";
+export type RouteKey = `${string}:${string}`;
 
 // ─── Webhook Verifier ─────────────────────────────────────────────────────────
 
 export interface WebhookVerifier {
-  verify(headers: Record<string, string>, body: string): Promise<boolean>;
+  verify(c: Context): Promise<void>;
 }
 
 // ─── Event Parser ─────────────────────────────────────────────────────────────
 
-export interface EventParser {
-  parse(headers: Record<string, string>, body: string): OrchestratorEvent | null;
+export interface EventParser<T extends OrchestratorEvent = OrchestratorEvent> {
+  parse(input: any): Promise<T[]>; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
 // ─── Notification Channel ─────────────────────────────────────────────────────
 
 export interface NotificationChannel {
-  send(message: string, threadId?: string): Promise<void>;
+  send(message: string, threadTs?: string): Promise<void>;
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
 export interface AgentOptions {
-  agent: string;
-  prompt: string;
-  worktreeBranch?: string;
+  worktree?: boolean;
+  branch?: string;
+  keepWorktree?: boolean;
+  cwd?: string;
   timeoutMs?: number;
   heartbeatMs?: number;
-  cwd?: string;
+  allowedTools?: string[];
 }
 
 export interface ParsedAgentOutput {
@@ -179,61 +171,38 @@ export interface TaskQueue {
 export type QueueWorker = (event: OrchestratorEvent) => Promise<void>;
 
 export interface TaskQueueFactory {
-  create(name: string, worker: QueueWorker, concurrency?: number): TaskQueue;
+  create(name: string, worker: QueueWorker, concurrency: number): TaskQueue;
 }
 
 // ─── Store Records ────────────────────────────────────────────────────────────
 
-export type DesignStatus =
-  | "requested"
-  | "designing"
-  | "in_review"
-  | "approved"
-  | "coding"
-  | "complete"
-  | "failed";
-
 export interface DesignRecord {
   id: string;
-  slack_channel: string;
-  slack_thread_ts: string;
-  requested_by: string;
-  request_text: string;
-  confluence_page_id: string | null;
-  jira_epic_key: string | null;
-  status: DesignStatus;
+  description: string | null;
+  stage: string;
+  status: string;
+  page_id: string | null;
+  parent_key: string | null;
+  review_attempts: number;
   created_at: string;
   updated_at: string;
 }
 
-export type PRStatus =
-  | "open"
-  | "ci_failing"
-  | "ci_passed"
-  | "in_review"
-  | "changes_requested"
-  | "approved"
-  | "merged"
-  | "failed";
-
 export interface DesignOutputRecord {
-  id: string;
   design_id: string;
-  stage: string;
-  agent: string;
-  output: string;
-  cost_usd: number | null;
-  duration_ms: number | null;
-  created_at: string;
+  output_key: string;
+  output_path: string;
 }
 
 export interface PRStateRecord {
-  id: string;
-  design_id: string;
   pr_number: number;
-  branch: string;
-  jira_subtask_key: string | null;
-  status: PRStatus;
+  design_id: string;
+  stage: string;
+  issue_key: string | null;
+  parent_key: string | null;
+  feature_slug: string | null;
+  ci_status: string;
+  review_status: string;
   ci_attempts: number;
   review_attempts: number;
   created_at: string;
