@@ -76,6 +76,64 @@ public abstract class EntityPushWorkflow<T extends Syncable> {
 
 ---
 
+---
+
+## Pagination Utility Duplication
+
+A common DRY violation is duplicating pagination clamping and truncation logic across service classes.
+
+```java
+// ❌ BAD — clampLimit duplicated in ExtractionServiceImpl AND ExtractionFieldServiceImpl
+private int clampLimit(Integer limit) {
+    int effective = limit != null ? limit : 20;
+    if (effective < 1 || effective > 100) {
+        effective = 20;
+    }
+    return effective;
+}
+
+// Also duplicated:
+boolean hasMore = records.size() > effectiveLimit;
+if (hasMore) {
+    records = records.subList(0, effectiveLimit);
+}
+```
+
+```java
+// ✅ GOOD — extracted to PaginationUtils in com.tosspaper.common
+public final class PaginationUtils {
+    private static final int DEFAULT_LIMIT = 20;
+    private static final int MIN_LIMIT = 1;
+    private static final int MAX_LIMIT = 100;
+
+    private PaginationUtils() {}
+
+    public static int clampLimit(Integer limit) {
+        if (limit == null || limit < MIN_LIMIT || limit > MAX_LIMIT) {
+            return DEFAULT_LIMIT;
+        }
+        return Math.clamp(limit, MIN_LIMIT, MAX_LIMIT);
+    }
+
+    public static <T> boolean hasMore(List<T> records, int effectiveLimit) {
+        return records.size() > effectiveLimit;
+    }
+
+    public static <T> List<T> truncate(List<T> records, int effectiveLimit) {
+        return records.size() > effectiveLimit ? records.subList(0, effectiveLimit) : records;
+    }
+}
+
+// Usage in any service:
+int effectiveLimit = PaginationUtils.clampLimit(limit);
+boolean hasMore = PaginationUtils.hasMore(records, effectiveLimit);
+records = PaginationUtils.truncate(records, effectiveLimit);
+```
+
+**Benefit:** Single tested implementation. Behaviour change (e.g., different default) happens in one place.
+
+---
+
 ## When NOT to DRY
 
 - Two pieces of code look similar but evolve independently → keep separate

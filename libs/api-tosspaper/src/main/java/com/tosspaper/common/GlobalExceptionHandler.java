@@ -25,8 +25,6 @@ import java.util.Collections;
 @Order(1)
 public class GlobalExceptionHandler {
 
-    private static final String ERROR_MESSAGE = "Error processing request";
-
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Object> handle(MethodArgumentNotValidException ex, WebRequest request) {
         HttpHeaders headers = new HttpHeaders();
@@ -123,7 +121,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(EmailVerificationRequiredException.class)
     public ResponseEntity<Object> handleEmailVerificationRequiredException(EmailVerificationRequiredException ex, WebRequest request) {
-        log.error(ERROR_MESSAGE, ex);
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
         var apiError = new ApiError(ex.getCode(), ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.FORBIDDEN);
     }
@@ -203,5 +201,12 @@ public class GlobalExceptionHandler {
         log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
         var apiError = new ApiError(ex.getCode(), ex.getMessage());
         return new ResponseEntity<>(apiError, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(com.tosspaper.models.exception.NotImplementedException.class)
+    public ResponseEntity<Object> handleNotImplementedException(com.tosspaper.models.exception.NotImplementedException ex, WebRequest request) {
+        log.error(ApiErrorMessages.ERROR_PROCESSING_REQUEST, ex);
+        var apiError = new ApiError(ex.getCode(), ex.getMessage());
+        return new ResponseEntity<>(apiError, HttpStatus.NOT_IMPLEMENTED);
     }
 }

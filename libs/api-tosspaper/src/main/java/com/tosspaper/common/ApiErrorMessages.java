@@ -99,12 +99,35 @@ public final class ApiErrorMessages {
     public static final String EXTRACTION_CANNOT_CANCEL       = "Cannot cancel extraction in '%s' status.";
     public static final String EXTRACTION_NO_READY_DOCS_CODE  = "api.extraction.noReadyDocuments";
     public static final String EXTRACTION_NO_READY_DOCS       = "No ready documents found for entity '%s'. Upload and wait for documents to reach ready status before starting extraction.";
+    public static final String EXTRACTION_DOC_NOT_READY_CODE  = "api.extraction.documentNotReady";
+    public static final String EXTRACTION_DOC_NOT_READY       = "Document '%s' is not ready for extraction. Current status: '%s'.";
     public static final String EXTRACTION_DOC_NOT_OWNED_CODE  = "api.extraction.documentNotOwned";
     public static final String EXTRACTION_DOC_NOT_OWNED       = "Document '%s' does not belong to entity '%s'.";
     public static final String EXTRACTION_INVALID_FIELD_CODE  = "api.extraction.invalidField";
     public static final String EXTRACTION_INVALID_FIELD       = "Field name '%s' is not valid for entity type '%s'.";
     public static final String EXTRACTION_FIELD_NOT_FOUND_CODE = "api.extraction.field.notFound";
     public static final String EXTRACTION_FIELD_NOT_FOUND      = "Extraction field not found.";
+
+    // ── Extraction optimistic locking ──
+    public static final String IF_MATCH_REQUIRED_CODE        = "api.validation.ifMatchRequired";
+    public static final String IF_MATCH_REQUIRED             = "If-Match header is required for field updates. Use the ETag from GET /v1/extractions/{id}.";
+    public static final String EXTRACTION_STALE_VERSION_CODE = "api.extraction.staleVersion";
+    public static final String EXTRACTION_STALE_VERSION      = "Extraction has been modified by another request. Please refresh and try again.";
+
+    // ── Serialization ──
+    public static final String SERIALIZATION_ERROR_CODE = "api.internal.serializationError";
+    public static final String SERIALIZATION_ERROR = "Failed to serialize value.";
+
+    // ── Entity adapter ──
+    public static final String ENTITY_TYPE_NOT_SUPPORTED_CODE = "api.extraction.entityTypeNotSupported";
+    public static final String ENTITY_TYPE_NOT_SUPPORTED = "Entity type '%s' is not supported for extraction.";
+
+    public static final String EXTRACTION_TENDER_NOT_ACTIVE_CODE = "api.extraction.tenderNotActive";
+    public static final String EXTRACTION_TENDER_NOT_ACTIVE = "Cannot start extraction — tender is in '%s' status. Extractions can only be started for active tenders (pending or submitted).";
+
+    // ── Not Implemented ──
+    public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";
+    public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
 
     // ── Application ──
     public static final String APPLICATION_UNRESOLVED_CONFLICTS_CODE = "api.application.unresolvedConflicts";

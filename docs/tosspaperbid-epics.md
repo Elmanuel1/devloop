@@ -7,9 +7,20 @@
 >
 > **Backward compatibility rule:** After merging any epic, the existing `everything` service must build, deploy, and pass all tests. No epic leaves the system broken. Pattern: **add new → switch over → remove old**.
 
+### Architecture Decision — Monolith-First
+
+Epics 1–6 planned a multi-service split (precon-service, ai-service, email-service). Instead, precon features are being built directly in `libs/api-tosspaper` within the existing `everything` monolith. This defers infrastructure complexity and keeps deployment simple. Epics 1–6 are **skipped/deferred** — the relevant work (DB migrations, SQS queues, S3 buckets, Terraform) was done incrementally as needed.
+
+### Current Status (2026-02-25)
+- ✅ **Epic 0** — OpenAPI spec (`specs/precon/openapi-precon.yaml` v0.6.0)
+- ⏭️ **Epics 1–6** — Skipped (monolith approach)
+- ✅ **Epic 7A** — Tender CRUD API (5 endpoints, full test coverage)
+- 🔶 **Epic 7B** — TenderDocuments done (4 endpoints), Extractions not started (7 endpoints)
+- ❌ **Epics 7C–7E, 8–10** — Not started
+
 ---
 
-## Epic 0: Precon API Spec (unblocks FE)
+## Epic 0: Precon API Spec (unblocks FE) ✅ DONE
 **Phase 0 | W1 (0.5 weeks) — start immediately, no code dependencies**
 
 Define the full OpenAPI contract for precon-service so frontend can start building against it while backend works through Epics 1–6. Just a YAML file + CI workflow — no Gradle module, no controllers, no DB, no auth.
@@ -34,7 +45,7 @@ Define the full OpenAPI contract for precon-service so frontend can start buildi
 
 ---
 
-## Epic 1: Infrastructure Foundation
+## Epic 1: Infrastructure Foundation ⏭️ SKIPPED (monolith approach)
 **Phase A | W1 (1 week)**
 
 Sets up the build system, Docker, and SQS queues so all subsequent work has a place to land.
@@ -62,7 +73,7 @@ Sets up the build system, Docker, and SQS queues so all subsequent work has a pl
 
 ---
 
-## Epic 2: Database Separation
+## Epic 2: Database Separation ⏭️ SKIPPED (monolith approach)
 **Phase B | W1–W2.5 (1.5 weeks)**
 
 Split databases, create JOOQ libs, make models pure domain. Must complete before any module compiles against JOOQ classes.
@@ -92,7 +103,7 @@ Split databases, create JOOQ libs, make models pure domain. Must complete before
 
 ---
 
-## Epic 3: Shared Auth Library
+## Epic 3: Shared Auth Library ⏭️ SKIPPED (monolith approach)
 **Phase C1 | W2–W3 (1 week)**
 
 Extract auth so both API modules can use it. **Must follow copy → switch → remove pattern** to stay backward compatible.
@@ -119,7 +130,7 @@ Extract auth so both API modules can use it. **Must follow copy → switch → r
 
 ---
 
-## Epic 4: Email Client Library
+## Epic 4: Email Client Library ⏭️ SKIPPED (monolith approach)
 **Phase C2 | W2–W2.5 (0.5 weeks)**
 
 Async email interface. Can run in parallel with Epics 2 and 3.
@@ -144,7 +155,7 @@ Async email interface. Can run in parallel with Epics 2 and 3.
 
 ---
 
-## Epic 5: gRPC Protos + Client Libraries
+## Epic 5: gRPC Protos + Client Libraries ⏭️ SKIPPED (monolith approach)
 **Phase D | W3–W4 (1.5 weeks)**
 
 Define service contracts and generate client stubs.
@@ -171,7 +182,7 @@ Define service contracts and generate client stubs.
 
 ---
 
-## Epic 6: Refactor Existing Modules
+## Epic 6: Refactor Existing Modules ⏭️ SKIPPED (monolith approach)
 **Phase E | W4–W6 (2 weeks)**
 
 Add gRPC servers, extract API spec, and wire new libs into everything. High-risk — touches production code. **Each story must leave everything deployable.**
@@ -211,27 +222,27 @@ Add gRPC servers, extract API spec, and wire new libs into everything. High-risk
 
 ---
 
-## Epic 7: BID Module — api-precon
+## Epic 7: BID Module — api-precon 🔶 IN PROGRESS
 **Phase F | W6–W10 (4 weeks)**
 
 The core new functionality. Largest epic — break into sub-epics by domain area. This is where AI assistance has the highest absolute impact: CRUD controllers, services, repositories, MapStruct mappers, OpenAPI spec writing, and test generation are all high-volume boilerplate that AI handles well. Human focuses on business logic edge cases and cross-service integration correctness.
 
-### Sub-epic 7A: Foundation (W6–W6.5)
+### Sub-epic 7A: Foundation (W6–W6.5) ✅ DONE
 
-| # | Story | Description | Est |
-|---|-------|-------------|-----|
-| 7A.1 | Create libs/api-precon — module scaffold | build.gradle with deps on precon-jooq, auth, ai-grpc-client, tosspaper-grpc-client, email-client. OpenAPI codegen pointing at `specs/precon/openapi-precon.yaml` (from Epic 0). Package structure. Implement controller interfaces from generated code | M |
-| 7A.2 | Implement TendersController + TenderService | CRUD, status transitions (Draft → Pending → Won → In Progress → Completed), search/filter, company validation via tosspaper-grpc-client | L |
-| 7A.3 | Write tests for Tenders | Integration tests (Testcontainers) for repository + controller. Unit tests for service | L |
+| # | Story | Description | Est | Status |
+|---|-------|-------------|-----|--------|
+| 7A.1 | Create libs/api-precon — module scaffold | Built in `libs/api-tosspaper` (monolith approach). OpenAPI codegen via `libs/openapi-precon` v0.6.0 pointing at `specs/precon/openapi-precon.yaml`. Generated models in `com.tosspaper.precon.generated.model.*` | M | ✅ |
+| 7A.2 | Implement TendersController + TenderService | CRUD (create, get, list, update, delete), status transitions (pending → submitted → won/lost, pending → cancelled), search/filter, ETag optimistic concurrency, company-scoped via X-Context-Id | L | ✅ |
+| 7A.3 | Write tests for Tenders | TenderControllerSpec, TenderServiceSpec, TenderRepositorySpec — all passing | L | ✅ |
 
-### Sub-epic 7B: Documents + Extraction (W6.5–W7.5)
+### Sub-epic 7B: Documents + Extraction (W6.5–W7.5) — IN PROGRESS
 
-| # | Story | Description | Est |
-|---|-------|-------------|-----|
-| 7B.1 | Implement TenderDocumentsController + service | Upload (multipart), list, link to S3. Trigger classification + extraction via ai-grpc-client | L |
-| 7B.2 | Implement ExtractionsController + service | List extraction results, get detail, edit/verify fields. Read from ai-service via gRPC | L |
-| 7B.3 | Implement BidInformationController + service | Approve extracted bid info → create bid_information row. Edit fields. Promote key fields to tenders table | L |
-| 7B.4 | Write tests for Documents, Extractions, BidInfo | Integration + unit tests | L |
+| # | Story | Description | Est | Status |
+|---|-------|-------------|-----|--------|
+| 7B.1 | Implement TenderDocumentsController + service | Presigned URL upload/download, list with cursor pagination, delete, S3 → SQS upload pipeline with magic byte validation | L | ✅ |
+| 7B.2 | Implement ExtractionsController + service | List extraction results, get detail, edit/verify fields. Read from ai-service via gRPC | L | ❌ |
+| 7B.3 | Implement BidInformationController + service | Approve extracted bid info → create bid_information row. Edit fields. Promote key fields to tenders table | L | ❌ |
+| 7B.4 | Write tests for Documents, Extractions, BidInfo | TenderDocumentControllerSpec, TenderDocumentServiceSpec, TenderDocumentRepositorySpec, DocumentUploadHandlerSpec, DocumentUploadProcessorSpec — all passing. Extraction tests not yet written | L | 🔶 Partial |
 
 ### Sub-epic 7C: Trade Packages + RFQs (W7.5–W8.5)
 

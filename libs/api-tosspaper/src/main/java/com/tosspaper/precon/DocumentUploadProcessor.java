@@ -49,8 +49,10 @@ public class DocumentUploadProcessor {
 
         String documentId = metadata.getDocumentId();
 
-        TenderDocumentsRecord document = documentRepository.findById(documentId).orElse(null);
-        if (document == null) {
+        TenderDocumentsRecord document;
+        try {
+            document = documentRepository.findById(documentId);
+        } catch (com.tosspaper.common.NotFoundException e) {
             log.warn("Document record not found - id: {}, may have been deleted", documentId);
             return;
         }
