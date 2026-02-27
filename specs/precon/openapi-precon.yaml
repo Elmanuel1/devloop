@@ -1953,14 +1953,8 @@ paths:
             schema:
               $ref: '#/components/schemas/ExtractionCreateRequest'
       responses:
-        '201':
-          description: Extraction created
-          headers:
-            Location:
-              schema:
-                type: string
-                format: uri
-              description: URI of the created extraction (/v1/extractions/{id})
+        '202':
+          description: Extraction accepted — job is processing asynchronously
           content:
             application/json:
               schema:
