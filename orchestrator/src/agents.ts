@@ -4,44 +4,19 @@ import { createWorktree, removeWorktree } from "./utils/worktree.ts";
 import { config } from "./config.ts";
 import log from "./utils/logger.ts";
 
-const AGENTS_DIR = ".claude/agents";
-
 /**
- * Verifies that the agent spec file exists.
- * Throws if the file cannot be found.
- */
-async function resolveAgentSpecPath(agent: string): Promise<string> {
-  const specPath = `${AGENTS_DIR}/${agent}.md`;
-  const file = Bun.file(specPath);
-  const exists = await file.exists();
-  if (!exists) {
-    throw new Error(`Agent spec not found: ${specPath}`);
-  }
-  return specPath;
-}
-
-/**
- * Reads the agent spec file content.
- */
-async function readAgentSpec(specPath: string): Promise<string> {
-  return Bun.file(specPath).text();
-}
-
-/**
- * Pure agent runner — spawns `claude -p --output-format json`, passes the
- * combined agent spec + prompt via stdin, enforces a 1-hour hard timeout and
- * a 10-minute heartbeat watchdog, then returns the parsed result.
+ * Pure agent runner — spawns `claude -p --output-format json --agent {agent}`,
+ * passes the prompt via stdin, enforces a 1-hour hard timeout and a 10-minute
+ * heartbeat watchdog, then returns the parsed result.
  *
- * NO business logic lives here. Callers decide what to do with the result.
+ * Claude Code automatically loads `.claude/agents/{agent}.md` via the --agent
+ * flag. NO business logic lives here. Callers decide what to do with the result.
  */
 export async function claudeAgent(
   agent: string,
   prompt: string,
   opts?: AgentOptions
 ): Promise<AgentResult> {
-  const specPath = await resolveAgentSpecPath(agent);
-  const agentSpec = await readAgentSpec(specPath);
-
   const timeoutMs = opts?.timeoutMs ?? config.agentTimeoutMs;
   const heartbeatMs = opts?.heartbeatMs ?? config.agentHeartbeatMs;
   const cwd = opts?.cwd ?? process.cwd();
@@ -59,7 +34,6 @@ export async function claudeAgent(
   try {
     return await runAgent(
       agent,
-      agentSpec,
       prompt,
       spawnCwd,
       timeoutMs,
@@ -91,7 +65,6 @@ type RunOutcome =
  */
 async function runAgent(
   agent: string,
-  agentSpec: string,
   prompt: string,
   cwd: string,
   timeoutMs: number,
@@ -100,14 +73,11 @@ async function runAgent(
 ): Promise<AgentResult> {
   const startMs = Date.now();
 
-  const args = ["claude", "-p", "--output-format", "json"];
+  const args = ["claude", "-p", "--output-format", "json", "--agent", agent];
 
   if (allowedTools !== undefined && allowedTools.length > 0) {
     args.push("--allowedTools", allowedTools.join(","));
   }
-
-  // Combine agent spec + user prompt as the full input
-  const stdinContent = `${agentSpec}\n\n---\n\n${prompt}`;
 
   const proc = Bun.spawn(args, {
     cwd,
@@ -118,7 +88,7 @@ async function runAgent(
 
   // Write the prompt to stdin and close the stream.
   // Bun.spawn with stdin:"pipe" returns a FileSink (not a WHATWG WritableStream).
-  proc.stdin.write(stdinContent);
+  proc.stdin.write(prompt);
   proc.stdin.end();
 
   // ─── Outcome promise ─────────────────────────────────────────────────────────

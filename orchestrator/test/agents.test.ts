@@ -3,12 +3,11 @@ import { claudeAgent } from "../src/agents.ts";
 
 // ─── Test Doubles ─────────────────────────────────────────────────────────────
 //
-// We mock Bun.file and Bun.spawn so no real filesystem or process is touched.
+// We mock Bun.spawn so no real process is touched.
 //
 // Control variables per-test:
-//   fakeExitCode     : exit code the spawned process returns
-//   fakeStdout       : bytes the process writes to stdout
-//   agentFileExists  : whether .claude/agents/{name}.md exists
+//   fakeExitCode        : exit code the spawned process returns
+//   fakeStdout          : bytes the process writes to stdout
 //   heartbeatShouldFire : when true, process never emits stdout (hung)
 
 interface FakeSpawnCall {
@@ -19,12 +18,7 @@ interface FakeSpawnCall {
 let spawnCalls: FakeSpawnCall[] = [];
 let fakeExitCode = 0;
 let fakeStdout = "";
-let agentFileExists = true;
 let heartbeatShouldFire = false;
-
-// Keep a reference to the original Bun.file so the mock can delegate
-// non-agent-spec paths to it (avoids breaking process.stdout internals).
-const originalBunFile = Bun.file.bind(Bun);
 
 function makeFakeStdin() {
   return {
@@ -78,22 +72,7 @@ beforeEach(() => {
   spawnCalls = [];
   fakeExitCode = 0;
   fakeStdout = "";
-  agentFileExists = true;
   heartbeatShouldFire = false;
-
-  // Mock Bun.file — delegates non-agent paths to the original implementation
-  // so that process.stdout / process.stderr internals continue to work.
-  // @ts-expect-error — intentionally replacing Bun.file for testing
-  Bun.file = (path: string | number | URL, options?: BlobPropertyBag) => {
-    if (typeof path === "string" && path.includes(".claude/agents/")) {
-      return {
-        exists: async () => agentFileExists,
-        text: async () => "# Agent Spec\n\nYou are a helpful agent.",
-      };
-    }
-    // Delegate everything else to the real Bun.file
-    return originalBunFile(path as string, options);
-  };
 
   // Mock Bun.spawn — controls spawned process behaviour
   // @ts-expect-error — intentionally replacing Bun.spawn
@@ -131,7 +110,7 @@ describe("claudeAgent — success case", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  test("spawns claude with -p and --output-format json flags", async () => {
+  test("spawns claude with -p, --output-format json, and --agent flags", async () => {
     fakeStdout = JSON.stringify({ result: "ok" });
 
     await claudeAgent("code-writer", "Build it");
@@ -142,6 +121,9 @@ describe("claudeAgent — success case", () => {
     expect(claudeCall!.args).toContain("-p");
     expect(claudeCall!.args).toContain("--output-format");
     expect(claudeCall!.args).toContain("json");
+    expect(claudeCall!.args).toContain("--agent");
+    const agentIdx = claudeCall!.args.indexOf("--agent");
+    expect(claudeCall!.args[agentIdx + 1]).toBe("code-writer");
   });
 
   test("passes allowedTools flag when opts.allowedTools is set", async () => {
@@ -183,45 +165,6 @@ describe("claudeAgent — success case", () => {
     const result = await claudeAgent("architect", "Go");
 
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
-  });
-});
-
-// ─── Missing agent file ───────────────────────────────────────────────────────
-
-describe("claudeAgent — missing agent file", () => {
-  test("throws an error when agent spec file does not exist", async () => {
-    agentFileExists = false;
-
-    await expect(claudeAgent("nonexistent-agent", "prompt")).rejects.toThrow(
-      "Agent spec not found"
-    );
-  });
-
-  test("claude is NOT spawned when agent file is missing", async () => {
-    agentFileExists = false;
-
-    try {
-      await claudeAgent("nonexistent-agent", "prompt");
-    } catch {
-      // expected
-    }
-
-    const claudeCall = spawnCalls.find((c) => c.args.includes("claude"));
-    expect(claudeCall).toBeUndefined();
-  });
-
-  test("error message includes the agent name", async () => {
-    agentFileExists = false;
-
-    let caught: Error | undefined;
-    try {
-      await claudeAgent("missing-bot", "prompt");
-    } catch (err) {
-      caught = err as Error;
-    }
-
-    expect(caught).toBeDefined();
-    expect(caught!.message).toContain("missing-bot");
   });
 });
 
