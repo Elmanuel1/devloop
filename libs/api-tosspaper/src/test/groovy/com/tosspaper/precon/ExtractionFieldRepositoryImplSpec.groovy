@@ -298,38 +298,6 @@ class ExtractionFieldRepositoryImplSpec extends BaseIntegrationTest {
             results[0].id == real.id
     }
 
-    // ==================== updateEditedValue ====================
-
-    def "TC-RF-UV01: should update edited_value and updated_at for an existing field"() {
-        given: "an extraction field without an edited value"
-            def inserted = insertFieldRecord(extractionId, "closing_date", "date")
-            def originalUpdatedAt = inserted.updatedAt
-
-        when: "updating the edited value"
-            Thread.sleep(20)
-            def newValue = JSONB.valueOf('"2025-12-31"')
-            def rowsUpdated = extractionFieldRepository.updateEditedValue(inserted.id, newValue)
-
-        then: "1 row updated"
-            rowsUpdated == 1
-
-        and: "edited_value and updated_at are changed in the database"
-            def updated = extractionFieldRepository.findById(inserted.id)
-            updated.editedValue == newValue
-            updated.updatedAt != null
-    }
-
-    def "TC-RF-UV02: should return 0 for non-existent field ID"() {
-        when: "updating a non-existent field"
-            def rowsUpdated = extractionFieldRepository.updateEditedValue(
-                "nonexistent-id",
-                JSONB.valueOf('"some value"')
-            )
-
-        then: "0 rows updated"
-            rowsUpdated == 0
-    }
-
     // ==================== deleteByExtractionId ====================
 
     def "TC-RF-DB01: should delete all fields for an extraction leaving other extractions untouched"() {

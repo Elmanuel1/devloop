@@ -93,15 +93,6 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
     }
 
     @Override
-    public int updateEditedValue(String id, JSONB editedValue) {
-        return dsl.update(EXTRACTION_FIELDS)
-                .set(EXTRACTION_FIELDS.EDITED_VALUE, editedValue)
-                .set(EXTRACTION_FIELDS.UPDATED_AT, DSL.currentOffsetDateTime())
-                .where(EXTRACTION_FIELDS.ID.eq(id))
-                .execute();
-    }
-
-    @Override
     public int deleteByExtractionId(String extractionId) {
         log.info("Deleting extraction fields for extraction - id: {}", extractionId);
         return dsl.deleteFrom(EXTRACTION_FIELDS)
@@ -113,26 +104,29 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
     public BulkUpdateResult bulkUpdateEditedValues(List<FieldEditUpdate> updates,
                                                     String extractionId,
                                                     int expectedVersion) {
-        List<ExtractionFieldsRecord> updatedRecords = new ArrayList<>();
-        for (FieldEditUpdate update : updates) {
-            ExtractionFieldsRecord updated = dsl.update(EXTRACTION_FIELDS)
-                    .set(EXTRACTION_FIELDS.EDITED_VALUE, update.editedValue())
-                    .set(EXTRACTION_FIELDS.UPDATED_AT, DSL.currentOffsetDateTime())
-                    .where(EXTRACTION_FIELDS.ID.eq(update.fieldId()))
-                    .returning()
-                    .fetchSingle();
-            updatedRecords.add(updated);
-        }
+        return dsl.transactionResult(tx -> {
+            DSLContext ctx = tx.dsl();
+            List<ExtractionFieldsRecord> updatedRecords = new ArrayList<>();
+            for (FieldEditUpdate update : updates) {
+                ExtractionFieldsRecord updated = ctx.update(EXTRACTION_FIELDS)
+                        .set(EXTRACTION_FIELDS.EDITED_VALUE, update.editedValue())
+                        .set(EXTRACTION_FIELDS.UPDATED_AT, DSL.currentOffsetDateTime())
+                        .where(EXTRACTION_FIELDS.ID.eq(update.fieldId()))
+                        .returning()
+                        .fetchSingle();
+                updatedRecords.add(updated);
+            }
 
-        int rowsUpdated = dsl.update(EXTRACTIONS)
-                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
-                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
-                .where(EXTRACTIONS.ID.eq(extractionId))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .and(EXTRACTIONS.VERSION.eq(expectedVersion))
-                .execute();
+            int rowsUpdated = ctx.update(EXTRACTIONS)
+                    .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
+                    .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
+                    .where(EXTRACTIONS.ID.eq(extractionId))
+                    .and(EXTRACTIONS.DELETED_AT.isNull())
+                    .and(EXTRACTIONS.VERSION.eq(expectedVersion))
+                    .execute();
 
-        return new BulkUpdateResult(updatedRecords, rowsUpdated);
+            return new BulkUpdateResult(updatedRecords, rowsUpdated);
+        });
     }
 
     private String serializeCitationFilter(String documentId) {

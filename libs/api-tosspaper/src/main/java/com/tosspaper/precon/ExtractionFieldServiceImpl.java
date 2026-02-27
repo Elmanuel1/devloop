@@ -18,7 +18,6 @@ import com.tosspaper.precon.generated.model.Pagination;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Set;
@@ -80,7 +79,6 @@ public class ExtractionFieldServiceImpl implements ExtractionFieldService {
     }
 
     @Override
-    @Transactional
     public ExtractionFieldBulkUpdateResponse bulkUpdateFields(Long companyId, String extractionId,
                                                                String ifMatch,
                                                                ExtractionFieldBulkUpdateRequest request) {
