@@ -46,6 +46,12 @@ export class DesignRepository {
       .run(status, id);
   }
 
+  updateDesignStage(id: string, stage: string): void {
+    this.db
+      .query("UPDATE design SET stage = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(stage, id);
+  }
+
   setPageId(id: string, pageId: string): void {
     this.db
       .query("UPDATE design SET page_id = ?, updated_at = datetime('now') WHERE id = ?")

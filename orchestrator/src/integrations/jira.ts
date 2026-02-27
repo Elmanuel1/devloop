@@ -60,15 +60,11 @@ export class JiraRestClient implements JiraClient {
     const body = {
       fields: {
         project: { key: this.projectKey },
+        ...fields,
         issuetype: { name: "Sub-task" },
         parent: { key: parentKey },
-        ...fields,
-        // Ensure issuetype is Sub-task regardless of caller
-        ...(fields.issuetype ? {} : {}),
       },
     };
-    // Override issuetype to Sub-task
-    (body.fields as Record<string, unknown>).issuetype = { name: "Sub-task" };
     return this.request<{ key: string; id: string }>("POST", "/rest/api/3/issue", body);
   }
 

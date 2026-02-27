@@ -4,10 +4,10 @@ import { ConfluenceRestClient } from "../../src/integrations/confluence.ts";
 const BASE_URL = "https://example.atlassian.net/wiki";
 const EMAIL = "user@example.com";
 const API_TOKEN = "test-token";
-const SPACE_KEY = "TOS";
+const SPACE_ID = "TOS";
 
 function makeClient() {
-  return new ConfluenceRestClient({ baseUrl: BASE_URL, email: EMAIL, apiToken: API_TOKEN, spaceKey: SPACE_KEY });
+  return new ConfluenceRestClient({ baseUrl: BASE_URL, email: EMAIL, apiToken: API_TOKEN, spaceId: SPACE_ID });
 }
 
 function pageResponse(overrides: Record<string, unknown> = {}) {
@@ -53,7 +53,7 @@ describe("ConfluenceRestClient — createPage", () => {
     expect(capturedUrl).toBe(`${BASE_URL}/api/v2/pages`);
     const body = capturedBody as Record<string, unknown>;
     expect(body.title).toBe("Test Page");
-    expect(body.spaceId).toBe(SPACE_KEY);
+    expect(body.spaceId).toBe(SPACE_ID);
     expect((body.body as Record<string, unknown>).value).toBe("<p>body</p>");
 
     expect(result.id).toBe("123456");
@@ -145,7 +145,7 @@ describe("ConfluenceRestClient — findPage", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("GETs /api/v2/pages with title and spaceKey params and returns first result", async () => {
+  test("GETs /api/v2/pages with title and space-id params and returns first result", async () => {
     let capturedUrl = "";
 
     globalThis.fetch = mock(async (url: string) => {
@@ -164,7 +164,7 @@ describe("ConfluenceRestClient — findPage", () => {
 
     expect(capturedUrl).toContain("/api/v2/pages");
     expect(capturedUrl).toContain("title=Test+Page");
-    expect(capturedUrl).toContain(`spaceKey=${SPACE_KEY}`);
+    expect(capturedUrl).toContain(`space-id=${SPACE_ID}`);
     expect(result).not.toBeNull();
     expect(result!.id).toBe("123456");
   });

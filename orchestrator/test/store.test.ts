@@ -113,6 +113,14 @@ describe("Store — design CRUD", () => {
     const result = store.designs.listDesignsByStatus("complete");
     expect(result).toHaveLength(0);
   });
+
+  test("updateDesignStage changes the stage field", () => {
+    const record = store.designs.createDesign({});
+    store.designs.updateDesignStage(record.id, "implementation");
+
+    const updated = store.designs.getDesign(record.id);
+    expect(updated!.stage).toBe("implementation");
+  });
 });
 
 describe("Store — design_output CRUD", () => {

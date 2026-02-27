@@ -8,7 +8,7 @@ export interface ConfluenceConfig {
   baseUrl: string;
   email: string;
   apiToken: string;
-  spaceKey: string;
+  spaceId: string;
 }
 
 interface ConfluencePageApiResponse {
@@ -41,11 +41,11 @@ interface ConfluenceFooterCommentListResponse {
 export class ConfluenceRestClient implements ConfluenceClient {
   private readonly baseUrl: string;
   private readonly authHeader: string;
-  private readonly spaceKey: string;
+  private readonly spaceId: string;
 
   constructor(cfg: ConfluenceConfig) {
     this.baseUrl = cfg.baseUrl.replace(/\/$/, "");
-    this.spaceKey = cfg.spaceKey;
+    this.spaceId = cfg.spaceId;
     const credentials = `${cfg.email}:${cfg.apiToken}`;
     this.authHeader = `Basic ${Buffer.from(credentials).toString("base64")}`;
   }
@@ -87,7 +87,7 @@ export class ConfluenceRestClient implements ConfluenceClient {
 
   async createPage(title: string, body: string, parentId?: string): Promise<ConfluencePage> {
     const requestBody: Record<string, unknown> = {
-      spaceId: this.spaceKey,
+      spaceId: this.spaceId,
       status: "current",
       title,
       body: {
@@ -126,7 +126,7 @@ export class ConfluenceRestClient implements ConfluenceClient {
   async findPage(title: string): Promise<ConfluencePage | null> {
     const params = new URLSearchParams({
       title,
-      spaceKey: this.spaceKey,
+      "space-id": this.spaceId,
     });
 
     const data = await this.request<ConfluencePageListResponse>(
@@ -170,7 +170,7 @@ export class ConfluenceRestClient implements ConfluenceClient {
 
   async getPagesInReview(): Promise<ConfluencePage[]> {
     const params = new URLSearchParams({
-      spaceKey: this.spaceKey,
+      "space-id": this.spaceId,
     });
 
     const data = await this.request<ConfluencePageListResponse>(

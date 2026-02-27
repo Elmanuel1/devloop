@@ -55,7 +55,7 @@ export const config = {
     baseUrl: env("CONFLUENCE_BASE_URL", ""),
     email: env("CONFLUENCE_EMAIL", ""),
     apiToken: env("CONFLUENCE_API_TOKEN", ""),
-    spaceKey: env("CONFLUENCE_SPACE_KEY", ""),
+    spaceId: env("CONFLUENCE_SPACE_ID", ""),
   },
 
   github: {
