@@ -1229,7 +1229,6 @@ components:
           items:
             type: string
             format: uuid
-          minItems: 1
           description: >
             Optional subset of documents to extract from (TenderDocument.id).
             All must belong to the specified entity_id. If omitted, extracts
@@ -1238,7 +1237,6 @@ components:
           type: array
           items:
             type: string
-          minItems: 1
           description: >
             Optional list of field names to extract. Validated server-side
             against the entity-specific enum (TenderFieldName for tenders).
