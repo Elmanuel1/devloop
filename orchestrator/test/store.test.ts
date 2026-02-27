@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { Store } from "../src/store.ts";
+import { Store } from "../src/store/index.ts";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -11,23 +11,9 @@ const MIGRATIONS_DIR = join(
 );
 
 async function createTestStore(): Promise<Store> {
-  const store = new Store(":memory:", 3);
-  await store.runMigrations(MIGRATIONS_DIR);
+  const store = new Store(":memory:");
+  await store.migrator.runMigrations(MIGRATIONS_DIR);
   return store;
-}
-
-function makeDesign(overrides: Partial<{
-  slackChannel: string;
-  slackThreadTs: string;
-  requestedBy: string;
-  requestText: string;
-}> = {}) {
-  return {
-    slackChannel: overrides.slackChannel ?? "C12345",
-    slackThreadTs: overrides.slackThreadTs ?? "1234567890.000001",
-    requestedBy: overrides.requestedBy ?? "U99999",
-    requestText: overrides.requestText ?? "Build me something awesome",
-  };
 }
 
 describe("Store — design CRUD", () => {
@@ -38,76 +24,93 @@ describe("Store — design CRUD", () => {
   });
 
   test("createDesign returns a design with correct fields", () => {
-    const data = makeDesign();
-    const record = store.createDesign(data);
+    const record = store.designs.createDesign({ description: "Build something awesome" });
 
     expect(record.id).toBeTruthy();
-    expect(record.slack_channel).toBe(data.slackChannel);
-    expect(record.slack_thread_ts).toBe(data.slackThreadTs);
-    expect(record.requested_by).toBe(data.requestedBy);
-    expect(record.request_text).toBe(data.requestText);
-    expect(record.status).toBe("requested");
-    expect(record.confluence_page_id).toBeNull();
-    expect(record.jira_epic_key).toBeNull();
+    expect(record.description).toBe("Build something awesome");
+    expect(record.stage).toBe("design");
+    expect(record.status).toBe("running");
+    expect(record.page_id).toBeNull();
+    expect(record.parent_key).toBeNull();
+    expect(record.review_attempts).toBe(0);
     expect(record.created_at).toBeTruthy();
     expect(record.updated_at).toBeTruthy();
   });
 
+  test("createDesign uses defaults when no data provided", () => {
+    const record = store.designs.createDesign({});
+
+    expect(record.stage).toBe("design");
+    expect(record.status).toBe("running");
+    expect(record.description).toBeNull();
+  });
+
   test("getDesign returns the design by id", () => {
-    const record = store.createDesign(makeDesign());
-    const fetched = store.getDesign(record.id);
+    const record = store.designs.createDesign({ description: "test" });
+    const fetched = store.designs.getDesign(record.id);
 
     expect(fetched).not.toBeNull();
     expect(fetched!.id).toBe(record.id);
   });
 
   test("getDesign returns null for unknown id", () => {
-    const result = store.getDesign("non-existent-id");
+    const result = store.designs.getDesign("non-existent-id");
     expect(result).toBeNull();
   });
 
   test("updateDesignStatus changes the status field", () => {
-    const record = store.createDesign(makeDesign());
-    store.updateDesignStatus(record.id, "designing");
+    const record = store.designs.createDesign({});
+    store.designs.updateDesignStatus(record.id, "approved");
 
-    const updated = store.getDesign(record.id);
-    expect(updated!.status).toBe("designing");
+    const updated = store.designs.getDesign(record.id);
+    expect(updated!.status).toBe("approved");
   });
 
-  test("setConfluencePageId stores the page id", () => {
-    const record = store.createDesign(makeDesign());
-    store.setConfluencePageId(record.id, "page-abc-123");
+  test("setPageId stores the page id", () => {
+    const record = store.designs.createDesign({});
+    store.designs.setPageId(record.id, "page-abc-123");
 
-    const updated = store.getDesign(record.id);
-    expect(updated!.confluence_page_id).toBe("page-abc-123");
+    const updated = store.designs.getDesign(record.id);
+    expect(updated!.page_id).toBe("page-abc-123");
   });
 
-  test("setJiraEpicKey stores the epic key", () => {
-    const record = store.createDesign(makeDesign());
-    store.setJiraEpicKey(record.id, "TOS-42");
+  test("setParentKey stores the parent key", () => {
+    const record = store.designs.createDesign({});
+    store.designs.setParentKey(record.id, "TOS-42");
 
-    const updated = store.getDesign(record.id);
-    expect(updated!.jira_epic_key).toBe("TOS-42");
+    const updated = store.designs.getDesign(record.id);
+    expect(updated!.parent_key).toBe("TOS-42");
+  });
+
+  test("incrementReviewAttempts increments by 1 each call", () => {
+    const record = store.designs.createDesign({});
+    expect(record.review_attempts).toBe(0);
+
+    store.designs.incrementReviewAttempts(record.id);
+    expect(store.designs.getDesign(record.id)!.review_attempts).toBe(1);
+
+    store.designs.incrementReviewAttempts(record.id);
+    expect(store.designs.getDesign(record.id)!.review_attempts).toBe(2);
   });
 
   test("listDesignsByStatus returns only matching designs", () => {
-    const d1 = store.createDesign(makeDesign({ requestText: "req 1" }));
-    const d2 = store.createDesign(makeDesign({ requestText: "req 2" }));
-    store.createDesign(makeDesign({ requestText: "req 3" }));
+    const d1 = store.designs.createDesign({ description: "req 1" });
+    const d2 = store.designs.createDesign({ description: "req 2" });
+    store.designs.createDesign({ description: "req 3" });
 
-    store.updateDesignStatus(d1.id, "designing");
-    store.updateDesignStatus(d2.id, "designing");
+    store.designs.updateDesignStatus(d1.id, "approved");
+    store.designs.updateDesignStatus(d2.id, "approved");
 
-    const designing = store.listDesignsByStatus("designing");
-    expect(designing).toHaveLength(2);
+    const approved = store.designs.listDesignsByStatus("approved");
+    expect(approved).toHaveLength(2);
 
-    const requested = store.listDesignsByStatus("requested");
-    expect(requested).toHaveLength(1);
+    const running = store.designs.listDesignsByStatus("running");
+    expect(running).toHaveLength(1);
   });
 
   test("listDesignsByStatus returns empty array when no match", () => {
-    store.createDesign(makeDesign());
-    const result = store.listDesignsByStatus("complete");
+    store.designs.createDesign({});
+    const result = store.designs.listDesignsByStatus("complete");
     expect(result).toHaveLength(0);
   });
 });
@@ -118,67 +121,43 @@ describe("Store — design_output CRUD", () => {
 
   beforeEach(async () => {
     store = await createTestStore();
-    designId = store.createDesign(makeDesign()).id;
+    designId = store.designs.createDesign({ description: "test design" }).id;
   });
 
   test("createDesignOutput returns a record with correct fields", () => {
-    const record = store.createDesignOutput({
-      designId,
-      stage: "architect",
-      agent: "architect-agent",
-      output: "The plan...",
-      costUsd: 0.05,
-      durationMs: 1500,
-    });
+    const record = store.designs.createDesignOutput(designId, "design_doc", "/designs/abc/design/design_doc.md");
 
-    expect(record.id).toBeTruthy();
     expect(record.design_id).toBe(designId);
-    expect(record.stage).toBe("architect");
-    expect(record.agent).toBe("architect-agent");
-    expect(record.output).toBe("The plan...");
-    expect(record.cost_usd).toBe(0.05);
-    expect(record.duration_ms).toBe(1500);
-    expect(record.created_at).toBeTruthy();
-  });
-
-  test("createDesignOutput handles missing optional fields", () => {
-    const record = store.createDesignOutput({
-      designId,
-      stage: "architect",
-      agent: "architect-agent",
-      output: "output",
-    });
-
-    expect(record.cost_usd).toBeNull();
-    expect(record.duration_ms).toBeNull();
+    expect(record.output_key).toBe("design_doc");
+    expect(record.output_path).toBe("/designs/abc/design/design_doc.md");
   });
 
   test("getDesignOutputs returns all outputs for a design", () => {
-    store.createDesignOutput({ designId, stage: "architect", agent: "a", output: "out1" });
-    store.createDesignOutput({ designId, stage: "code_writer", agent: "b", output: "out2" });
+    store.designs.createDesignOutput(designId, "design_doc", "/designs/abc/design/design_doc.md");
+    store.designs.createDesignOutput(designId, "design_doc_r1", "/designs/abc/design/design_doc.r1.md");
 
-    const outputs = store.getDesignOutputs(designId);
+    const outputs = store.designs.getDesignOutputs(designId);
     expect(outputs).toHaveLength(2);
   });
 
   test("getDesignOutputs returns empty array for unknown designId", () => {
-    const result = store.getDesignOutputs("unknown");
+    const result = store.designs.getDesignOutputs("unknown");
     expect(result).toHaveLength(0);
   });
 
-  test("getDesignOutputsByStage filters by stage", () => {
-    store.createDesignOutput({ designId, stage: "architect", agent: "a", output: "out1" });
-    store.createDesignOutput({ designId, stage: "architect", agent: "a", output: "out2" });
-    store.createDesignOutput({ designId, stage: "code_writer", agent: "b", output: "out3" });
+  test("getDesignOutputByKey returns the specific output", () => {
+    store.designs.createDesignOutput(designId, "design_doc", "/designs/abc/design/design_doc.md");
+    store.designs.createDesignOutput(designId, "design_doc_r1", "/designs/abc/design/design_doc.r1.md");
 
-    const architectOutputs = store.getDesignOutputsByStage(designId, "architect");
-    expect(architectOutputs).toHaveLength(2);
+    const record = store.designs.getDesignOutputByKey(designId, "design_doc");
+    expect(record).not.toBeNull();
+    expect(record!.output_key).toBe("design_doc");
+    expect(record!.output_path).toBe("/designs/abc/design/design_doc.md");
+  });
 
-    const codeWriterOutputs = store.getDesignOutputsByStage(designId, "code_writer");
-    expect(codeWriterOutputs).toHaveLength(1);
-
-    const reviewerOutputs = store.getDesignOutputsByStage(designId, "reviewer");
-    expect(reviewerOutputs).toHaveLength(0);
+  test("getDesignOutputByKey returns null for unknown key", () => {
+    const result = store.designs.getDesignOutputByKey(designId, "missing_key");
+    expect(result).toBeNull();
   });
 });
 
@@ -188,90 +167,112 @@ describe("Store — pr_state CRUD", () => {
 
   beforeEach(async () => {
     store = await createTestStore();
-    designId = store.createDesign(makeDesign()).id;
+    designId = store.designs.createDesign({ description: "test design" }).id;
   });
 
   test("createPRState returns a record with correct fields", () => {
-    const record = store.createPRState({
-      designId,
+    const record = store.prStates.createPRState({
       prNumber: 42,
-      branch: "feature/TOS-1-something",
-      jiraSubtaskKey: "TOS-43",
+      designId,
+      stage: "implementation",
+      issueKey: "TOS-43",
+      parentKey: "TOS-40",
+      featureSlug: "payments",
     });
 
-    expect(record.id).toBeTruthy();
-    expect(record.design_id).toBe(designId);
     expect(record.pr_number).toBe(42);
-    expect(record.branch).toBe("feature/TOS-1-something");
-    expect(record.jira_subtask_key).toBe("TOS-43");
-    expect(record.status).toBe("open");
+    expect(record.design_id).toBe(designId);
+    expect(record.stage).toBe("implementation");
+    expect(record.issue_key).toBe("TOS-43");
+    expect(record.parent_key).toBe("TOS-40");
+    expect(record.feature_slug).toBe("payments");
+    expect(record.ci_status).toBe("pending");
+    expect(record.review_status).toBe("pending");
     expect(record.ci_attempts).toBe(0);
     expect(record.review_attempts).toBe(0);
     expect(record.created_at).toBeTruthy();
     expect(record.updated_at).toBeTruthy();
   });
 
-  test("createPRState works without jiraSubtaskKey", () => {
-    const record = store.createPRState({
-      designId,
+  test("createPRState works without optional fields", () => {
+    const record = store.prStates.createPRState({
       prNumber: 10,
-      branch: "feature/branch",
+      designId,
+      stage: "implementation",
     });
 
-    expect(record.jira_subtask_key).toBeNull();
+    expect(record.issue_key).toBeNull();
+    expect(record.parent_key).toBeNull();
+    expect(record.feature_slug).toBeNull();
   });
 
   test("getPRState returns the record by prNumber", () => {
-    store.createPRState({ designId, prNumber: 55, branch: "feature/x" });
+    store.prStates.createPRState({ prNumber: 55, designId, stage: "implementation" });
 
-    const fetched = store.getPRState(55);
+    const fetched = store.prStates.getPRState(55);
     expect(fetched).not.toBeNull();
     expect(fetched!.pr_number).toBe(55);
   });
 
   test("getPRState returns null for unknown prNumber", () => {
-    const result = store.getPRState(9999);
+    const result = store.prStates.getPRState(9999);
     expect(result).toBeNull();
   });
 
   test("getPRStatesByDesign returns all PRs for a design", () => {
-    store.createPRState({ designId, prNumber: 1, branch: "feature/a" });
-    store.createPRState({ designId, prNumber: 2, branch: "feature/b" });
+    store.prStates.createPRState({ prNumber: 1, designId, stage: "implementation" });
+    store.prStates.createPRState({ prNumber: 2, designId, stage: "implementation" });
 
-    const d2 = store.createDesign(makeDesign()).id;
-    store.createPRState({ designId: d2, prNumber: 3, branch: "feature/c" });
+    const d2 = store.designs.createDesign({ description: "other design" }).id;
+    store.prStates.createPRState({ prNumber: 3, designId: d2, stage: "implementation" });
 
-    const prs = store.getPRStatesByDesign(designId);
+    const prs = store.prStates.getPRStatesByDesign(designId);
     expect(prs).toHaveLength(2);
     expect(prs.map((p) => p.pr_number)).toEqual([1, 2]);
   });
 
-  test("updatePRStatus changes the status", () => {
-    store.createPRState({ designId, prNumber: 7, branch: "feature/y" });
-    store.updatePRStatus(7, "ci_passed");
+  test("updatePRStage changes the stage", () => {
+    store.prStates.createPRState({ prNumber: 7, designId, stage: "implementation" });
+    store.prStates.updatePRStage(7, "merged");
 
-    const fetched = store.getPRState(7);
-    expect(fetched!.status).toBe("ci_passed");
+    const fetched = store.prStates.getPRState(7);
+    expect(fetched!.stage).toBe("merged");
+  });
+
+  test("updateCIStatus changes ci_status", () => {
+    store.prStates.createPRState({ prNumber: 20, designId, stage: "implementation" });
+    store.prStates.updateCIStatus(20, "passing");
+
+    const fetched = store.prStates.getPRState(20);
+    expect(fetched!.ci_status).toBe("passing");
+  });
+
+  test("updateReviewStatus changes review_status", () => {
+    store.prStates.createPRState({ prNumber: 21, designId, stage: "implementation" });
+    store.prStates.updateReviewStatus(21, "passing");
+
+    const fetched = store.prStates.getPRState(21);
+    expect(fetched!.review_status).toBe("passing");
   });
 
   test("incrementCIAttempts increments by 1 each call", () => {
-    store.createPRState({ designId, prNumber: 8, branch: "feature/z" });
+    store.prStates.createPRState({ prNumber: 8, designId, stage: "implementation" });
 
-    store.incrementCIAttempts(8);
-    expect(store.getPRState(8)!.ci_attempts).toBe(1);
+    store.prStates.incrementCIAttempts(8);
+    expect(store.prStates.getPRState(8)!.ci_attempts).toBe(1);
 
-    store.incrementCIAttempts(8);
-    expect(store.getPRState(8)!.ci_attempts).toBe(2);
+    store.prStates.incrementCIAttempts(8);
+    expect(store.prStates.getPRState(8)!.ci_attempts).toBe(2);
   });
 
-  test("incrementReviewAttempts increments by 1 each call", () => {
-    store.createPRState({ designId, prNumber: 9, branch: "feature/w" });
+  test("incrementPRReviewAttempts increments by 1 each call", () => {
+    store.prStates.createPRState({ prNumber: 9, designId, stage: "implementation" });
 
-    store.incrementReviewAttempts(9);
-    expect(store.getPRState(9)!.review_attempts).toBe(1);
+    store.prStates.incrementPRReviewAttempts(9);
+    expect(store.prStates.getPRState(9)!.review_attempts).toBe(1);
 
-    store.incrementReviewAttempts(9);
-    expect(store.getPRState(9)!.review_attempts).toBe(2);
+    store.prStates.incrementPRReviewAttempts(9);
+    expect(store.prStates.getPRState(9)!.review_attempts).toBe(2);
   });
 });
 
@@ -281,60 +282,62 @@ describe("Store — queries", () => {
 
   beforeEach(async () => {
     store = await createTestStore();
-    designId = store.createDesign(makeDesign()).id;
+    designId = store.designs.createDesign({ description: "test design" }).id;
   });
 
-  test("checkReadyForHuman returns true when ci_passed and review_attempts < maxRetries", () => {
-    store.createPRState({ designId, prNumber: 100, branch: "feature/a" });
-    store.updatePRStatus(100, "ci_passed");
+  test("checkReadyForHuman returns true when ci_status and review_status are both passing", () => {
+    store.prStates.createPRState({ prNumber: 100, designId, stage: "implementation" });
+    store.prStates.updateCIStatus(100, "passing");
+    store.prStates.updateReviewStatus(100, "passing");
 
-    expect(store.checkReadyForHuman(100)).toBe(true);
+    expect(store.prStates.checkReadyForHuman(100)).toBe(true);
   });
 
-  test("checkReadyForHuman returns false when status is not ci_passed", () => {
-    store.createPRState({ designId, prNumber: 101, branch: "feature/b" });
-    store.updatePRStatus(101, "in_review");
+  test("checkReadyForHuman returns false when ci_status is not passing", () => {
+    store.prStates.createPRState({ prNumber: 101, designId, stage: "implementation" });
+    store.prStates.updateReviewStatus(101, "passing");
 
-    expect(store.checkReadyForHuman(101)).toBe(false);
+    expect(store.prStates.checkReadyForHuman(101)).toBe(false);
   });
 
-  test("checkReadyForHuman returns false when review_attempts >= maxRetries", () => {
-    store.createPRState({ designId, prNumber: 102, branch: "feature/c" });
-    store.updatePRStatus(102, "ci_passed");
+  test("checkReadyForHuman returns false when review_status is not passing", () => {
+    store.prStates.createPRState({ prNumber: 102, designId, stage: "implementation" });
+    store.prStates.updateCIStatus(102, "passing");
 
-    // max retries is 3
-    store.incrementReviewAttempts(102);
-    store.incrementReviewAttempts(102);
-    store.incrementReviewAttempts(102);
+    expect(store.prStates.checkReadyForHuman(102)).toBe(false);
+  });
 
-    expect(store.checkReadyForHuman(102)).toBe(false);
+  test("checkReadyForHuman returns false when neither status is passing", () => {
+    store.prStates.createPRState({ prNumber: 103, designId, stage: "implementation" });
+
+    expect(store.prStates.checkReadyForHuman(103)).toBe(false);
   });
 
   test("checkReadyForHuman returns false for unknown prNumber", () => {
-    expect(store.checkReadyForHuman(9999)).toBe(false);
+    expect(store.prStates.checkReadyForHuman(9999)).toBe(false);
   });
 
-  test("checkAllSiblingsMerged returns true when all PRs are merged", () => {
-    store.createPRState({ designId, prNumber: 200, branch: "feature/d" });
-    store.createPRState({ designId, prNumber: 201, branch: "feature/e" });
+  test("checkAllSiblingsMerged returns true when all PRs have stage merged", () => {
+    store.prStates.createPRState({ prNumber: 200, designId, stage: "implementation" });
+    store.prStates.createPRState({ prNumber: 201, designId, stage: "implementation" });
 
-    store.updatePRStatus(200, "merged");
-    store.updatePRStatus(201, "merged");
+    store.prStates.updatePRStage(200, "merged");
+    store.prStates.updatePRStage(201, "merged");
 
-    expect(store.checkAllSiblingsMerged(designId)).toBe(true);
+    expect(store.prStates.checkAllSiblingsMerged(designId)).toBe(true);
   });
 
   test("checkAllSiblingsMerged returns false when some PRs are not merged", () => {
-    store.createPRState({ designId, prNumber: 202, branch: "feature/f" });
-    store.createPRState({ designId, prNumber: 203, branch: "feature/g" });
+    store.prStates.createPRState({ prNumber: 202, designId, stage: "implementation" });
+    store.prStates.createPRState({ prNumber: 203, designId, stage: "implementation" });
 
-    store.updatePRStatus(202, "merged");
-    store.updatePRStatus(203, "approved");
+    store.prStates.updatePRStage(202, "merged");
+    // 203 remains at "implementation"
 
-    expect(store.checkAllSiblingsMerged(designId)).toBe(false);
+    expect(store.prStates.checkAllSiblingsMerged(designId)).toBe(false);
   });
 
   test("checkAllSiblingsMerged returns false when no PRs exist", () => {
-    expect(store.checkAllSiblingsMerged(designId)).toBe(false);
+    expect(store.prStates.checkAllSiblingsMerged(designId)).toBe(false);
   });
 });

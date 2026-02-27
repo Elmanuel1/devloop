@@ -90,7 +90,7 @@ interface PrApprovedEvent extends SourceControlEvent {
 
 interface ChangesRequestedEvent extends SourceControlEvent {
   type: 'pr:changes_requested'
-  comments: string
+  comments: string[]       // OVERRIDE: array, not scalar
 }
 
 interface PrMergedEvent extends SourceControlEvent {
@@ -99,7 +99,7 @@ interface PrMergedEvent extends SourceControlEvent {
 
 interface PrCommentEvent extends SourceControlEvent {
   type: 'pr:comment'
-  comments: string
+  comments: string[]       // OVERRIDE: array, not scalar
 }
 
 interface PageApprovedEvent extends DocumentEvent {
@@ -108,7 +108,7 @@ interface PageApprovedEvent extends DocumentEvent {
 
 interface NewCommentEvent extends DocumentEvent {
   type: 'page:comment'
-  comment: string
+  comments: string[]       // OVERRIDE: array, not scalar, plural name
 }
 
 // --- Internal orchestrator events ---
@@ -166,7 +166,7 @@ interface EventParser<T extends OrchestratorEvent = OrchestratorEvent> {
 
 // Outbound only
 interface NotificationChannel {
-  send(message: string): Promise<void>
+  send(message: string, threadTs?: string): Promise<void>  // OVERRIDE: added optional threadTs
 }
 ```
 

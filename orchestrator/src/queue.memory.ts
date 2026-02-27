@@ -1,5 +1,4 @@
 import BetterQueue from "better-queue";
-import { config } from "./config.ts";
 import type { OrchestratorEvent, TaskQueue, TaskQueueFactory, QueueWorker } from "./types.ts";
 
 class MemoryQueue implements TaskQueue {
@@ -30,8 +29,7 @@ class MemoryQueue implements TaskQueue {
 }
 
 export class MemoryQueueFactory implements TaskQueueFactory {
-  create(name: string, worker: QueueWorker, concurrency?: number): TaskQueue {
-    const resolvedConcurrency = concurrency ?? config.queueConcurrency;
-    return new MemoryQueue(worker, resolvedConcurrency);
+  create(name: string, worker: QueueWorker, concurrency: number): TaskQueue {
+    return new MemoryQueue(worker, concurrency);
   }
 }

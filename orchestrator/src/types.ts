@@ -111,13 +111,7 @@ export interface TaskHandler {
 
 // ─── Route Key ────────────────────────────────────────────────────────────────
 
-export type RouteKey =
-  | "post:architect"
-  | "post:code_writer"
-  | "post:reviewer"
-  | "post:approval"
-  | "post:ci_passed"
-  | "post:merge";
+export type RouteKey = `${string}:${string}`;
 
 // ─── Webhook Verifier ─────────────────────────────────────────────────────────
 
@@ -134,18 +128,19 @@ export interface EventParser<T extends OrchestratorEvent = OrchestratorEvent> {
 // ─── Notification Channel ─────────────────────────────────────────────────────
 
 export interface NotificationChannel {
-  send(message: string): Promise<void>;
+  send(message: string, threadTs?: string): Promise<void>;
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
 export interface AgentOptions {
-  agent: string;
-  prompt: string;
-  worktreeBranch?: string;
+  worktree?: boolean;
+  branch?: string;
+  keepWorktree?: boolean;
+  cwd?: string;
   timeoutMs?: number;
   heartbeatMs?: number;
-  cwd?: string;
+  allowedTools?: string[];
 }
 
 export interface ParsedAgentOutput {
@@ -176,61 +171,38 @@ export interface TaskQueue {
 export type QueueWorker = (event: OrchestratorEvent) => Promise<void>;
 
 export interface TaskQueueFactory {
-  create(name: string, worker: QueueWorker, concurrency?: number): TaskQueue;
+  create(name: string, worker: QueueWorker, concurrency: number): TaskQueue;
 }
 
 // ─── Store Records ────────────────────────────────────────────────────────────
 
-export type DesignStatus =
-  | "requested"
-  | "designing"
-  | "in_review"
-  | "approved"
-  | "coding"
-  | "complete"
-  | "failed";
-
 export interface DesignRecord {
   id: string;
-  slack_channel: string;
-  slack_thread_ts: string;
-  requested_by: string;
-  request_text: string;
-  confluence_page_id: string | null;
-  jira_epic_key: string | null;
-  status: DesignStatus;
+  description: string | null;
+  stage: string;
+  status: string;
+  page_id: string | null;
+  parent_key: string | null;
+  review_attempts: number;
   created_at: string;
   updated_at: string;
 }
 
-export type PRStatus =
-  | "open"
-  | "ci_failing"
-  | "ci_passed"
-  | "in_review"
-  | "changes_requested"
-  | "approved"
-  | "merged"
-  | "failed";
-
 export interface DesignOutputRecord {
-  id: string;
   design_id: string;
-  stage: string;
-  agent: string;
-  output: string;
-  cost_usd: number | null;
-  duration_ms: number | null;
-  created_at: string;
+  output_key: string;
+  output_path: string;
 }
 
 export interface PRStateRecord {
-  id: string;
-  design_id: string;
   pr_number: number;
-  branch: string;
-  jira_subtask_key: string | null;
-  status: PRStatus;
+  design_id: string;
+  stage: string;
+  issue_key: string | null;
+  parent_key: string | null;
+  feature_slug: string | null;
+  ci_status: string;
+  review_status: string;
   ci_attempts: number;
   review_attempts: number;
   created_at: string;
