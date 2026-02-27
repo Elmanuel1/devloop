@@ -1,0 +1,21 @@
+{
+  "name": "tosspaper-orchestrator",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "better-queue": "^3.8.12",
+    "@octokit/rest": "^21.0.0"
+  },
+  "devDependencies": {
+    "@types/better-queue": "^3.8.5",
+    "bun-types": "latest",
+    "typescript": "^5.6.0"
+  }
+}
