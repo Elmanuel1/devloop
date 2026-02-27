@@ -399,91 +399,24 @@ describe("ConfluenceRestClient — getNewComments", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("GETs footer comments and filters by since date", async () => {
-    globalThis.fetch = mock(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        results: [
-          {
-            id: "c1",
-            body: { storage: { value: "Old comment" } },
-            version: { createdAt: "2024-01-01T00:00:00.000Z" },
-            createdBy: { displayName: "Alice" },
-          },
-          {
-            id: "c2",
-            body: { storage: { value: "New comment" } },
-            version: { createdAt: "2024-06-15T10:00:00.000Z" },
-            createdBy: { displayName: "Bob" },
-          },
-        ],
-      }),
-      text: async () => "{}",
-    })) as typeof fetch;
+  function makeFetchWithResponses(footerResults: unknown[], inlineResults: unknown[]) {
+    return mock(async (url: string) => {
+      const isInline = (url as string).includes("/inline-comments");
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({ results: isInline ? inlineResults : footerResults }),
+        text: async () => "{}",
+      } as Response;
+    }) as typeof fetch;
+  }
 
-    const client = makeClient();
-    const result = await client.getNewComments("123456", "2024-03-01T00:00:00.000Z");
-
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("c2");
-    expect(result[0].body).toBe("New comment");
-    expect(result[0].author).toBe("Bob");
-    expect(result[0].createdAt).toBe("2024-06-15T10:00:00.000Z");
-  });
-
-  test("returns empty array when all comments are before since date", async () => {
-    globalThis.fetch = mock(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        results: [
-          {
-            id: "c1",
-            body: { storage: { value: "Old comment" } },
-            version: { createdAt: "2023-01-01T00:00:00.000Z" },
-            createdBy: { displayName: "Alice" },
-          },
-        ],
-      }),
-      text: async () => "{}",
-    })) as typeof fetch;
-
-    const client = makeClient();
-    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
-    expect(result).toHaveLength(0);
-  });
-
-  test("uses publicName when displayName not present", async () => {
-    globalThis.fetch = mock(async () => ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      json: async () => ({
-        results: [
-          {
-            id: "c1",
-            body: { storage: { value: "Comment" } },
-            version: { createdAt: "2025-01-01T00:00:00.000Z" },
-            createdBy: { publicName: "charlie99" },
-          },
-        ],
-      }),
-      text: async () => "{}",
-    })) as typeof fetch;
-
-    const client = makeClient();
-    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
-    expect(result[0].author).toBe("charlie99");
-  });
-
-  test("GETs from /api/v2/pages/{id}/footer-comments endpoint", async () => {
-    let capturedUrl = "";
+  test("fetches both footer and inline comments in parallel", async () => {
+    const capturedUrls: string[] = [];
 
     globalThis.fetch = mock(async (url: string) => {
-      capturedUrl = url;
+      capturedUrls.push(url as string);
       return {
         ok: true,
         status: 200,
@@ -496,6 +429,166 @@ describe("ConfluenceRestClient — getNewComments", () => {
     const client = makeClient();
     await client.getNewComments("99999", "2024-01-01T00:00:00.000Z");
 
-    expect(capturedUrl).toContain("/pages/99999/footer-comments");
+    expect(capturedUrls.some((u) => u.includes("/pages/99999/footer-comments"))).toBe(true);
+    expect(capturedUrls.some((u) => u.includes("/pages/99999/inline-comments"))).toBe(true);
+    expect(capturedUrls).toHaveLength(2);
+  });
+
+  test("merges footer and inline comments into a single result", async () => {
+    const footerResults = [
+      {
+        id: "footer-1",
+        body: { storage: { value: "Footer comment" } },
+        version: { createdAt: "2024-06-01T00:00:00.000Z" },
+        createdBy: { displayName: "Alice" },
+      },
+    ];
+    const inlineResults = [
+      {
+        id: "inline-1",
+        body: { storage: { value: "Inline comment" } },
+        version: { createdAt: "2024-06-02T00:00:00.000Z" },
+        createdBy: { displayName: "Bob" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses(footerResults, inlineResults);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
+
+    expect(result).toHaveLength(2);
+    const ids = result.map((c) => c.id);
+    expect(ids).toContain("footer-1");
+    expect(ids).toContain("inline-1");
+  });
+
+  test("filters by since date across combined footer and inline results", async () => {
+    const footerResults = [
+      {
+        id: "footer-old",
+        body: { storage: { value: "Old footer comment" } },
+        version: { createdAt: "2024-01-01T00:00:00.000Z" },
+        createdBy: { displayName: "Alice" },
+      },
+      {
+        id: "footer-new",
+        body: { storage: { value: "New footer comment" } },
+        version: { createdAt: "2024-06-15T10:00:00.000Z" },
+        createdBy: { displayName: "Bob" },
+      },
+    ];
+    const inlineResults = [
+      {
+        id: "inline-old",
+        body: { storage: { value: "Old inline comment" } },
+        version: { createdAt: "2024-02-01T00:00:00.000Z" },
+        createdBy: { displayName: "Carol" },
+      },
+      {
+        id: "inline-new",
+        body: { storage: { value: "New inline comment" } },
+        version: { createdAt: "2024-07-01T00:00:00.000Z" },
+        createdBy: { displayName: "Dave" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses(footerResults, inlineResults);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-03-01T00:00:00.000Z");
+
+    expect(result).toHaveLength(2);
+    const ids = result.map((c) => c.id);
+    expect(ids).toContain("footer-new");
+    expect(ids).toContain("inline-new");
+    expect(ids).not.toContain("footer-old");
+    expect(ids).not.toContain("inline-old");
+  });
+
+  test("returns empty array when all comments from both sources are before since date", async () => {
+    const footerResults = [
+      {
+        id: "c1",
+        body: { storage: { value: "Old footer" } },
+        version: { createdAt: "2023-01-01T00:00:00.000Z" },
+        createdBy: { displayName: "Alice" },
+      },
+    ];
+    const inlineResults = [
+      {
+        id: "c2",
+        body: { storage: { value: "Old inline" } },
+        version: { createdAt: "2023-06-01T00:00:00.000Z" },
+        createdBy: { displayName: "Bob" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses(footerResults, inlineResults);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
+    expect(result).toHaveLength(0);
+  });
+
+  test("maps comment fields correctly from footer comments", async () => {
+    const footerResults = [
+      {
+        id: "c2",
+        body: { storage: { value: "New comment" } },
+        version: { createdAt: "2024-06-15T10:00:00.000Z" },
+        createdBy: { displayName: "Bob" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses(footerResults, []);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-03-01T00:00:00.000Z");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("c2");
+    expect(result[0].body).toBe("New comment");
+    expect(result[0].author).toBe("Bob");
+    expect(result[0].createdAt).toBe("2024-06-15T10:00:00.000Z");
+  });
+
+  test("maps comment fields correctly from inline comments", async () => {
+    const inlineResults = [
+      {
+        id: "i1",
+        body: { storage: { value: "Inline text" } },
+        version: { createdAt: "2024-08-10T12:00:00.000Z" },
+        createdBy: { displayName: "Eve" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses([], inlineResults);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("i1");
+    expect(result[0].body).toBe("Inline text");
+    expect(result[0].author).toBe("Eve");
+    expect(result[0].createdAt).toBe("2024-08-10T12:00:00.000Z");
+  });
+
+  test("uses publicName when displayName not present", async () => {
+    const footerResults = [
+      {
+        id: "c1",
+        body: { storage: { value: "Comment" } },
+        version: { createdAt: "2025-01-01T00:00:00.000Z" },
+        createdBy: { publicName: "charlie99" },
+      },
+    ];
+
+    globalThis.fetch = makeFetchWithResponses(footerResults, []);
+
+    const client = makeClient();
+    const result = await client.getNewComments("123456", "2024-01-01T00:00:00.000Z");
+    expect(result[0].author).toBe("charlie99");
   });
 });

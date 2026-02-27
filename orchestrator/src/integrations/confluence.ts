@@ -191,14 +191,21 @@ export class ConfluenceRestClient implements ConfluenceClient {
   }
 
   async getNewComments(pageId: string, since: string): Promise<ConfluenceComment[]> {
-    const data = await this.request<ConfluenceFooterCommentListResponse>(
-      "GET",
-      `/api/v2/pages/${pageId}/footer-comments`
-    );
+    const [footerData, inlineData] = await Promise.all([
+      this.request<ConfluenceFooterCommentListResponse>(
+        "GET",
+        `/api/v2/pages/${pageId}/footer-comments`
+      ),
+      this.request<ConfluenceFooterCommentListResponse>(
+        "GET",
+        `/api/v2/pages/${pageId}/inline-comments`
+      ),
+    ]);
 
     const sinceDate = new Date(since);
+    const allComments = [...footerData.results, ...inlineData.results];
 
-    return data.results
+    return allComments
       .filter((comment) => new Date(comment.version.createdAt) > sinceDate)
       .map((comment) => ({
         id: comment.id,
