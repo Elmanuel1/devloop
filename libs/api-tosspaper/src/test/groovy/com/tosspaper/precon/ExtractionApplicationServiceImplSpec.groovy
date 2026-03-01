@@ -1,8 +1,8 @@
 package com.tosspaper.precon
 
 import com.tosspaper.common.ApiErrorMessages
-import com.tosspaper.common.BadRequestException
 import com.tosspaper.common.NotFoundException
+import com.tosspaper.models.exception.ExtractionNotApplicableException
 import com.tosspaper.precon.generated.model.Application
 import com.tosspaper.precon.generated.model.ApplicationCreateRequest
 import com.tosspaper.precon.generated.model.EntityType
@@ -52,7 +52,7 @@ class ExtractionApplicationServiceImplSpec extends Specification {
             }
     }
 
-    def "TC-AS-A02: should throw BadRequestException when extraction is PENDING"() {
+    def "TC-AS-A02: should throw ExtractionNotApplicableException when extraction is PENDING"() {
         given: "a PENDING extraction"
             def request = new ApplicationCreateRequest()
             request.setEntityId(ENTITY_ID)
@@ -66,13 +66,13 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         then: "extractionService returns the PENDING extraction"
             1 * extractionService.getExtraction(COMPANY_ID, EXTRACTION_ID) >> result
 
-        and: "BadRequestException is thrown with extraction not-found code"
-            def ex = thrown(BadRequestException)
-            ex.code == ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE
+        and: "ExtractionNotApplicableException is thrown with the correct code and status in message"
+            def ex = thrown(ExtractionNotApplicableException)
+            ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
             ex.message.contains("pending")
     }
 
-    def "TC-AS-A03: should throw BadRequestException when extraction is PROCESSING"() {
+    def "TC-AS-A03: should throw ExtractionNotApplicableException when extraction is PROCESSING"() {
         given: "a PROCESSING extraction"
             def request = new ApplicationCreateRequest()
             request.setEntityId(ENTITY_ID)
@@ -86,13 +86,13 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         then: "extractionService returns the PROCESSING extraction"
             1 * extractionService.getExtraction(COMPANY_ID, EXTRACTION_ID) >> result
 
-        and: "BadRequestException is thrown"
-            def ex = thrown(BadRequestException)
-            ex.code == ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE
+        and: "ExtractionNotApplicableException is thrown"
+            def ex = thrown(ExtractionNotApplicableException)
+            ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
             ex.message.contains("processing")
     }
 
-    def "TC-AS-A04: should throw BadRequestException when extraction is FAILED"() {
+    def "TC-AS-A04: should throw ExtractionNotApplicableException when extraction is FAILED"() {
         given: "a FAILED extraction"
             def request = new ApplicationCreateRequest()
             request.setEntityId(ENTITY_ID)
@@ -106,13 +106,13 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         then: "extractionService returns the FAILED extraction"
             1 * extractionService.getExtraction(COMPANY_ID, EXTRACTION_ID) >> result
 
-        and: "BadRequestException is thrown"
-            def ex = thrown(BadRequestException)
-            ex.code == ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE
+        and: "ExtractionNotApplicableException is thrown"
+            def ex = thrown(ExtractionNotApplicableException)
+            ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
             ex.message.contains("failed")
     }
 
-    def "TC-AS-A05: should throw BadRequestException when extraction is CANCELLED"() {
+    def "TC-AS-A05: should throw ExtractionNotApplicableException when extraction is CANCELLED"() {
         given: "a CANCELLED extraction"
             def request = new ApplicationCreateRequest()
             request.setEntityId(ENTITY_ID)
@@ -126,9 +126,9 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         then: "extractionService returns the CANCELLED extraction"
             1 * extractionService.getExtraction(COMPANY_ID, EXTRACTION_ID) >> result
 
-        and: "BadRequestException is thrown"
-            def ex = thrown(BadRequestException)
-            ex.code == ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE
+        and: "ExtractionNotApplicableException is thrown"
+            def ex = thrown(ExtractionNotApplicableException)
+            ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
             ex.message.contains("cancelled")
     }
 

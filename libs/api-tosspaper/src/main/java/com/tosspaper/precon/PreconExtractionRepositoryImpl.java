@@ -51,15 +51,4 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                 .fetch();
     }
 
-    @Override
-    public int updateStatus(String id, String status) {
-        log.info("PreconExtractionRepository: updating status - id: {}, status: {}", id, status);
-        return dsl.update(EXTRACTIONS)
-                .set(EXTRACTIONS.STATUS, status)
-                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
-                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
-                .where(EXTRACTIONS.ID.eq(id))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .execute();
-    }
 }

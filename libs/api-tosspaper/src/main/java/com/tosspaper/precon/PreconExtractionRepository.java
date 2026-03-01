@@ -10,6 +10,11 @@ import java.util.List;
  * <p>This replaces {@link ExtractionRepository} for all new pipeline callers.
  * Do NOT add new callers to the deprecated {@code ExtractionRepository}.
  *
+ * <p>Status updates must be routed through {@link ExtractionService} (which
+ * delegates to the deprecated {@link ExtractionRepository#updateStatus}). Do
+ * NOT call {@code ExtractionRepository.updateStatus} directly from pipeline
+ * workers.
+ *
  * <p>Key methods:
  * <ul>
  *   <li>{@link #findByExternalTaskId(String)} — look up an extraction by the
@@ -17,8 +22,6 @@ import java.util.List;
  *       intentionally generic (not tied to any specific provider).</li>
  *   <li>{@link #findPendingExtractions()} — returns all live pending rows for
  *       the seeder to enqueue on startup.</li>
- *   <li>{@link #updateStatus(String, String)} — atomically updates status and
- *       increments version.</li>
  * </ul>
  */
 public interface PreconExtractionRepository {
@@ -43,14 +46,4 @@ public interface PreconExtractionRepository {
      * @return list of pending extraction records (may be empty, never null)
      */
     List<ExtractionsRecord> findPendingExtractions();
-
-    /**
-     * Updates the status of an extraction and atomically increments its
-     * optimistic-lock version. Skips soft-deleted rows.
-     *
-     * @param id     the extraction ID
-     * @param status the new status value
-     * @return number of rows updated (0 if not found or already deleted)
-     */
-    int updateStatus(String id, String status);
 }

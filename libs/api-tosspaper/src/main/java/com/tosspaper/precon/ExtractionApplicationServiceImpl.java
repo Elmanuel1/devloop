@@ -1,7 +1,7 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.common.ApiErrorMessages;
-import com.tosspaper.common.BadRequestException;
+import com.tosspaper.models.exception.ExtractionNotApplicableException;
 import com.tosspaper.precon.generated.model.Application;
 import com.tosspaper.precon.generated.model.ApplicationCreateRequest;
 import com.tosspaper.precon.generated.model.ExtractionStatus;
@@ -54,10 +54,10 @@ public class ExtractionApplicationServiceImpl implements ExtractionApplicationSe
         ExtractionResult result = extractionService.getExtraction(companyId, extractionId);
 
         if (!ExtractionStatus.COMPLETED.equals(result.extraction().getStatus())) {
-            throw new BadRequestException(
-                    ApiErrorMessages.EXTRACTION_NOT_FOUND_CODE,
-                    "Cannot apply extraction in '%s' status — extraction must be completed first."
-                            .formatted(result.extraction().getStatus()));
+            throw new ExtractionNotApplicableException(
+                    ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE,
+                    ApiErrorMessages.EXTRACTION_NOT_APPLICABLE
+                            .formatted(result.extraction().getStatus().getValue()));
         }
 
         return buildApplication(extractionId, request);
@@ -71,6 +71,9 @@ public class ExtractionApplicationServiceImpl implements ExtractionApplicationSe
         application.setId(UUID.randomUUID());
         application.setExtractionId(UUID.fromString(extractionId));
         application.setEntityId(request.getEntityId());
+        // TODO [TOS-37] fieldsApplied will be populated from ExtractionFieldService in the
+        //  apply-fields PR. The Application record is created here as a structural placeholder;
+        //  the actual field values are deferred until field application is implemented.
         application.setFieldsApplied(List.of());
         application.setAppliedAt(OffsetDateTime.now());
         return application;
