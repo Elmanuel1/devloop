@@ -29,6 +29,9 @@ dependencies {
 	implementation libs.spring.boot.starter.validation
 	implementation libs.spring.boot.starter.jooq
 	implementation libs.spring.boot.starter.data.redis
+
+	// Redisson distributed locking
+	implementation libs.redisson.spring.boot.starter
 	// WebFlux for SSE streaming
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
     implementation project(':libs:models')
