@@ -44,11 +44,12 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     }
 
     @Override
-    public List<ExtractionsRecord> findPendingExtractions() {
+    public List<ExtractionsRecord> findPendingExtractions(int limit) {
         return dsl.selectFrom(EXTRACTIONS)
                 .where(EXTRACTIONS.STATUS.eq(ExtractionStatus.PENDING.getValue()))
                 .and(EXTRACTIONS.DELETED_AT.isNull())
+                .orderBy(EXTRACTIONS.CREATED_AT.asc())
+                .limit(limit)
                 .fetch();
     }
-
 }

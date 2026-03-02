@@ -20,8 +20,8 @@ import java.util.List;
  *   <li>{@link #findByExternalTaskId(String)} — look up an extraction by the
  *       opaque task ID returned by the external extraction service. The name is
  *       intentionally generic (not tied to any specific provider).</li>
- *   <li>{@link #findPendingExtractions()} — returns all live pending rows for
- *       the seeder to enqueue on startup.</li>
+ *   <li>{@link #findPendingExtractions(int)} — returns up to {@code limit}
+ *       pending rows for the poll job to dispatch per cycle.</li>
  * </ul>
  */
 public interface PreconExtractionRepository {
@@ -40,10 +40,15 @@ public interface PreconExtractionRepository {
     ExtractionsRecord findByExternalTaskId(String externalTaskId);
 
     /**
-     * Returns all non-deleted extractions currently in {@code pending} status.
-     * Used by the seeder to re-enqueue work that survived a process restart.
+     * Returns up to {@code limit} non-deleted extractions currently in
+     * {@code pending} status, ordered by creation time ascending so that
+     * older work is prioritised.
      *
+     * <p>The caller controls the batch size; the repository does not hard-code
+     * any polling policy.
+     *
+     * @param limit maximum number of rows to return (must be &gt; 0)
      * @return list of pending extraction records (may be empty, never null)
      */
-    List<ExtractionsRecord> findPendingExtractions();
+    List<ExtractionsRecord> findPendingExtractions(int limit);
 }

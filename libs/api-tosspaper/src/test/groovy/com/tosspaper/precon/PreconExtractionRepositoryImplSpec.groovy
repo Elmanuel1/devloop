@@ -52,14 +52,14 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
 
     // ==================== findPendingExtractions ====================
 
-    def "TC-PR-FP01: should return all pending extractions that are not soft-deleted"() {
+    def "TC-PR-FP01: should return pending extractions that are not soft-deleted"() {
         given: "three extractions — two pending and one completed"
             def pending1 = insertExtraction(companyIdStr, tenderId, "pending")
             def pending2 = insertExtraction(companyIdStr, tenderId, "pending")
             insertExtraction(companyIdStr, tenderId, "completed")
 
-        when: "finding pending extractions"
-            def results = preconExtractionRepository.findPendingExtractions()
+        when: "finding pending extractions with a generous limit"
+            def results = preconExtractionRepository.findPendingExtractions(50)
 
         then: "only the two pending extractions are returned"
             results.size() == 2
@@ -72,7 +72,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
             insertExtraction(companyIdStr, tenderId, "completed")
 
         when: "finding pending extractions"
-            def results = preconExtractionRepository.findPendingExtractions()
+            def results = preconExtractionRepository.findPendingExtractions(50)
 
         then: "empty list is returned"
             results.isEmpty()
@@ -87,7 +87,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
                 .execute()
 
         when: "finding pending extractions"
-            def results = preconExtractionRepository.findPendingExtractions()
+            def results = preconExtractionRepository.findPendingExtractions(50)
 
         then: "soft-deleted extraction is not returned"
             results.isEmpty()
@@ -99,7 +99,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
             def e2 = insertExtraction("other-company", tenderId, "pending")
 
         when: "finding all pending extractions"
-            def results = preconExtractionRepository.findPendingExtractions()
+            def results = preconExtractionRepository.findPendingExtractions(50)
 
         then: "both extractions are returned regardless of company"
             results.size() == 2
@@ -115,12 +115,38 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
             def pending = insertExtraction(companyIdStr, tenderId, "pending")
 
         when: "finding pending extractions"
-            def results = preconExtractionRepository.findPendingExtractions()
+            def results = preconExtractionRepository.findPendingExtractions(50)
 
         then: "only the single pending extraction is returned"
             results.size() == 1
             results[0].id == pending.id
             results[0].status == "pending"
+    }
+
+    def "TC-PR-FP06: should honour the limit and return at most that many rows"() {
+        given: "five pending extractions in the database"
+            5.times { insertExtraction(companyIdStr, tenderId, "pending") }
+
+        when: "finding pending extractions with a limit of 3"
+            def results = preconExtractionRepository.findPendingExtractions(3)
+
+        then: "at most 3 records are returned"
+            results.size() == 3
+            results.every { it.status == "pending" }
+    }
+
+    def "TC-PR-FP07: should order results by created_at ascending so oldest work is first"() {
+        given: "two pending extractions inserted sequentially"
+            def first  = insertExtraction(companyIdStr, tenderId, "pending")
+            def second = insertExtraction(companyIdStr, tenderId, "pending")
+
+        when: "finding pending extractions"
+            def results = preconExtractionRepository.findPendingExtractions(50)
+
+        then: "the earlier extraction comes first"
+            results.size() == 2
+            results[0].id == first.id
+            results[1].id == second.id
     }
 
     // ==================== Helper Methods ====================
