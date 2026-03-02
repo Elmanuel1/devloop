@@ -10,11 +10,6 @@ import java.util.List;
  * <p>This replaces {@link ExtractionRepository} for all new pipeline callers.
  * Do NOT add new callers to the deprecated {@code ExtractionRepository}.
  *
- * <p>Status updates must be routed through {@link ExtractionService} (which
- * delegates to the deprecated {@link ExtractionRepository#updateStatus}). Do
- * NOT call {@code ExtractionRepository.updateStatus} directly from pipeline
- * workers.
- *
  * <p>Key methods:
  * <ul>
  *   <li>{@link #findByExternalTaskId(String)} — look up an extraction by the
@@ -22,6 +17,9 @@ import java.util.List;
  *       intentionally generic (not tied to any specific provider).</li>
  *   <li>{@link #findPendingExtractions(int)} — returns up to {@code limit}
  *       pending rows for the poll job to dispatch per cycle.</li>
+ *   <li>{@link #markAsProcessing(String)} — atomically transitions a single
+ *       extraction from {@code pending} to {@code processing} within the
+ *       poll cycle, before handing the record off to the processing thread pool.</li>
  * </ul>
  */
 public interface PreconExtractionRepository {
@@ -51,4 +49,17 @@ public interface PreconExtractionRepository {
      * @return list of pending extraction records (may be empty, never null)
      */
     List<ExtractionsRecord> findPendingExtractions(int limit);
+
+    /**
+     * Atomically transitions the given extraction to {@code processing} status
+     * and increments its version.
+     *
+     * <p>Must be called in the scheduler thread — before the record is handed
+     * off to the processing thread pool — so that a subsequent poll cycle does
+     * not re-fetch the same record as {@code pending}.
+     *
+     * @param id the extraction ID to mark
+     * @return number of rows updated (0 if not found or already deleted)
+     */
+    int markAsProcessing(String id);
 }

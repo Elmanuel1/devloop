@@ -52,4 +52,17 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                 .limit(limit)
                 .fetch();
     }
+
+    @Override
+    public int markAsProcessing(String id) {
+        log.debug("[ExtractionPoll] Marking extraction {} as processing", id);
+        return dsl.update(EXTRACTIONS)
+                .set(EXTRACTIONS.STATUS, ExtractionStatus.PROCESSING.getValue())
+                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
+                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(EXTRACTIONS.ID.eq(id))
+                .and(EXTRACTIONS.STATUS.eq(ExtractionStatus.PENDING.getValue()))
+                .and(EXTRACTIONS.DELETED_AT.isNull())
+                .execute();
+    }
 }
