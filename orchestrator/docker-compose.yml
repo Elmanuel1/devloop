@@ -1,0 +1,17 @@
+services:
+  orchestrator:
+    build: .
+    env_file: .env
+    environment:
+      - STATE_DIR=/data
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persistent state (designs, sessions, watches, events, logs, handler state)
+      - orchestrator-data:/data
+      # Agent definitions and skills (read-only from host repo)
+      - ../.claude/agents:/repo/.claude/agents:ro
+      - ../.claude/skills:/repo/.claude/skills:ro
+    restart: unless-stopped
+
+volumes:
+  orchestrator-data:

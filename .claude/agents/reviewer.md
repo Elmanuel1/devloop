@@ -160,3 +160,5 @@ python3 orchestrator/gh_review.py request-changes --repo Build4Africa/tosspaper 
 - **Review ALL changed files.** Don't skip files. Don't skim.
 - **Check for duplicate classes** — if a class with the same responsibility already exists, flag it.
 - **Post to PR.** Always post findings via `gh_review.py`. Don't just return text.
+- **Tag all GitHub comments** with `<!-- devloop-bot -->` at the end of the body — this is how the poller distinguishes bot replies from human comments.
+- **Never resolve review threads** — only the human reviewer resolves threads.

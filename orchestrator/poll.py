@@ -69,24 +69,19 @@ SLACK_BOT_TOKEN       = env('SLACK_BOT_TOKEN', '')
 WATCH_POLL_INTERVAL   = env_int('WATCH_POLL_INTERVAL_SEC', 10)
 MAX_POLL_WORKERS      = env_int('MAX_POLL_WORKERS', 5)
 MAX_RESTART_ATTEMPTS  = 3
+BOT_SIGNATURE         = '<!-- devloop-bot -->'
 
 CLAUDE_BIN = shutil.which('claude')
 
 sys.path.insert(0, str(SCRIPT_DIR))
 from state import State
 
-ALLOWED_TOOLS: List[str]
-try:
-    with open(SCRIPT_DIR / 'orchestrator-permissions.json') as f:
-        ALLOWED_TOOLS = json.load(f).get('allowedTools', [])
-except FileNotFoundError:
-    ALLOWED_TOOLS = []
-
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 
-LOG_DIR  = SCRIPT_DIR / '.orchestrator'
+STATE_BASE = Path(os.environ.get('STATE_DIR', str(SCRIPT_DIR / '.orchestrator')))
+LOG_DIR    = STATE_BASE
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / 'poll.log'
 
@@ -162,7 +157,7 @@ def parse_category(text: str) -> str:
 # Handler state persistence
 # ---------------------------------------------------------------------------
 
-HANDLER_STATE_DIR = SCRIPT_DIR / '.orchestrator' / 'handler_state'
+HANDLER_STATE_DIR = STATE_BASE / 'handler_state'
 MAX_BACKOFF       = 300
 
 
@@ -334,19 +329,37 @@ class PRReviewHandler(WatchHandler):
     """
 
     def __init__(self, watch: dict) -> None:
-        self.last_review:       str  = ''
-        self.seen_comment_ids:  set  = set()
+        self.last_review:   str  = ''
+        self.thread_state:  dict = {}
+        self.seen_issue_comment_ids: set = set()
+        self.bot_comment_ids: set = set()
         super().__init__(watch)
 
     def _get_handler_state(self) -> dict:
+        serializable = {}
+        for tid, ts in self.thread_state.items():
+            serializable[tid] = {
+                'resolved':   ts['resolved'],
+                'commentIds': list(ts['commentIds']),
+            }
         return {
-            'last_review':      self.last_review,
-            'seen_comment_ids': list(self.seen_comment_ids),
+            'last_review':            self.last_review,
+            'thread_state':           serializable,
+            'seen_issue_comment_ids': list(self.seen_issue_comment_ids),
+            'bot_comment_ids':        list(self.bot_comment_ids),
         }
 
     def _set_handler_state(self, data: dict) -> None:
-        self.last_review      = data.get('last_review', '')
-        self.seen_comment_ids = set(data.get('seen_comment_ids', []))
+        self.last_review = data.get('last_review', '')
+        self.seen_issue_comment_ids = set(data.get('seen_issue_comment_ids', []))
+        self.bot_comment_ids = set(data.get('bot_comment_ids', []))
+        raw = data.get('thread_state', {})
+        self.thread_state = {}
+        for tid, ts in raw.items():
+            self.thread_state[tid] = {
+                'resolved':   ts.get('resolved', False),
+                'commentIds': set(ts.get('commentIds', [])),
+            }
 
     def poll(self) -> Optional[dict]:
         repo      = self.watch.get('repo', '')
@@ -379,58 +392,141 @@ class PRReviewHandler(WatchHandler):
                 event['comments'] = self._get_review_comments(repo, pr_number)
                 return event
 
-        # --- 2. Check for new comments ---
-        new_comment = self._poll_new_comment(repo, pr_number, issue_key)
-        if new_comment:
-            return new_comment
+        # --- 2. Check review threads (comments + resolution via GraphQL) ---
+        thread_event = self._poll_review_threads(repo, pr_number, issue_key)
+        if thread_event:
+            return thread_event
+
+        # --- 3. Check general issue comments (not part of review threads) ---
+        issue_event = self._poll_issue_comments(repo, pr_number, issue_key)
+        if issue_event:
+            return issue_event
 
         return None
 
-    def _poll_new_comment(
+    def _poll_review_threads(
         self, repo: str, pr_number: int, issue_key: Optional[str]
     ) -> Optional[dict]:
-        """Fetch inline review comments + issue comments, return first unseen one."""
-        # Inline review comments: GET /repos/{repo}/pulls/{pr}/comments
-        code, stdout, _ = run_gh('api', f'repos/{repo}/pulls/{pr_number}/comments')
-        review_comments: List[dict] = []
-        if code == 0:
-            try:
-                review_comments = json.loads(stdout)
-            except (json.JSONDecodeError, TypeError):
-                review_comments = []
-
-        # General PR / issue comments: GET /repos/{repo}/issues/{pr}/comments
-        code2, stdout2, _ = run_gh('api', f'repos/{repo}/issues/{pr_number}/comments')
-        issue_comments: List[dict] = []
-        if code2 == 0:
-            try:
-                issue_comments = json.loads(stdout2)
-            except (json.JSONDecodeError, TypeError):
-                issue_comments = []
-
-        # Walk through both lists, emit first new unseen comment
-        for comment in review_comments:
-            cid = comment.get('id')
-            if cid is None or cid in self.seen_comment_ids:
-                continue
-            self.seen_comment_ids.add(cid)
-            return {
-                'type':            'pr:comment',
-                'repo':            repo,
-                'prNumber':        pr_number,
-                'issueKey':        issue_key,
-                'commentId':       cid,
-                'body':            comment.get('body', ''),
-                'author':          comment.get('user', {}).get('login', ''),
-                'isReviewComment': True,
-                'commentUrl':      comment.get('html_url', ''),
+        owner, name = repo.split('/', 1) if '/' in repo else ('', repo)
+        query = '''
+          query($owner:String!,$name:String!,$pr:Int!) {
+            repository(owner:$owner,name:$name) {
+              pullRequest(number:$pr) {
+                reviewThreads(first:100) {
+                  nodes {
+                    id
+                    isResolved
+                    comments(first:100) {
+                      nodes { databaseId body author { login } }
+                    }
+                  }
+                }
+              }
             }
+          }
+        '''
+        code, stdout, _ = run_gh(
+            'api', 'graphql',
+            '-f', f'query={query}',
+            '-f', f'owner={owner}',
+            '-f', f'name={name}',
+            '-F', f'pr={pr_number}',
+        )
+        if code != 0:
+            return None
+        try:
+            gql = json.loads(stdout)
+            threads = gql['data']['repository']['pullRequest']['reviewThreads']['nodes']
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return None
 
-        for comment in issue_comments:
-            cid = comment.get('id')
-            if cid is None or cid in self.seen_comment_ids:
+        for thread in threads:
+            tid        = thread['id']
+            resolved   = thread.get('isResolved', False)
+            comments   = thread.get('comments', {}).get('nodes', [])
+            comment_ids = {c['databaseId'] for c in comments if c.get('databaseId')}
+
+            # Tag bot comments
+            for c in comments:
+                if BOT_SIGNATURE in c.get('body', ''):
+                    self.bot_comment_ids.add(c['databaseId'])
+
+            human_comments = [c for c in comments if c.get('databaseId') not in self.bot_comment_ids]
+
+            prev = self.thread_state.get(tid)
+            self.thread_state[tid] = {'resolved': resolved, 'commentIds': comment_ids}
+
+            if prev is None:
+                if not resolved and human_comments:
+                    first = human_comments[0]
+                    return {
+                        'type':            'pr:comment',
+                        'repo':            repo,
+                        'prNumber':        pr_number,
+                        'issueKey':        issue_key,
+                        'commentId':       first.get('databaseId'),
+                        'body':            first.get('body', ''),
+                        'author':          first.get('author', {}).get('login', ''),
+                        'isReviewComment': True,
+                        'threadId':        tid,
+                        'isResolved':      False,
+                    }
                 continue
-            self.seen_comment_ids.add(cid)
+
+            if prev['resolved'] and not resolved:
+                first = human_comments[0] if human_comments else {}
+                return {
+                    'type':            'pr:comment',
+                    'repo':            repo,
+                    'prNumber':        pr_number,
+                    'issueKey':        issue_key,
+                    'commentId':       first.get('databaseId'),
+                    'body':            first.get('body', ''),
+                    'author':          first.get('author', {}).get('login', ''),
+                    'isReviewComment': True,
+                    'threadId':        tid,
+                    'isResolved':      False,
+                }
+
+            new_ids = (comment_ids - prev['commentIds']) - self.bot_comment_ids
+            if new_ids:
+                new_cid = next(iter(new_ids))
+                new_comment = next((c for c in comments if c.get('databaseId') == new_cid), {})
+                return {
+                    'type':            'pr:comment',
+                    'repo':            repo,
+                    'prNumber':        pr_number,
+                    'issueKey':        issue_key,
+                    'commentId':       new_cid,
+                    'body':            new_comment.get('body', ''),
+                    'author':          new_comment.get('author', {}).get('login', ''),
+                    'isReviewComment': True,
+                    'threadId':        tid,
+                    'isResolved':      resolved,
+                }
+
+        return None
+
+    def _poll_issue_comments(
+        self, repo: str, pr_number: int, issue_key: Optional[str]
+    ) -> Optional[dict]:
+        code, stdout, _ = run_gh('api', f'repos/{repo}/issues/{pr_number}/comments')
+        if code != 0:
+            return None
+        try:
+            comments = json.loads(stdout)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        for comment in comments:
+            cid = comment.get('id')
+            if cid is None:
+                continue
+            if BOT_SIGNATURE in comment.get('body', ''):
+                self.bot_comment_ids.add(cid)
+            if cid in self.seen_issue_comment_ids or cid in self.bot_comment_ids:
+                continue
+            self.seen_issue_comment_ids.add(cid)
             return {
                 'type':            'pr:comment',
                 'repo':            repo,
@@ -440,7 +536,6 @@ class PRReviewHandler(WatchHandler):
                 'body':            comment.get('body', ''),
                 'author':          comment.get('user', {}).get('login', ''),
                 'isReviewComment': False,
-                'commentUrl':      comment.get('html_url', ''),
             }
 
         return None
@@ -488,87 +583,6 @@ class PRMergeHandler(WatchHandler):
 
 
 # ---------------------------------------------------------------------------
-# Confluence Approval handler
-# ---------------------------------------------------------------------------
-
-class ConfluenceApprovalHandler(WatchHandler):
-    """Watches for page approval or needs-fix label. Fires once per status transition."""
-
-    needs_seed = False
-
-    def __init__(self, watch: dict) -> None:
-        super().__init__(watch)
-        self._last_status: str = ''
-
-    def poll(self) -> Optional[dict]:
-        page_id = self.watch.get('pageId', '')
-        code, stdout, _ = run_script(30, 'confluence.py', 'check-approval', page_id)
-        if code != 0:
-            return None
-        status = stdout.strip().lower()
-        if status == self._last_status:
-            return None
-        self._last_status = status
-        if status == 'approved':
-            return {
-                'type':     'page:approved',
-                'pageId':   page_id,
-                'designId': self.watch.get('designId'),
-            }
-        if status == 'needs-fix':
-            return {
-                'type':     'page:needs-fix',
-                'pageId':   page_id,
-                'designId': self.watch.get('designId'),
-            }
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Confluence Comments handler (legacy)
-# ---------------------------------------------------------------------------
-
-class ConfluenceCommentsHandler(WatchHandler):
-    """Watches for new comments on a page (legacy — prefer ConfluenceReviewHandler)."""
-
-    def __init__(self, watch: dict) -> None:
-        self.last_comment_count: int = 0
-        super().__init__(watch)
-
-    def _get_handler_state(self) -> dict:
-        return {'last_comment_count': self.last_comment_count}
-
-    def _set_handler_state(self, data: dict) -> None:
-        self.last_comment_count = data.get('last_comment_count', 0)
-
-    def poll(self) -> Optional[dict]:
-        page_id = self.watch.get('pageId', '')
-        code, stdout, _ = run_script(30, 'confluence.py', 'get-comments', page_id)
-        if code != 0:
-            return None
-        try:
-            comments = json.loads(stdout)
-            if isinstance(comments, list):
-                count = len(comments)
-            elif isinstance(comments, dict):
-                count = len(comments.get('footer', [])) + len(comments.get('inline', []))
-            else:
-                count = 0
-        except (json.JSONDecodeError, TypeError):
-            count = len([line for line in stdout.strip().split('\n') if line.strip()])
-        old_count               = self.last_comment_count
-        self.last_comment_count = count
-        if count > old_count:
-            return {
-                'type':        'page:comment',
-                'pageId':      page_id,
-                'designId':    self.watch.get('designId'),
-                'newComments': count - old_count,
-            }
-        return None
-
-
-# ---------------------------------------------------------------------------
 # Confluence Review handler (unified)
 # ---------------------------------------------------------------------------
 
@@ -588,19 +602,19 @@ class ConfluenceReviewHandler(WatchHandler):
     needs_seed = True
 
     def __init__(self, watch: dict) -> None:
-        self.last_comment_count: int = 0
+        self.comment_state: dict = {}
         self.last_label_status:  str = ''
         super().__init__(watch)
 
     def _get_handler_state(self) -> dict:
         return {
-            'last_comment_count': self.last_comment_count,
-            'last_label_status':  self.last_label_status,
+            'comment_state':     self.comment_state,
+            'last_label_status': self.last_label_status,
         }
 
     def _set_handler_state(self, data: dict) -> None:
-        self.last_comment_count = data.get('last_comment_count', 0)
-        self.last_label_status  = data.get('last_label_status', '')
+        self.comment_state     = data.get('comment_state', {})
+        self.last_label_status = data.get('last_label_status', '')
 
     def poll(self) -> Optional[dict]:
         page_id   = self.watch.get('pageId', '')
@@ -637,18 +651,30 @@ class ConfluenceReviewHandler(WatchHandler):
                     'designId': design_id,
                 }
 
-        # --- comment count check ---
-        count     = len(data.get('footer', [])) + len(data.get('inline', []))
-        old_count = self.last_comment_count
-        self.last_comment_count = count
-        if count > old_count:
-            log.info('Watch %s: page %s has %d new comment(s)', wid, page_id, count - old_count)
-            return {
-                'type':        'page:comment',
-                'pageId':      page_id,
-                'designId':    design_id,
-                'newComments': count - old_count,
-            }
+        # --- comment check (tracks resolved status per ID) ---
+        # Fire only for unresolved comments that are new or were re-opened.
+        all_comments = data.get('footer', []) + data.get('inline', [])
+        for comment in all_comments:
+            cid = comment.get('id')
+            if cid is None:
+                continue
+            cid_str    = str(cid)
+            resolved   = comment.get('resolved', False)
+            was_resolved = self.comment_state.get(cid_str)
+            self.comment_state[cid_str] = resolved
+
+            # Skip resolved comments (architect finished work)
+            if resolved:
+                continue
+            # Fire if: new unresolved comment, or previously resolved now unresolved
+            if was_resolved is None or was_resolved is True:
+                log.info('Watch %s: page %s unresolved comment %s', wid, page_id, cid)
+                return {
+                    'type':        'page:comment',
+                    'pageId':      page_id,
+                    'designId':    design_id,
+                    'commentId':   cid,
+                }
         return None
 
 
@@ -657,12 +683,10 @@ class ConfluenceReviewHandler(WatchHandler):
 # ---------------------------------------------------------------------------
 
 HANDLER_REGISTRY: Dict[str, type] = {
-    'pr:ci':                PRCIHandler,
-    'pr:review':            PRReviewHandler,
-    'pr:merge':             PRMergeHandler,
-    'confluence:review':    ConfluenceReviewHandler,
-    'confluence:approval':  ConfluenceApprovalHandler,
-    'confluence:comments':  ConfluenceCommentsHandler,
+    'pr:ci':             PRCIHandler,
+    'pr:review':         PRReviewHandler,
+    'pr:merge':          PRMergeHandler,
+    'confluence:review': ConfluenceReviewHandler,
 }
 
 active_handlers: Dict[str, WatchHandler] = {}
@@ -704,6 +728,11 @@ def poll_watches() -> None:
     for watch in watches:
         wid   = watch['id']
         wtype = watch['type']
+        if wid in active_handlers and active_handlers[wid].watch != watch:
+            del active_handlers[wid]
+            state_path = HANDLER_STATE_DIR / f'{wid}.json'
+            if state_path.exists():
+                state_path.unlink()
         if wid not in active_handlers:
             handler_cls = HANDLER_REGISTRY.get(wtype)
             if not handler_cls:
@@ -731,9 +760,11 @@ def poll_watches() -> None:
             if event is None:
                 continue
             log.info('Watch %s resolved: %s', wid, event.get('type'))
-            # pr:comment events do NOT consume the watch — the pr:review watch
-            # keeps running so subsequent comments can also be picked up.
-            if event.get('type') != 'pr:comment':
+            keep_alive = event.get('type') in (
+                'pr:comment', 'pr:changes_requested', 'pr:approved',
+                'page:comment', 'page:needs-fix', 'page:approved',
+            )
+            if not keep_alive:
                 state.remove_watch(wid)
                 del active_handlers[wid]
                 state_path = HANDLER_STATE_DIR / f'{wid}.json'
@@ -781,9 +812,7 @@ def start_orchestrator() -> None:
     if pty_master_fd is not None:
         return
 
-    args = [CLAUDE_BIN, '--agent', 'orchestrator']
-    if ALLOWED_TOOLS:
-        args += ['--allowedTools', ','.join(ALLOWED_TOOLS)]
+    args = [CLAUDE_BIN, '--dangerously-skip-permissions', '--agent', 'orchestrator']
 
     log.info('Starting persistent orchestrator')
     pid, fd = pty.fork()
@@ -906,7 +935,7 @@ def start_caffeinate() -> None:
 
 def main() -> None:
     global orchestrator_idle, idle_timer, last_ctrl_c, restart_attempts
-    state_dir = SCRIPT_DIR / '.orchestrator'
+    state_dir = STATE_BASE
     (state_dir / 'designs').mkdir(parents=True, exist_ok=True)
     (state_dir / 'sessions').mkdir(parents=True, exist_ok=True)
     (state_dir / 'events').mkdir(parents=True, exist_ok=True)
@@ -1024,7 +1053,7 @@ def main() -> None:
 def _mark_idle() -> None:
     global orchestrator_idle
     orchestrator_idle = True
-    events_dir = SCRIPT_DIR / '.orchestrator' / 'events'
+    events_dir = STATE_BASE / 'events'
     if events_dir.exists() and any(events_dir.glob('*.json')):
         nudge_orchestrator()
 

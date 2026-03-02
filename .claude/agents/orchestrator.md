@@ -57,15 +57,22 @@ Create Jira → code-writer implements
 
 ## Spawning Sub-Agents
 
+**ALWAYS run agents in the background** — use `run_in_background: true` on the Bash tool or append `&`. You are a router — never block waiting for an agent to finish.
+
 ```bash
-# Spawn a new agent
-env -u CLAUDECODE claude --dangerously-skip-permissions -p --agent {name} "{prompt}"
+# Spawn a code-writer (always in a worktree, always background)
+env -u CLAUDECODE claude --dangerously-skip-permissions -p --worktree --agent code-writer "{prompt}" &
+
+# Spawn architect or reviewer (no worktree needed — they don't write code)
+env -u CLAUDECODE claude --dangerously-skip-permissions -p --agent architect "{prompt}" &
 
 # Resume existing session
-env -u CLAUDECODE claude --dangerously-skip-permissions --resume {sessionId} -p "{follow-up prompt}"
+env -u CLAUDECODE claude --dangerously-skip-permissions --resume {sessionId} -p "{follow-up prompt}" &
 ```
 
-**Always save session IDs after spawning:**
+**`--worktree` is required for code-writer** — gives it an isolated branch and directory. Architect and reviewer don't need it since they don't modify code.
+
+**Capture session IDs from output** — when the background agent completes, read its output to get the session ID, then save it:
 ```bash
 python3 state.py session save TOS-42 --session-id abc123 --agent code-writer --pr 42
 ```
@@ -140,46 +147,45 @@ LOOP (max 3):
 ```
 
 ### page:comment
-1. `python3 confluence.py get-comments <pageId> --unresolved-only`
-2. Spawn architect to update LOCAL design doc only (no Confluence push)
-3. Reply to each comment: `python3 confluence.py reply-comment <commentId> "Fixed: ..."`
-4. Re-register watch: `python3 state.py watch add confluence:review --page <pageId> --design <designId>`
+1. Spawn architect — pass: `{event, pageId, designId}` — architect fetches comments, updates doc, replies
+   (watch stays alive — no re-registration needed)
 
 ### page:needs-fix
-1. Check for unaddressed comments → spawn architect if any
-2. Push doc: `python3 confluence.py update-page <pageId> "<title>" <docPath>`
-3. Swap labels: remove `needs-fix`, add `in-review`
-4. Re-register watch
+1. Spawn architect — pass: `{event, pageId, designId}` — architect handles comments + pushes update
+   (watch stays alive — no re-registration needed)
 
 ### page:approved
-1. Parse design doc → extract PR breakdown
-2. Create parent Jira: `python3 jira.py create TOS Epic "{title}"`
-3. Create child tasks from breakdown
-4. Spawn code-writer for foundation PR first
-5. After foundation merges → spawn feature code-writers in parallel
+1. Remove `confluence:review` watch — `state.py watch remove {watchId}`
+2. Spawn architect — pass: `{event, designId}` — architect reads its own design, creates Jira breakdown, reports back what tickets/PRs to spawn
+3. Spawn code-writers per ticket as architect directs (foundation first)
 
 ### ci:failed
-1. Get session: `python3 state.py session get {issueKey}`
-2. Resume code-writer: `--resume {sessionId} "Fix CI: {logs}"`
-3. Increment ci-attempt label in Jira
+1. Resume code-writer — pass: `{event}` — code-writer fetches its own CI logs and decides what to fix
+2. Log action
 
 ### ci:passed
-1. Spawn reviewer for code review
+1. Spawn reviewer — pass: `{event, prNumber, issueKey}` — reviewer reads the PR and posts findings
 2. Register `pr:review` watch
 
 ### pr:approved
-1. `gh pr merge {prNumber} --squash --repo Build4Africa/tosspaper`
-2. `python3 jira.py transition {issueKey} Done`
-3. Delete session
-4. Check siblings — if all merged, notify completion
+1. Remove `pr:review` watch — `state.py watch remove {watchId}`
+2. `gh pr merge --squash`
+3. `jira.py transition Done`
+4. Delete session
+5. If siblings remain → check what to spawn next
+6. If all merged → `state.py design complete`
 
-### pr:changes_requested / pr:comment
-1. Read the comment
-2. Resume code-writer: `--resume {sessionId} "Address PR feedback: {comments}"`
+### pr:comment
+1. Resume code-writer — pass: `{event}` — code-writer reads the comment and decides whether to act
+
+### pr:changes_requested
+1. Resume code-writer — pass: `{event}` — code-writer reads the PR comments and decides what to change
+2. Register `pr:ci` watch
 
 ### pr:merged
-1. `python3 jira.py transition {issueKey} Done`
-2. Delete session
+1. Remove `pr:review` watch if still active — `state.py watch remove {watchId}`
+2. `jira.py transition Done`
+3. Delete session
 3. If foundation PR → spawn feature code-writers
 4. If all siblings merged → mark design complete
 

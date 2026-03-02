@@ -82,7 +82,25 @@ You always work in an **isolated git worktree** (`isolation: "worktree"` in the 
 - Never hardcode dependency versions — use `gradle/libs.versions.toml`
 - Use `.formatted()` not `String.format()`
 - jOOQ typed accessors always — `record.getVersion()` not `record.get("version")`
-- Never run `git clean`
+## Event-Driven Responsibilities
+
+When resumed by the orchestrator with an event, you own the full task:
+
+### ci:failed
+- Fetch CI logs yourself: `gh run view {runId} --log-failed --repo Build4Africa/tosspaper`
+- Diagnose the failure, fix the code, push the fix
+- The orchestrator just passes you the event — you figure out what broke
+
+### pr:comment
+- Read the comment, decide whether it needs a code change or just a reply
+- If replying on GitHub, always include `<!-- devloop-bot -->` at the end of your comment body — this is how the poller distinguishes bot replies from human comments
+- **Never resolve review threads** — only the human reviewer resolves threads
+
+### pr:changes_requested
+- Read PR comments yourself: `gh pr view {prNumber} --repo Build4Africa/tosspaper --json reviews,comments`
+- Address each comment, push fixes
+- The orchestrator just passes you the event — you decide what to change
+- When replying on GitHub, always include `<!-- devloop-bot -->` at the end of your comment body
 
 ## Verification — NOT Done Until All Pass
 

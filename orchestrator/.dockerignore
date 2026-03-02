@@ -1,0 +1,14 @@
+.orchestrator/
+__pycache__/
+*.pyc
+.env
+src/
+test/
+store/
+node_modules/
+bun.lock
+bunfig.toml
+package.json
+tsconfig.json
+SPEC.md
+REMAINING_WORK.md

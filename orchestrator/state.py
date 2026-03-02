@@ -115,12 +115,10 @@ class State:
 
     # TTL defaults (seconds) per watch type
     _DEFAULT_TTL: Dict[str, int] = {
-        "pr:ci":                 21600,    #  6 hours
-        "pr:review":             604800,   #  7 days
-        "pr:merge":              86400,    #  1 day
-        "confluence:review":     1209600,  # 14 days
-        "confluence:approval":   1209600,  # 14 days
-        "confluence:comments":   1209600,  # 14 days
+        "pr:ci":              86400,    #  1 day
+        "pr:review":          1209600,  # 14 days
+        "pr:merge":           259200,   #  3 days
+        "confluence:review":  2592000,  # 30 days
     }
 
     # Fields used to de-duplicate watches of the same type
@@ -134,7 +132,8 @@ class State:
     }
 
     def __init__(self, base_dir: Optional[str] = None, provider: Optional[StateProvider] = None) -> None:
-        self.base = Path(base_dir) if base_dir else SCRIPT_DIR / ".orchestrator"
+        default_base = os.environ.get("STATE_DIR", str(SCRIPT_DIR / ".orchestrator"))
+        self.base = Path(base_dir) if base_dir else Path(default_base)
         self.designs_dir = self.base / "designs"
         self.sessions_dir = self.base / "sessions"
         self.log_file = self.base / "log.jsonl"
