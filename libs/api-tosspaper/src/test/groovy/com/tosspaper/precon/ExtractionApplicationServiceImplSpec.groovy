@@ -69,6 +69,8 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         and: "ExtractionNotApplicableException is thrown with the correct code and status in message"
             def ex = thrown(ExtractionNotApplicableException)
             ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
+            // ExtractionStatus.getValue() returns the OpenAPI wire-value (lowercase): PENDING → "pending"
+            // Confirmed from openapi-precon.yaml: ExtractionStatus enum lists 'pending' (not 'PENDING')
             ex.message.contains("pending")
     }
 
@@ -89,6 +91,8 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         and: "ExtractionNotApplicableException is thrown"
             def ex = thrown(ExtractionNotApplicableException)
             ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
+            // ExtractionStatus.getValue() returns the OpenAPI wire-value (lowercase): PROCESSING → "processing"
+            // Confirmed from openapi-precon.yaml: ExtractionStatus enum lists 'processing' (not 'PROCESSING')
             ex.message.contains("processing")
     }
 
@@ -109,6 +113,8 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         and: "ExtractionNotApplicableException is thrown"
             def ex = thrown(ExtractionNotApplicableException)
             ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
+            // ExtractionStatus.getValue() returns the OpenAPI wire-value (lowercase): FAILED → "failed"
+            // Confirmed from openapi-precon.yaml: ExtractionStatus enum lists 'failed' (not 'FAILED')
             ex.message.contains("failed")
     }
 
@@ -129,6 +135,8 @@ class ExtractionApplicationServiceImplSpec extends Specification {
         and: "ExtractionNotApplicableException is thrown"
             def ex = thrown(ExtractionNotApplicableException)
             ex.code == ApiErrorMessages.EXTRACTION_NOT_APPLICABLE_CODE
+            // ExtractionStatus.getValue() returns the OpenAPI wire-value (lowercase): CANCELLED → "cancelled"
+            // Confirmed from openapi-precon.yaml: ExtractionStatus enum lists 'cancelled' (not 'CANCELLED')
             ex.message.contains("cancelled")
     }
 
