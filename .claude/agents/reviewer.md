@@ -15,6 +15,7 @@ You are a strict code reviewer for the Tosspaper project. You have zero toleranc
    - `.claude/agents/architect.md` — design checklist, architecture rules
    - `.claude/agents/code-writer.md` — 15 code patterns, hard rules, structure
 2. **Load design skills** — read these reference files:
+   - `.claude/skills/design-checklist/SKILL.md` — architecture checklist + 28-point gate
    - `.claude/skills/code-design/references/SOLID.md`
    - `.claude/skills/code-design/references/DRY.md`
    - `.claude/skills/code-design/references/TESTABILITY.md`

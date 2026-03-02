@@ -13,7 +13,8 @@ Load the relevant skill file **before** starting each phase. Skills contain the 
 
 | Phase | Load This Skill |
 |-------|----------------|
-| Before writing any code | `.claude/skills/code-design/SKILL.md` |
+| Planning a new feature (scope, split, 28-point gate) | `.claude/skills/design-checklist/SKILL.md` |
+| Before writing any code (SOLID, DRY, testability) | `.claude/skills/code-design/SKILL.md` |
 | Writing unit tests (Services, Mappers, Adapters) | `.claude/skills/test-unit/SKILL.md` |
 | Writing integration tests (Repositories, Controllers) | `.claude/skills/test-integration/SKILL.md` |
 | Adding or updating Gradle dependencies | `.claude/skills/gradle-deps/SKILL.md` |
