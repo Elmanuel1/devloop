@@ -22,6 +22,10 @@ Importable as a module (from state import State) or usable as a CLI:
     python3 state.py watch list     [--type pr:ci]
     python3 state.py events pop
     python3 state.py events list
+    python3 state.py events nack          # pipe event JSON to stdin to re-queue with incremented attempts
+    python3 state.py events dead          # list dead-lettered events (failed 3+ times)
+    python3 state.py events retry-dead    # move all dead events back to live queue
+    python3 state.py migrate sqlite       # migrate file-based state to SQLite (set STATE_BACKEND=sqlite after)
 """
 
 import json
@@ -63,6 +67,11 @@ class StateProvider(ABC):
     def pop_event(self) -> Optional[dict]:
         ...
 
+    @abstractmethod
+    def nack_event(self, event: dict) -> None:
+        """Re-queue a failed event with incremented attempts counter."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # File-based implementation
@@ -71,11 +80,15 @@ class StateProvider(ABC):
 class FileStateProvider(StateProvider):
     """File-based implementation. watches.json + events/ dir."""
 
+    MAX_EVENT_ATTEMPTS = 3
+
     def __init__(self, base_dir: Path) -> None:
         self.base = base_dir
         self.watches_file = base_dir / "watches.json"
         self.events_dir = base_dir / "events"
+        self.dead_events_dir = base_dir / "dead_events"
         self.events_dir.mkdir(parents=True, exist_ok=True)
+        self.dead_events_dir.mkdir(parents=True, exist_ok=True)
 
     def read_watches(self) -> List[dict]:
         if not self.watches_file.exists():
@@ -95,12 +108,29 @@ class FileStateProvider(StateProvider):
 
     def pop_event(self) -> Optional[dict]:
         files = sorted(self.events_dir.glob("*.json"))
-        if not files:
-            return None
-        path = files[0]
-        event = json.loads(path.read_text())
-        path.unlink()
-        return event
+        for path in files:
+            try:
+                event = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                path.unlink(missing_ok=True)
+                continue
+            # Backward compatible: old events without _attempts default to 0
+            attempts = event.get("_attempts", 0)
+            if attempts >= self.MAX_EVENT_ATTEMPTS:
+                # Poison event — move to dead letter queue, skip to next
+                dest = self.dead_events_dir / path.name
+                path.rename(dest)
+                continue
+            event["_attempts"] = attempts
+            path.unlink()
+            return event
+        return None
+
+    def nack_event(self, event: dict) -> None:
+        """Re-queue an event with incremented attempts (orchestrator failed to process it).
+        If max attempts exceeded, it will be dead-lettered on next pop."""
+        event["_attempts"] = event.get("_attempts", 0) + 1
+        self.push_event(event)
 
     def read_events(self) -> List[dict]:
         return [json.loads(f.read_text()) for f in sorted(self.events_dir.glob("*.json"))]
@@ -140,7 +170,41 @@ class State:
         self.designs_dir.mkdir(parents=True, exist_ok=True)
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
         self.log_file.touch(exist_ok=True)
-        self.provider = provider or FileStateProvider(self.base)
+
+        if provider:
+            self.provider = provider
+        else:
+            backend = os.environ.get("STATE_BACKEND", "file").lower()
+            if backend == "sqlite":
+                self.provider = self._init_sqlite_provider()
+            else:
+                self.provider = FileStateProvider(self.base)
+
+    def _init_sqlite_provider(self):
+        """Initialize SQLite provider, auto-migrating from files if needed."""
+        try:
+            from store_sqlite import SQLiteStateProvider
+        except ImportError:
+            import sys
+            print("[state] WARNING: store_sqlite.py not found, falling back to file provider", file=sys.stderr)
+            return FileStateProvider(self.base)
+
+        db_path = self.base / "state.db"
+        if not db_path.exists():
+            # Check if file-based state exists to migrate
+            has_files = (
+                (self.base / "watches.json").exists()
+                or any((self.base / "designs").glob("*.json"))
+                or any((self.base / "sessions").glob("*.json"))
+                or any((self.base / "events").glob("*.json"))
+            )
+            if has_files:
+                import sys
+                print("[state] Migrating file-based state to SQLite...", file=sys.stderr)
+                provider = SQLiteStateProvider.migrate_from_files(self.base, db_path)
+                print("[state] Migration complete. File-based state preserved as backup.", file=sys.stderr)
+                return provider
+        return SQLiteStateProvider(db_path)
 
     # ------------------------------------------------------------------
     # Designs
@@ -435,22 +499,26 @@ class State:
         self.provider.push_event(event)
         self.log("event_queued", type=event.get("type"))
 
+    def nack_event(self, event: dict) -> None:
+        """Re-queue a failed event. Increments _attempts; dead-lettered on next pop if over limit."""
+        self.provider.nack_event(event)
+        attempts = event.get("_attempts", 0)
+        self.log("event_nacked", type=event.get("type"), attempts=attempts)
+
     def pop_event(self) -> Optional[dict]:
         """Pop the oldest event from the queue (read + delete).
 
-        page:comment events are gated: if the target design has inFlightCommentIds set
-        (architect is already working), the new comment IDs are merged into inFlightCommentIds
-        and the event is deferred (not returned). Already-handled comments are silently dropped.
+        - Poison protection: events with _attempts >= 3 are dead-lettered (skipped).
+        - page:comment gating: if the target design has inFlightCommentIds set
+          (architect is already working), the new comment IDs are merged and the event is deferred.
         """
-        events = self.provider.read_events()
-        files = sorted((self.base / "events").glob("*.json"))
-        for f in files:
-            try:
-                event = json.loads(f.read_text())
-            except (json.JSONDecodeError, OSError):
-                f.unlink()
-                continue
+        # Use provider's pop which handles poison detection + dead-lettering
+        while True:
+            event = self.provider.pop_event()
+            if event is None:
+                return None
 
+            # page:comment gating logic
             if event.get("type") == "page:comment":
                 design_id = event.get("designId")
                 if design_id:
@@ -460,20 +528,15 @@ class State:
                         in_flight = set(design.get("inFlightCommentIds", []))
                         new_ids = [c for c in event.get("newCommentIds", []) if c not in handled]
                         if not new_ids:
-                            f.unlink()
                             self.log("event_dropped", type="page:comment", reason="all_comments_already_handled")
                             continue
                         if in_flight:
-                            # architect is busy — merge IDs and defer
                             self.update_design(design_id, {"merge_in_flight_comments": new_ids})
-                            f.unlink()
                             self.log("event_deferred", type="page:comment", reason="architect_in_flight")
                             continue
                         event["newCommentIds"] = new_ids
 
-            f.unlink()
             return event
-        return None
 
     def list_events(self) -> List[dict]:
         """List all pending events without removing them."""
@@ -798,6 +861,45 @@ def cli() -> None:
             events = state.list_events()
             print(json.dumps(events))
 
+        elif command == "nack":
+            # Re-queue from stdin: echo '{"type":"ci:failed",...}' | python3 state.py events nack
+            raw = sys.stdin.read().strip()
+            if raw:
+                event = json.loads(raw)
+                state.nack_event(event)
+                print(json.dumps({"ok": True, "attempts": event.get("_attempts", 0)}))
+            else:
+                print("Pipe event JSON to stdin")
+                sys.exit(1)
+
+        elif command == "dead":
+            # List dead-lettered events
+            dead_dir = state.base / "dead_events"
+            dead_dir.mkdir(parents=True, exist_ok=True)
+            dead = []
+            for f in sorted(dead_dir.glob("*.json")):
+                try:
+                    dead.append(json.loads(f.read_text()))
+                except (json.JSONDecodeError, OSError):
+                    pass
+            print(json.dumps(dead))
+
+        elif command == "retry-dead":
+            # Move all dead events back to the live queue with attempts reset
+            dead_dir = state.base / "dead_events"
+            dead_dir.mkdir(parents=True, exist_ok=True)
+            count = 0
+            for f in sorted(dead_dir.glob("*.json")):
+                try:
+                    event = json.loads(f.read_text())
+                    event["_attempts"] = 0
+                    state.queue_event(event)
+                    f.unlink()
+                    count += 1
+                except (json.JSONDecodeError, OSError):
+                    pass
+            print(json.dumps({"ok": True, "retried": count}))
+
         else:
             print(f"Unknown: events {command}")
             sys.exit(1)
@@ -834,6 +936,33 @@ def cli() -> None:
         else:
             print(f"Unknown: log {command}")
             sys.exit(1)
+        return
+
+    # ------------------------------------------------------------------
+    # migrate
+    # ------------------------------------------------------------------
+    if group == "migrate":
+        target = rest[0] if rest else ""
+        if target != "sqlite":
+            print("Usage: state.py migrate sqlite")
+            sys.exit(1)
+        db_path = state.base / "state.db"
+        if db_path.exists():
+            print(f"SQLite DB already exists at {db_path}")
+            print("Delete it first if you want to re-migrate.")
+            sys.exit(1)
+        from store_sqlite import SQLiteStateProvider
+        print(f"Migrating file-based state from {state.base} to SQLite...")
+        provider = SQLiteStateProvider.migrate_from_files(state.base, db_path)
+        # Count migrated items
+        designs = len(provider.list_designs())
+        sessions = len(provider.list_sessions())
+        watches = len(provider.read_watches())
+        events = len(provider.read_events())
+        log_entries = len(provider.read_log(last=99999))
+        print(f"Migrated: {designs} designs, {sessions} sessions, {watches} watches, {events} events, {log_entries} log entries")
+        print(f"SQLite DB: {db_path}")
+        print("Set STATE_BACKEND=sqlite in .env to use it.")
         return
 
     print(f"Unknown group: {group}")

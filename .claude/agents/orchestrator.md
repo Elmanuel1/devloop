@@ -225,6 +225,52 @@ gh issue list --repo Build4Africa/tosspaper
 
 ---
 
+## Webhook Events
+
+The poller runs an HTTP server (default port 9400) that receives GitHub and Jira webhooks.
+Webhook events have `"source": "webhook"` in their payload. They follow the same event types
+as polled events and are processed identically. Polling runs as fallback for missed webhooks.
+
+---
+
+## Poison Event Protection
+
+Events track `_attempts` count. If processing fails 3 times, the event is moved to
+`.orchestrator/dead_events/` (dead letter queue). To inspect or retry:
+
+```bash
+python3 state.py events dead          # list dead-lettered events
+python3 state.py events retry-dead    # move all back to live queue with attempts reset
+```
+
+If the orchestrator fails to process an event, use `nack` to re-queue it:
+```bash
+echo '{"type":"ci:failed",...}' | python3 state.py events nack
+```
+
+---
+
+## Config Reload
+
+Send `SIGUSR1` to the poller process to reload `.env` without restarting:
+```bash
+kill -USR1 $(pgrep -f poll.py)
+```
+This reloads: poll interval, max workers, webhook port, Slack tokens.
+
+---
+
+## State Backend
+
+Default is file-based (`.orchestrator/` directory). To switch to SQLite:
+```bash
+python3 state.py migrate sqlite       # one-time migration, preserves all data
+# Then add to .env:
+STATE_BACKEND=sqlite
+```
+
+---
+
 ## Hard Rules
 
 - **Never write production Java code** — spawn code-writer
@@ -235,3 +281,4 @@ gh issue list --repo Build4Africa/tosspaper
 - **Always log significant actions** — `python3 state.py log append ...`
 - **Always re-register watches** after handling page:comment and page:needs-fix
 - **Never run `git clean`** anywhere
+- **Agents run in background** — always use `&` or `run_in_background: true`

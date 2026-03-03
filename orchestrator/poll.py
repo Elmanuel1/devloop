@@ -68,8 +68,26 @@ SLACK_APP_TOKEN       = env('SLACK_APP_TOKEN', '')
 SLACK_BOT_TOKEN       = env('SLACK_BOT_TOKEN', '')
 WATCH_POLL_INTERVAL   = env_int('WATCH_POLL_INTERVAL_SEC', 10)
 MAX_POLL_WORKERS      = env_int('MAX_POLL_WORKERS', 5)
+WEBHOOK_PORT          = env_int('WEBHOOK_PORT', 9400)
 MAX_RESTART_ATTEMPTS  = 3
 BOT_SIGNATURE         = '<!-- devloop-bot -->'
+
+
+def reload_config(signum=None, frame=None) -> None:
+    """Reload .env and recalculate config vars. Called on SIGUSR1."""
+    global SLACK_APP_TOKEN, SLACK_BOT_TOKEN, WATCH_POLL_INTERVAL, MAX_POLL_WORKERS, WEBHOOK_PORT
+    # Re-read .env (only sets vars not already in os.environ, so clear first)
+    for key in ('SLACK_APP_TOKEN', 'SLACK_BOT_TOKEN', 'WATCH_POLL_INTERVAL_SEC',
+                'MAX_POLL_WORKERS', 'WEBHOOK_PORT'):
+        os.environ.pop(key, None)
+    load_dotenv(str(SCRIPT_DIR / '.env'))
+    SLACK_APP_TOKEN     = env('SLACK_APP_TOKEN', '')
+    SLACK_BOT_TOKEN     = env('SLACK_BOT_TOKEN', '')
+    WATCH_POLL_INTERVAL = env_int('WATCH_POLL_INTERVAL_SEC', 10)
+    MAX_POLL_WORKERS    = env_int('MAX_POLL_WORKERS', 5)
+    WEBHOOK_PORT        = env_int('WEBHOOK_PORT', 9400)
+    log.info('Config reloaded: poll_interval=%ds, workers=%d, webhook_port=%d',
+             WATCH_POLL_INTERVAL, MAX_POLL_WORKERS, WEBHOOK_PORT)
 
 CLAUDE_BIN = shutil.which('claude')
 
@@ -908,6 +926,195 @@ def handle_slack_message(event: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Webhook HTTP server
+# ---------------------------------------------------------------------------
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import hmac
+import hashlib
+
+
+class WebhookHandler(BaseHTTPRequestHandler):
+    """Lightweight HTTP handler for GitHub/Jira webhook payloads."""
+
+    def log_message(self, format, *args):
+        log.info('[webhook] %s', format % args)
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > 1_000_000:  # 1MB limit
+            self.send_error(413, 'Payload too large')
+            return
+        body = self.rfile.read(content_length)
+
+        # Verify GitHub signature if secret is configured
+        gh_secret = env('WEBHOOK_SECRET', '')
+        if gh_secret and self.path.startswith('/webhook/github'):
+            sig_header = self.headers.get('X-Hub-Signature-256', '')
+            expected = 'sha256=' + hmac.new(
+                gh_secret.encode(), body, hashlib.sha256
+            ).hexdigest()
+            if not hmac.compare_digest(sig_header, expected):
+                self.send_error(403, 'Invalid signature')
+                return
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            self.send_error(400, 'Invalid JSON')
+            return
+
+        if self.path == '/webhook/github':
+            self._handle_github(payload)
+        elif self.path == '/webhook/jira':
+            self._handle_jira(payload)
+        elif self.path == '/health':
+            self._respond(200, {'status': 'ok'})
+        else:
+            self.send_error(404, 'Unknown endpoint')
+
+    def do_GET(self):
+        if self.path == '/health':
+            self._respond(200, {'status': 'ok'})
+        else:
+            self.send_error(404)
+
+    def _respond(self, code: int, data: dict):
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+    def _handle_github(self, payload: dict):
+        """Convert GitHub webhook payload to an event and queue it."""
+        gh_event = self.headers.get('X-GitHub-Event', '')
+        state = State()
+        event = None
+
+        if gh_event == 'check_suite' and payload.get('action') == 'completed':
+            suite = payload.get('check_suite', {})
+            conclusion = suite.get('conclusion', '')
+            branch = suite.get('head_branch', '')
+            repo = payload.get('repository', {}).get('full_name', '')
+            prs = suite.get('pull_requests', [])
+            pr_number = prs[0].get('number') if prs else None
+            event = {
+                'type': 'ci:passed' if conclusion == 'success' else 'ci:failed',
+                'repo': repo,
+                'branch': branch,
+                'prNumber': pr_number,
+                'conclusion': conclusion,
+                'source': 'webhook',
+            }
+
+        elif gh_event == 'pull_request_review':
+            action = payload.get('action', '')
+            review = payload.get('review', {})
+            pr = payload.get('pull_request', {})
+            repo = payload.get('repository', {}).get('full_name', '')
+            review_state = review.get('state', '').upper()
+            if action == 'submitted' and review_state in ('APPROVED', 'CHANGES_REQUESTED'):
+                event = {
+                    'type': 'pr:approved' if review_state == 'APPROVED' else 'pr:changes_requested',
+                    'repo': repo,
+                    'prNumber': pr.get('number'),
+                    'source': 'webhook',
+                }
+
+        elif gh_event == 'pull_request' and payload.get('action') == 'closed':
+            pr = payload.get('pull_request', {})
+            if pr.get('merged'):
+                repo = payload.get('repository', {}).get('full_name', '')
+                event = {
+                    'type': 'pr:merged',
+                    'repo': repo,
+                    'prNumber': pr.get('number'),
+                    'mergedAt': pr.get('merged_at'),
+                    'source': 'webhook',
+                }
+
+        elif gh_event in ('pull_request_review_comment', 'issue_comment'):
+            comment = payload.get('comment', {})
+            pr = payload.get('pull_request') or payload.get('issue', {})
+            repo = payload.get('repository', {}).get('full_name', '')
+            body = comment.get('body', '')
+            # Skip bot comments
+            if BOT_SIGNATURE not in body:
+                event = {
+                    'type': 'pr:comment',
+                    'repo': repo,
+                    'prNumber': pr.get('number'),
+                    'commentId': comment.get('id'),
+                    'body': body,
+                    'author': comment.get('user', {}).get('login', ''),
+                    'isReviewComment': gh_event == 'pull_request_review_comment',
+                    'source': 'webhook',
+                }
+
+        if event:
+            state.queue_event(event)
+            nudge_orchestrator()
+            log.info('[webhook] Queued %s from GitHub', event.get('type'))
+            self._respond(200, {'queued': event.get('type')})
+        else:
+            self._respond(200, {'ignored': True, 'github_event': gh_event})
+
+    def _handle_jira(self, payload: dict):
+        """Convert Jira webhook payload to an event and queue it."""
+        webhook_event = payload.get('webhookEvent', '')
+        issue = payload.get('issue', {})
+        state = State()
+        event = None
+
+        if 'comment' in webhook_event:
+            comment = payload.get('comment', {})
+            event = {
+                'type': 'jira:comment',
+                'issueKey': issue.get('key', ''),
+                'commentId': comment.get('id'),
+                'body': comment.get('body', ''),
+                'author': comment.get('author', {}).get('displayName', ''),
+                'source': 'webhook',
+            }
+
+        elif webhook_event == 'jira:issue_updated':
+            changelog = payload.get('changelog', {})
+            for item in changelog.get('items', []):
+                if item.get('field') == 'status':
+                    event = {
+                        'type': 'jira:status_changed',
+                        'issueKey': issue.get('key', ''),
+                        'fromStatus': item.get('fromString', ''),
+                        'toStatus': item.get('toString', ''),
+                        'source': 'webhook',
+                    }
+                    break
+
+        if event:
+            state.queue_event(event)
+            nudge_orchestrator()
+            log.info('[webhook] Queued %s from Jira', event.get('type'))
+            self._respond(200, {'queued': event.get('type')})
+        else:
+            self._respond(200, {'ignored': True, 'jira_event': webhook_event})
+
+
+def start_webhook_server() -> None:
+    """Start the webhook HTTP server in a daemon thread."""
+    port = WEBHOOK_PORT
+    if not port:
+        log.info('Webhook server disabled (WEBHOOK_PORT=0)')
+        return
+    try:
+        server = HTTPServer(('0.0.0.0', port), WebhookHandler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        log.info('Webhook server listening on port %d', port)
+    except OSError as e:
+        log.warning('Failed to start webhook server on port %d: %s', port, e)
+
+
+# ---------------------------------------------------------------------------
 # macOS caffeinate
 # ---------------------------------------------------------------------------
 
@@ -939,13 +1146,20 @@ def main() -> None:
     (state_dir / 'designs').mkdir(parents=True, exist_ok=True)
     (state_dir / 'sessions').mkdir(parents=True, exist_ok=True)
     (state_dir / 'events').mkdir(parents=True, exist_ok=True)
+    (state_dir / 'dead_events').mkdir(parents=True, exist_ok=True)
     (state_dir / 'handler_state').mkdir(parents=True, exist_ok=True)
     (state_dir / 'log.jsonl').touch(exist_ok=True)
 
     log.info('Orchestrator poller starting (watch-driven)')
 
+    # SIGUSR1 → reload config without restart
+    if hasattr(signal, 'SIGUSR1'):
+        signal.signal(signal.SIGUSR1, reload_config)
+        log.info('SIGUSR1 handler registered (kill -USR1 %d to reload config)', os.getpid())
+
     start_caffeinate()
     start_slack()
+    start_webhook_server()
 
     watch_thread = threading.Thread(target=watch_poll_loop, daemon=True)
     watch_thread.start()
