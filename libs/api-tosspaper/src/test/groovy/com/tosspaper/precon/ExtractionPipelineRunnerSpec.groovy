@@ -2,7 +2,7 @@ package com.tosspaper.precon
 
 import com.tosspaper.aiengine.client.reducto.ReductoClient
 import com.tosspaper.aiengine.client.reducto.dto.ReductoStatus
-import com.tosspaper.aiengine.client.reducto.exception.ReductoIntermediateStatusException
+import com.tosspaper.models.exception.ReductoIntermediateStatusException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
@@ -170,7 +170,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, lockManager, reductoClient, syncExecutor])
             runnerSpy.callReducto(_) >> {
-                throw new ReductoIntermediateStatusException(ReductoStatus.PROCESSING)
+                throw new ReductoIntermediateStatusException(ReductoStatus.PROCESSING.name())
             }
 
         when: "scatterGather is called"
@@ -189,7 +189,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, lockManager, reductoClient, syncExecutor])
             runnerSpy.callReducto(_) >> {
-                throw new ReductoIntermediateStatusException(ReductoStatus.PENDING)
+                throw new ReductoIntermediateStatusException(ReductoStatus.PENDING.name())
             }
 
         when: "scatterGather is called"
@@ -202,18 +202,18 @@ class ExtractionPipelineRunnerSpec extends Specification {
             1 * lockManager.releaseLock("ext-pending")
     }
 
-    def "TC-PR-12: ReductoIntermediateStatusException carries the status that triggered it"() {
+    def "TC-PR-12: ReductoIntermediateStatusException carries the status name that triggered it"() {
         when: "exception is created with PROCESSING status"
-            def ex = new ReductoIntermediateStatusException(ReductoStatus.PROCESSING)
+            def ex = new ReductoIntermediateStatusException(ReductoStatus.PROCESSING.name())
 
-        then: "status is accessible"
-            ex.getStatus() == ReductoStatus.PROCESSING
+        then: "status name is accessible"
+            ex.getStatus() == "PROCESSING"
 
         when: "exception is created with PENDING status"
-            def ex2 = new ReductoIntermediateStatusException(ReductoStatus.PENDING)
+            def ex2 = new ReductoIntermediateStatusException(ReductoStatus.PENDING.name())
 
-        then: "status is accessible"
-            ex2.getStatus() == ReductoStatus.PENDING
+        then: "status name is accessible"
+            ex2.getStatus() == "PENDING"
     }
 
     // ==================== Helper Methods ====================

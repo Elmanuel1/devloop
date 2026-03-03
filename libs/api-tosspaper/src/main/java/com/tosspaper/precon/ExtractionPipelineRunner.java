@@ -1,7 +1,7 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.aiengine.client.reducto.ReductoClient;
-import com.tosspaper.aiengine.client.reducto.exception.ReductoIntermediateStatusException;
+import com.tosspaper.models.exception.ReductoIntermediateStatusException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
