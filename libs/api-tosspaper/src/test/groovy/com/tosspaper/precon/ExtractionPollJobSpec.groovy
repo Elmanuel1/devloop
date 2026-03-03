@@ -10,13 +10,13 @@ import java.util.concurrent.Executor
 class ExtractionPollJobSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
-    ExtractionPipelineLockService lockService = Mock()
+    ExtractionLockManager lockManager = Mock()
     ReductoClient reductoClient = Mock()
     Executor processingExecutor = Mock()
 
     @Subject
     ExtractionPollJob job = new ExtractionPollJob(
-            repository, lockService, reductoClient, processingExecutor, 5000L)
+            repository, lockManager, reductoClient, processingExecutor, 5000L)
 
     // ==================== SmartLifecycle ====================
 
@@ -61,8 +61,8 @@ class ExtractionPollJobSpec extends Specification {
         when: "poll runs"
             job.poll()
 
-        then: "lock service is never called"
-            0 * lockService.tryWithExtractionLock(_, _)
+        then: "lock manager is never called"
+            0 * lockManager.tryWithExtractionLock(_, _)
 
         and: "markAsProcessing is never called"
             0 * repository.markAsProcessing(_)
@@ -77,7 +77,7 @@ class ExtractionPollJobSpec extends Specification {
         given: "one pending extraction but lock is held by another instance"
             def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
-            lockService.tryWithExtractionLock("ext-id-1", _) >> false
+            lockManager.tryWithExtractionLock("ext-id-1", _) >> false
 
         when: "poll runs"
             job.poll()
@@ -97,7 +97,7 @@ class ExtractionPollJobSpec extends Specification {
             repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
 
             // Capture and immediately invoke the action passed to tryWithExtractionLock
-            lockService.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
+            lockManager.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
                 action.run()
                 return true
             }
@@ -132,14 +132,14 @@ class ExtractionPollJobSpec extends Specification {
             repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [e1, e2]
 
             // Lock is not acquired for either — simplest path to verify lock calls
-            lockService.tryWithExtractionLock(_, _) >> false
+            lockManager.tryWithExtractionLock(_, _) >> false
 
         when: "poll runs"
             job.poll()
 
         then: "a lock attempt is made for each extraction"
-            1 * lockService.tryWithExtractionLock("ext-id-1", _)
-            1 * lockService.tryWithExtractionLock("ext-id-2", _)
+            1 * lockManager.tryWithExtractionLock("ext-id-1", _)
+            1 * lockManager.tryWithExtractionLock("ext-id-2", _)
     }
 
     def "TC-PJ-11: should submit one CompletableFuture per document to reductoExecutor"() {
@@ -148,7 +148,7 @@ class ExtractionPollJobSpec extends Specification {
             repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
             repository.markAsProcessing("ext-id-1") >> 1
 
-            lockService.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
+            lockManager.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
                 action.run()
                 return true
             }
@@ -172,8 +172,8 @@ class ExtractionPollJobSpec extends Specification {
         then: "repository was queried every time — no global gate"
             3 * repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> []
 
-        and: "lock service was never involved (no extractions returned)"
-            0 * lockService._
+        and: "lock manager was never involved (no extractions returned)"
+            0 * lockManager._
     }
 
     // ==================== scatterGather ====================

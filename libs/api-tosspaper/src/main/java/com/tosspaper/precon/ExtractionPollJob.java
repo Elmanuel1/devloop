@@ -59,7 +59,7 @@ public class ExtractionPollJob implements SmartLifecycle {
     static final int POLL_BATCH_SIZE = 50;
 
     private final PreconExtractionRepository preconExtractionRepository;
-    private final ExtractionPipelineLockService lockService;
+    private final ExtractionLockManager lockManager;
     private final ReductoClient reductoClient;
     private final Executor reductoExecutor;
     private final long delayMs;
@@ -71,12 +71,12 @@ public class ExtractionPollJob implements SmartLifecycle {
 
     public ExtractionPollJob(
             PreconExtractionRepository preconExtractionRepository,
-            ExtractionPipelineLockService lockService,
+            ExtractionLockManager lockManager,
             ReductoClient reductoClient,
             @Qualifier("extractionProcessingExecutor") Executor reductoExecutor,
             @Value("${extraction.poll.delay-ms:5000}") long delayMs) {
         this.preconExtractionRepository = preconExtractionRepository;
-        this.lockService = lockService;
+        this.lockManager = lockManager;
         this.reductoClient = reductoClient;
         this.reductoExecutor = reductoExecutor;
         this.delayMs = delayMs;
@@ -140,7 +140,7 @@ public class ExtractionPollJob implements SmartLifecycle {
         for (ExtractionWithDocs extraction : pending) {
             String extractionId = extraction.getId();
 
-            boolean locked = lockService.tryWithExtractionLock(extractionId, () -> {
+            boolean locked = lockManager.tryWithExtractionLock(extractionId, () -> {
                 preconExtractionRepository.markAsProcessing(extractionId);
                 scatterGather(extraction);
             });
@@ -179,7 +179,7 @@ public class ExtractionPollJob implements SmartLifecycle {
                         .exceptionally(ex -> {
                             log.error("[ExtractionPoll] Scatter-gather failed for extraction {}: {}",
                                     id, ex.getMessage(), ex);
-                            lockService.releaseLock(id);
+                            lockManager.releaseLock(id);
                             preconExtractionRepository.markAsFailed(id);
                             return null;
                         }));
@@ -231,7 +231,7 @@ public class ExtractionPollJob implements SmartLifecycle {
             preconExtractionRepository.markAsCompleted(extractionId);
             log.info("[ExtractionPoll] Extraction {} marked as COMPLETED", extractionId);
         } finally {
-            lockService.releaseLock(extractionId);
+            lockManager.releaseLock(extractionId);
         }
     }
 }
