@@ -1,6 +1,6 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
+import com.tosspaper.aiengine.client.reducto.ReductoClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,43 +8,48 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import static java.util.concurrent.CompletableFuture.allOf;
+import static java.util.concurrent.CompletableFuture.supplyAsync;
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.mapping;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Lifecycle-managed job that polls for {@code PENDING} extractions and
- * dispatches them to the fixed processing thread pool.
+ * dispatches their documents to the fixed processing thread pool.
  *
  * <h3>Design</h3>
  * <ul>
+ *   <li><strong>No global job lock.</strong> Every JVM instance polls at the
+ *       same cadence. Duplicate processing is prevented by the per-extraction
+ *       Redisson lock acquired before any work starts.</li>
+ *   <li><strong>Per-extraction lock.</strong> For each pending extraction the
+ *       scheduler tries to acquire {@code extraction:lock:{id}} (20-minute
+ *       lease, no-wait). Instances that lose the race skip the extraction.</li>
+ *   <li><strong>markAsProcessing as secondary DB guard.</strong> Called
+ *       immediately after acquiring the per-ID lock so that a slower poll
+ *       cycle on the same node does not re-fetch the row.</li>
+ *   <li><strong>Flat scatter-gather.</strong> All documents from all
+ *       extractions are submitted flat into the shared
+ *       {@code reductoExecutor} pool. Futures are then grouped by extraction
+ *       ID and each group's {@code allOf()} gathers independently.</li>
  *   <li><strong>ScheduledExecutorService.</strong> A single-threaded
- *       {@link ScheduledExecutorService} runs the poll task with
- *       {@code scheduleWithFixedDelay} so that consecutive runs never
- *       overlap, and the next cycle starts only after the previous one
- *       finishes.</li>
- *   <li><strong>SmartLifecycle.</strong> The executor is started in
- *       {@link #start()} and shut down gracefully in {@link #stop()},
- *       keeping lifecycle management explicit and testable without
- *       relying on {@code @PostConstruct} or Spring's {@code @Scheduled}
- *       task scheduler.</li>
- *   <li><strong>Distributed lock.</strong> {@link ExtractionPipelineLockService}
- *       wraps each poll in a Redisson lock so that across a multi-instance
- *       cluster only ONE node picks up work per cycle. If the lock is
- *       already held the current execution is a no-op — no blocking wait.</li>
- *   <li><strong>Mark PROCESSING before dispatch.</strong> Each record is
- *       transitioned to {@code processing} status in the scheduler thread
- *       before being handed off to the processing pool, preventing a
- *       subsequent poll cycle from re-fetching the same record as
- *       {@code pending}.</li>
- *   <li><strong>Fixed batch size.</strong> At most {@link #POLL_BATCH_SIZE}
- *       rows are fetched per cycle, keeping DB load predictable regardless
- *       of queue depth.</li>
+ *       {@link ScheduledExecutorService} drives the poll cycle using
+ *       {@code scheduleWithFixedDelay} so consecutive runs never overlap.</li>
+ *   <li><strong>SmartLifecycle.</strong> Keeps lifecycle management explicit
+ *       and testable — no {@code @PostConstruct} or Spring {@code @Scheduled}.</li>
  * </ul>
  *
- * <p>TODO [TOS-38] Replace {@link #processRecord} stub with the real pipeline
- * worker once the extraction engine is wired.
+ * <p>TODO [TOS-38] Wire {@link #callReducto} to the real Reducto extraction flow
+ * once the document-to-extraction pipeline is finalised.
  */
 @Slf4j
 @Component
@@ -55,7 +60,8 @@ public class ExtractionPollJob implements SmartLifecycle {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ExtractionPipelineLockService lockService;
-    private final Executor extractionProcessingExecutor;
+    private final ReductoClient reductoClient;
+    private final Executor reductoExecutor;
     private final long delayMs;
 
     private final ScheduledExecutorService scheduler =
@@ -66,15 +72,17 @@ public class ExtractionPollJob implements SmartLifecycle {
     public ExtractionPollJob(
             PreconExtractionRepository preconExtractionRepository,
             ExtractionPipelineLockService lockService,
-            @Qualifier("extractionProcessingExecutor") Executor extractionProcessingExecutor,
+            ReductoClient reductoClient,
+            @Qualifier("extractionProcessingExecutor") Executor reductoExecutor,
             @Value("${extraction.poll.delay-ms:5000}") long delayMs) {
         this.preconExtractionRepository = preconExtractionRepository;
         this.lockService = lockService;
-        this.extractionProcessingExecutor = extractionProcessingExecutor;
+        this.reductoClient = reductoClient;
+        this.reductoExecutor = reductoExecutor;
         this.delayMs = delayMs;
     }
 
-    // ---- SmartLifecycle ----
+    // ── SmartLifecycle ────────────────────────────────────────────────────────
 
     @Override
     public void start() {
@@ -109,45 +117,121 @@ public class ExtractionPollJob implements SmartLifecycle {
         return true;
     }
 
-    // ---- Poll logic ----
+    // ── Poll logic ────────────────────────────────────────────────────────────
 
     /**
-     * Polls for pending extractions, marks each as PROCESSING in the
-     * scheduler thread, then dispatches each to the processing pool.
+     * Polls for pending extractions and dispatches each one through the
+     * scatter-gather pipeline.
      *
-     * <p>Wrapped in a Redisson distributed lock so that only one JVM
-     * instance executes the poll cycle at a time.
+     * <p>No global lock — every instance polls. Per-extraction locks prevent
+     * duplicate work.
      */
     void poll() {
-        lockService.tryRunExclusive(() -> {
-            List<ExtractionsRecord> pending =
-                    preconExtractionRepository.findPendingExtractions(POLL_BATCH_SIZE);
+        List<ExtractionWithDocs> pending =
+                preconExtractionRepository.findPendingExtractions(POLL_BATCH_SIZE);
 
-            if (pending.isEmpty()) {
-                log.debug("[ExtractionPoll] No pending extractions found");
-                return;
-            }
+        if (pending.isEmpty()) {
+            log.debug("[ExtractionPoll] No pending extractions found");
+            return;
+        }
 
-            log.info("[ExtractionPoll] Found {} pending extraction(s) to process", pending.size());
-            for (ExtractionsRecord record : pending) {
-                // Mark PROCESSING in the scheduler thread before dispatching
-                // so the next poll cycle does not re-fetch the same record.
-                preconExtractionRepository.markAsProcessing(record.getId());
-                extractionProcessingExecutor.execute(() -> processRecord(record));
+        log.info("[ExtractionPoll] Found {} pending extraction(s) to process", pending.size());
+
+        for (ExtractionWithDocs extraction : pending) {
+            String extractionId = extraction.getId();
+
+            boolean locked = lockService.tryWithExtractionLock(extractionId, () -> {
+                preconExtractionRepository.markAsProcessing(extractionId);
+                scatterGather(extraction);
+            });
+
+            if (!locked) {
+                log.debug("[ExtractionPoll] Skipping extraction {} — lock held by another instance",
+                        extractionId);
             }
-        });
+        }
     }
 
+    // ── Scatter-gather ────────────────────────────────────────────────────────
+
     /**
-     * Hands an individual extraction record off to the pipeline worker.
+     * Submits all documents flat into the shared executor pool, groups the
+     * resulting futures by extraction ID, then wires each group's
+     * {@code allOf()} to call {@link #combineAndSave} on completion.
      *
-     * <p>Runs on a thread from {@code extractionProcessingExecutor} — never
-     * on the scheduler thread. TODO [TOS-38] replace with real pipeline worker.
-     *
-     * @param record the extraction record to process
+     * @param pending the extraction and its document IDs
      */
-    private void processRecord(ExtractionsRecord record) {
-        // TODO [TOS-38] wire to ExtractionPipelineWorker
-        log.info("[ExtractionPoll] Processing extraction {}", record.getId());
+    void scatterGather(ExtractionWithDocs pending) {
+        String extractionId = pending.getId();
+
+        Map<String, List<CompletableFuture<DocResult>>> byExtraction =
+                pending.documentIds().stream()
+                        .map(docId -> Map.entry(
+                                extractionId,
+                                supplyAsync(() -> callReducto(docId), reductoExecutor)))
+                        .collect(groupingBy(
+                                Map.Entry::getKey,
+                                mapping(Map.Entry::getValue, toList())));
+
+        byExtraction.forEach((id, futures) ->
+                allOf(futures.toArray(new CompletableFuture[0]))
+                        .thenRun(() -> combineAndSave(id, futures))
+                        .exceptionally(ex -> {
+                            log.error("[ExtractionPoll] Scatter-gather failed for extraction {}: {}",
+                                    id, ex.getMessage(), ex);
+                            lockService.releaseLock(id);
+                            preconExtractionRepository.markAsFailed(id);
+                            return null;
+                        }));
+    }
+
+    // ── Per-document call ─────────────────────────────────────────────────────
+
+    /**
+     * Calls the Reducto client for a single document.
+     * Runs on a thread from {@code reductoExecutor}.
+     *
+     * <p>TODO [TOS-38] The actual Reducto flow (upload → createAsyncExtractTask)
+     * is deferred. This method currently throws {@link UnsupportedOperationException}
+     * as a placeholder so the scatter-gather wiring can be tested without
+     * requiring real network calls.
+     *
+     * @param documentId the document to extract
+     * @return the extraction result
+     * @throws UnsupportedOperationException always, until TOS-38 is implemented
+     */
+    DocResult callReducto(String documentId) {
+        log.debug("[ExtractionPoll] callReducto invoked for document {} — not yet implemented (TOS-38)",
+                documentId);
+        throw new UnsupportedOperationException(
+                "callReducto is not implemented yet (TOS-38). Document: %s".formatted(documentId));
+    }
+
+    // ── Combine and save ──────────────────────────────────────────────────────
+
+    /**
+     * Collects all per-document results, merges them, saves, and marks the
+     * extraction as {@code COMPLETED}.
+     *
+     * @param extractionId the extraction to finalise
+     * @param futures      the completed document futures
+     */
+    void combineAndSave(String extractionId, List<CompletableFuture<DocResult>> futures) {
+        try {
+            List<DocResult> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .collect(Collectors.toList());
+
+            log.info("[ExtractionPoll] Combining {} doc result(s) for extraction {}",
+                    results.size(), extractionId);
+
+            // TODO [TOS-38] Persist combined results to extraction_fields once
+            //  the real Reducto response is wired.
+
+            preconExtractionRepository.markAsCompleted(extractionId);
+            log.info("[ExtractionPoll] Extraction {} marked as COMPLETED", extractionId);
+        } finally {
+            lockService.releaseLock(extractionId);
+        }
     }
 }

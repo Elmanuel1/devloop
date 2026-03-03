@@ -11,15 +11,17 @@ import java.util.concurrent.Executor;
  * Provides infrastructure beans for the extraction pipeline scheduler.
  *
  * <p>Registers a fixed-size {@link ThreadPoolTaskExecutor} that processes
- * individual extraction records dispatched by {@link ExtractionPollJob}.
- * Keeping the executor separate from the scheduler thread ensures the poll
- * cycle is never blocked by slow per-record work.
+ * individual document calls dispatched by {@link ExtractionPollJob}.
+ *
+ * <p>Note: the Reducto AI client ({@code ReductoClient}) is provided by the
+ * {@code ai-engine} library ({@code com.tosspaper.aiengine.config.ReductoConfig})
+ * and is injected into {@link ExtractionPollJob} automatically.
  */
 @Configuration
 public class ExtractionPipelineConfig {
 
     /**
-     * Fixed-size executor for processing individual extraction records.
+     * Fixed-size executor for processing individual document extractions.
      *
      * <p>Pool size is configurable via {@code extraction.processing.thread-pool-size}
      * (default 5). Both core and max are the same value so the pool is truly fixed —

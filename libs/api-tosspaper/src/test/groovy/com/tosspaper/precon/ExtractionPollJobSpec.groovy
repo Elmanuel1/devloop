@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.tosspaper.aiengine.client.reducto.ReductoClient
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
@@ -10,10 +11,12 @@ class ExtractionPollJobSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
     ExtractionPipelineLockService lockService = Mock()
+    ReductoClient reductoClient = Mock()
     Executor processingExecutor = Mock()
 
     @Subject
-    ExtractionPollJob job = new ExtractionPollJob(repository, lockService, processingExecutor, 5000L)
+    ExtractionPollJob job = new ExtractionPollJob(
+            repository, lockService, reductoClient, processingExecutor, 5000L)
 
     // ==================== SmartLifecycle ====================
 
@@ -49,17 +52,17 @@ class ExtractionPollJobSpec extends Specification {
             noExceptionThrown()
     }
 
-    // ==================== poll — lock not acquired ====================
+    // ==================== poll — no pending records ====================
 
-    def "TC-PJ-05: should not query repository when lock is not acquired"() {
-        given: "the distributed lock is held by another instance"
-            lockService.tryRunExclusive(_) >> false
+    def "TC-PJ-05: should not attempt any locks when there are no pending extractions"() {
+        given: "no pending extractions"
+            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> []
 
         when: "poll runs"
             job.poll()
 
-        then: "repository is never touched"
-            0 * repository.findPendingExtractions(_)
+        then: "lock service is never called"
+            0 * lockService.tryWithExtractionLock(_, _)
 
         and: "markAsProcessing is never called"
             0 * repository.markAsProcessing(_)
@@ -68,12 +71,13 @@ class ExtractionPollJobSpec extends Specification {
             0 * processingExecutor.execute(_)
     }
 
-    // ==================== poll — lock acquired, no pending records ====================
+    // ==================== poll — lock not acquired ====================
 
-    def "TC-PJ-06: should not submit any tasks when there are no pending extractions"() {
-        given: "lock is acquired and no pending extractions exist"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
-            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> []
+    def "TC-PJ-06: should skip extraction when per-ID lock is not acquired"() {
+        given: "one pending extraction but lock is held by another instance"
+            def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1"])
+            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
+            lockService.tryWithExtractionLock("ext-id-1", _) >> false
 
         when: "poll runs"
             job.poll()
@@ -81,35 +85,34 @@ class ExtractionPollJobSpec extends Specification {
         then: "markAsProcessing is never called"
             0 * repository.markAsProcessing(_)
 
-        and: "processing executor is never invoked"
+        and: "no futures are submitted"
             0 * processingExecutor.execute(_)
     }
 
-    // ==================== poll — lock acquired, pending records found ====================
+    // ==================== poll — lock acquired ====================
 
-    def "TC-PJ-07: should mark each record as PROCESSING before submitting to processing executor"() {
-        given: "lock is acquired and two pending extractions exist"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
+    def "TC-PJ-07: should markAsProcessing immediately after acquiring per-ID lock"() {
+        given: "one pending extraction and lock is available"
+            def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1"])
+            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
 
-            def record1 = buildRecord("ext-id-1")
-            def record2 = buildRecord("ext-id-2")
-            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [record1, record2]
+            // Capture and immediately invoke the action passed to tryWithExtractionLock
+            lockService.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
+                action.run()
+                return true
+            }
+
+            // executor captures submitted futures but does not run them
+            processingExecutor.execute(_) >> {}
 
         when: "poll runs"
             job.poll()
 
-        then: "markAsProcessing is called for each record before dispatch"
+        then: "markAsProcessing was called for the extraction"
             1 * repository.markAsProcessing("ext-id-1") >> 1
-            1 * repository.markAsProcessing("ext-id-2") >> 1
-
-        and: "one executor task is submitted per record"
-            2 * processingExecutor.execute(_)
     }
 
     def "TC-PJ-08: should query repository with exactly POLL_BATCH_SIZE"() {
-        given: "lock is acquired"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
-
         when: "poll runs"
             job.poll()
 
@@ -122,69 +125,98 @@ class ExtractionPollJobSpec extends Specification {
             ExtractionPollJob.POLL_BATCH_SIZE == 50
     }
 
-    def "TC-PJ-10: should submit one task per pending extraction to the processing executor"() {
-        given: "lock is acquired and two pending extractions exist"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
+    def "TC-PJ-10: should acquire per-ID lock for each pending extraction"() {
+        given: "two pending extractions"
+            def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
+            def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
+            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [e1, e2]
 
-            def record1 = buildRecord("ext-id-1")
-            def record2 = buildRecord("ext-id-2")
-            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [record1, record2]
-            repository.markAsProcessing(_) >> 1
+            // Lock is not acquired for either — simplest path to verify lock calls
+            lockService.tryWithExtractionLock(_, _) >> false
 
         when: "poll runs"
             job.poll()
 
-        then: "one executor task is submitted per record"
-            2 * processingExecutor.execute(_)
+        then: "a lock attempt is made for each extraction"
+            1 * lockService.tryWithExtractionLock("ext-id-1", _)
+            1 * lockService.tryWithExtractionLock("ext-id-2", _)
     }
 
-    // ==================== poll — executor tasks run without blocking scheduler ====================
+    def "TC-PJ-11: should submit one CompletableFuture per document to reductoExecutor"() {
+        given: "one extraction with two documents, lock acquired"
+            def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1", "doc-2"])
+            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [extraction]
+            repository.markAsProcessing("ext-id-1") >> 1
 
-    def "TC-PJ-11: should execute task runnable that logs extraction id"() {
-        given: "lock is acquired and one pending extraction exists"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
+            lockService.tryWithExtractionLock("ext-id-1", _) >> { String id, Runnable action ->
+                action.run()
+                return true
+            }
 
-            def record = buildRecord("ext-id-abc")
-            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [record]
-            repository.markAsProcessing("ext-id-abc") >> 1
-
-            Runnable capturedTask
-            processingExecutor.execute(_ as Runnable) >> { Runnable r -> capturedTask = r }
+            def submittedTasks = []
+            processingExecutor.execute(_ as Runnable) >> { Runnable r -> submittedTasks << r }
 
         when: "poll runs"
             job.poll()
 
-        then: "one task was submitted"
-            capturedTask != null
-
-        when: "the captured task is executed (simulating thread pool dispatch)"
-            capturedTask.run()
-
-        then: "no exception is thrown — processRecord stub runs cleanly"
-            noExceptionThrown()
+        then: "two tasks were submitted (one per document)"
+            submittedTasks.size() == 2
     }
 
-    def "TC-PJ-12: markAsProcessing is called in scheduler thread before executor.execute"() {
-        given: "lock is acquired and one pending extraction"
-            lockService.tryRunExclusive(_) >> { Runnable action -> action.run(); return true }
-
-            def record = buildRecord("ext-id-order")
-            repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> [record]
-
-            def callOrder = []
-            repository.markAsProcessing("ext-id-order") >> { callOrder << "markAsProcessing"; 1 }
-            processingExecutor.execute(_ as Runnable) >> { callOrder << "execute" }
-
-        when: "poll runs"
+    def "TC-PJ-12: poll does not use global lock — all instances poll freely"() {
+        when: "poll is called multiple times (simulating multiple instances)"
+            job.poll()
+            job.poll()
             job.poll()
 
-        then: "markAsProcessing was called before execute"
-            callOrder == ["markAsProcessing", "execute"]
+        then: "repository was queried every time — no global gate"
+            3 * repository.findPendingExtractions(ExtractionPollJob.POLL_BATCH_SIZE) >> []
+
+        and: "lock service was never involved (no extractions returned)"
+            0 * lockService._
+    }
+
+    // ==================== scatterGather ====================
+
+    def "TC-PJ-13: scatterGather submits one task per document"() {
+        given: "an extraction with three documents"
+            def extraction = buildExtractionWithDocs("ext-sg-1", ["doc-A", "doc-B", "doc-C"])
+            repository.markAsProcessing("ext-sg-1") >> 1
+
+            def submittedCount = 0
+            processingExecutor.execute(_ as Runnable) >> { submittedCount++ }
+
+        when: "scatterGather is called directly"
+            job.scatterGather(extraction)
+
+        then: "three tasks submitted to the executor"
+            submittedCount == 3
+    }
+
+    def "TC-PJ-14: scatterGather with no documents submits no tasks"() {
+        given: "an extraction with an empty document list"
+            def extraction = buildExtractionWithDocs("ext-sg-empty", [])
+
+        when: "scatterGather is called"
+            job.scatterGather(extraction)
+
+        then: "no tasks submitted"
+            0 * processingExecutor.execute(_)
+    }
+
+    // ==================== callReducto ====================
+
+    def "TC-PJ-15: callReducto throws UnsupportedOperationException (TOS-38 not yet wired)"() {
+        when: "callReducto is invoked directly"
+            job.callReducto("doc-xyz")
+
+        then: "UnsupportedOperationException propagates — stub not yet implemented"
+            thrown(UnsupportedOperationException)
     }
 
     // ==================== Helper Methods ====================
 
-    private static ExtractionsRecord buildRecord(String id) {
+    private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {
         def record = new ExtractionsRecord()
         record.setId(id)
         record.setStatus("pending")
@@ -192,6 +224,6 @@ class ExtractionPollJobSpec extends Specification {
         record.setEntityType("tender")
         record.setEntityId("tender-1")
         record.setVersion(0)
-        return record
+        return new ExtractionWithDocs(record, docIds)
     }
 }

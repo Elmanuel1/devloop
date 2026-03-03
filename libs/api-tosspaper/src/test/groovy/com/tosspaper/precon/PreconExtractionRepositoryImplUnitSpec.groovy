@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.common.ApiErrorMessages
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
@@ -21,11 +22,12 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTIONS
 class PreconExtractionRepositoryImplUnitSpec extends Specification {
 
     DSLContext dsl
+    ObjectMapper objectMapper = new ObjectMapper()
     PreconExtractionRepositoryImpl repo
 
     def setup() {
         dsl = Mock(DSLContext)
-        repo = new PreconExtractionRepositoryImpl(dsl)
+        repo = new PreconExtractionRepositoryImpl(dsl, objectMapper)
     }
 
     // ==================== findByExternalTaskId ====================
