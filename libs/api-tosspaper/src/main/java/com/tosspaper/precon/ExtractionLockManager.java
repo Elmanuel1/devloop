@@ -6,6 +6,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -58,6 +59,8 @@ public class ExtractionLockManager {
      *         {@code false} if the lock was not acquired or the thread was interrupted
      */
     public boolean tryWithExtractionLock(String extractionId, Runnable action) {
+        Objects.requireNonNull(extractionId, "extractionId must not be null");
+        Objects.requireNonNull(action, "action must not be null");
         String lockKey = EXTRACTION_LOCK_PREFIX + extractionId;
         RLock lock = redissonClient.getLock(lockKey);
         try {
@@ -72,7 +75,7 @@ public class ExtractionLockManager {
             return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.warn("[ExtractionPipeline] Interrupted while acquiring lock for extraction {}", extractionId, e);
+            log.error("[ExtractionPipeline] Interrupted while acquiring lock for extraction {}", extractionId, e);
             return false;
         } finally {
             if (lock.isHeldByCurrentThread()) {
