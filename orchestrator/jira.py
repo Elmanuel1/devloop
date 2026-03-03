@@ -131,7 +131,6 @@ def cmd_create(project: str, issue_type: str, summary: str,
         "--project",  project,
         "--type",     issue_type,
         "--summary",  summary,
-        "--yes",
     ]
     if description:
         args += ["--description", description]
