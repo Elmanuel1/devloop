@@ -94,12 +94,26 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
 
     // ── private helpers ───────────────────────────────────────────────────────
 
+    /**
+     * Transitions an extraction to {@code status}, but only when the current
+     * database status is {@code PROCESSING}.
+     *
+     * <p>This FROM-state guard mirrors the guard in {@link #markAsProcessing},
+     * which only acts when status is {@code PENDING}. Without it,
+     * {@code markAsCompleted} / {@code markAsFailed} would silently overwrite
+     * any status — including {@code PENDING} — corrupting the audit trail.
+     *
+     * <p>A return value of {@code 0} means the row was either already in a
+     * terminal state, deleted, or not found — the caller can treat that as an
+     * idempotent no-op.
+     */
     private int updateStatus(String id, String status) {
         return dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.STATUS, status)
                 .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(EXTRACTIONS.ID.eq(id))
+                .and(EXTRACTIONS.STATUS.eq(ExtractionStatus.PROCESSING.getValue()))
                 .and(EXTRACTIONS.DELETED_AT.isNull())
                 .execute();
     }

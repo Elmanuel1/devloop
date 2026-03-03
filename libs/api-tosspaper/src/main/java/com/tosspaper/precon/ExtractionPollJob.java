@@ -1,7 +1,6 @@
 package com.tosspaper.precon;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
@@ -55,10 +54,10 @@ public class ExtractionPollJob implements SmartLifecycle {
     public ExtractionPollJob(
             PreconExtractionRepository preconExtractionRepository,
             ExtractionPipelineRunner pipelineRunner,
-            @Value("${extraction.poll.delay-ms:5000}") long delayMs) {
+            ExtractionPollProperties pollProperties) {
         this.preconExtractionRepository = preconExtractionRepository;
         this.pipelineRunner = pipelineRunner;
-        this.delayMs = delayMs;
+        this.delayMs = pollProperties.getDelayMs();
     }
 
     // ── SmartLifecycle ────────────────────────────────────────────────────────

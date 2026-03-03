@@ -1,6 +1,7 @@
 package com.tosspaper;
 
 import com.tosspaper.models.config.AppEmailProperties;
+import com.tosspaper.precon.ExtractionPollProperties;
 import com.tosspaper.precon.TenderFileProperties;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.SpringApplication;
@@ -12,7 +13,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import java.util.TimeZone;
 
 @SpringBootApplication
-@EnableConfigurationProperties({AppEmailProperties.class, TenderFileProperties.class})
+@EnableConfigurationProperties({AppEmailProperties.class, TenderFileProperties.class, ExtractionPollProperties.class})
 @EnableScheduling
 @EnableMethodSecurity
 public class ApiTossPaperApplication {
