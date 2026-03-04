@@ -54,6 +54,10 @@ on:
         options:
           - stage
           - prod
+      flyway-flags:
+        description: 'Optional Flyway CLI flags, e.g. -outOfOrder=true'
+        type: string
+        default: ''
 
 permissions:
   id-token: write
@@ -120,6 +124,7 @@ jobs:
             -password=postgres
             -locations=filesystem:./flyway
             migrate
+            ${{ inputs.flyway-flags }}
 
   # ===========================================================================
   # SSM - run Flyway on EC2 (has RDS access)
@@ -246,7 +251,7 @@ jobs:
             -v /tmp/flyway:/flyway/sql:ro \
             -v /tmp/flyway.conf:/flyway/conf/flyway.conf:ro \
             flyway/flyway:${{ env.FLYWAY_VERSION }} \
-            ${{ env.FLYWAY_ACTION }}
+            ${{ env.FLYWAY_ACTION }} ${{ inputs.flyway-flags }}
 
           # Cleanup config file
           rm -f /tmp/flyway.conf
