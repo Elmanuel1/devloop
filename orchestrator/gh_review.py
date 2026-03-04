@@ -31,14 +31,16 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_utils import ToolError
 
 
 def run(cmd: list[str]) -> dict:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"[gh_review] ERROR: {' '.join(cmd)}", file=sys.stderr)
-        print(r.stderr.strip(), file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"Command failed: {' '.join(cmd)}\n{r.stderr.strip()}")
     return json.loads(r.stdout) if r.stdout.strip() else {}
 
 
@@ -105,9 +107,7 @@ def submit_review(repo: str, pr: int, event: str, summary: str, comments: list[d
         )
 
     if proc.returncode != 0:
-        print(f"[gh_review] ERROR submitting review", file=sys.stderr)
-        print(proc.stderr.strip(), file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"Error submitting review: {proc.stderr.strip()}")
 
     data = json.loads(proc.stdout)
     print(json.dumps({
@@ -153,4 +153,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ToolError as e:
+        print(f"[gh_review] ERROR: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)

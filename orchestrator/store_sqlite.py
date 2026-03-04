@@ -1,5 +1,5 @@
 """
-SQLite-backed StateProvider — drop-in replacement for FileStateProvider.
+SQLite-backed provider — drop-in replacement for FileStateProvider.
 
 Activated by setting STATE_BACKEND=sqlite in .env (or env var).
 On first use, auto-migrates existing file-based state if present.
@@ -15,14 +15,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Import the abstract interface from state.py
-from state import StateProvider
+from state import (
+    WatchProvider, EventProvider, DeadEventProvider, DesignProvider, SessionProvider,
+    CHANNELS, _channel_for,
+)
 
-SCHEMA_VERSION = 1
+_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
 
-class SQLiteStateProvider(StateProvider):
-    """SQLite implementation of StateProvider. Stores everything in a single .db file."""
+class SQLiteStateProvider(WatchProvider, EventProvider, DeadEventProvider, DesignProvider, SessionProvider):
+    """SQLite implementation. Stores everything in a single .db file."""
 
     MAX_EVENT_ATTEMPTS = 3
 
@@ -33,67 +35,51 @@ class SQLiteStateProvider(StateProvider):
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
-        self._init_schema()
+        self._run_migrations()
+        # Round-robin state for multi-channel pop
+        self._rr_index = 0
 
-    def _init_schema(self) -> None:
-        """Create tables if they don't exist."""
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version INTEGER NOT NULL
-            );
+    def _run_migrations(self) -> None:
+        """Run versioned .sql migration files from migrations/ directory.
 
-            CREATE TABLE IF NOT EXISTS watches (
-                id          TEXT PRIMARY KEY,
-                type        TEXT NOT NULL,
-                interval    INTEGER NOT NULL DEFAULT 30,
-                added_at    TEXT NOT NULL,
-                expires_at  TEXT,
-                data        TEXT NOT NULL DEFAULT '{}'
-            );
-
-            CREATE TABLE IF NOT EXISTS events (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts          TEXT NOT NULL,
-                type        TEXT NOT NULL,
-                attempts    INTEGER NOT NULL DEFAULT 0,
-                data        TEXT NOT NULL DEFAULT '{}'
-            );
-
-            CREATE TABLE IF NOT EXISTS dead_events (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts          TEXT NOT NULL,
-                type        TEXT NOT NULL,
-                attempts    INTEGER NOT NULL DEFAULT 0,
-                data        TEXT NOT NULL DEFAULT '{}',
-                dead_at     TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS designs (
-                id          TEXT PRIMARY KEY,
-                data        TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS sessions (
-                issue_key   TEXT PRIMARY KEY,
-                data        TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS log (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts          TEXT NOT NULL,
-                action      TEXT NOT NULL,
-                data        TEXT NOT NULL DEFAULT '{}'
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
-            CREATE INDEX IF NOT EXISTS idx_log_ts ON log(ts);
-            CREATE INDEX IF NOT EXISTS idx_watches_type ON watches(type);
-        """)
-
-        # Track schema version
+        Each migration is executed statement-by-statement so that idempotent
+        DDL (IF NOT EXISTS, duplicate column adds) can be tolerated.
+        """
+        self._conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"
+        )
         row = self._conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
         if row is None:
-            self._conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+            current_v = 0
+            self._conn.execute("INSERT INTO schema_version (version) VALUES (0)")
+            self._conn.commit()
+        else:
+            current_v = row["version"]
+
+        for f in sorted(_MIGRATIONS_DIR.glob("V*__*.sql")):
+            v = int(f.name.split("__")[0][1:])
+            if v > current_v:
+                self._exec_migration(f)
+                with self._conn:
+                    self._conn.execute(
+                        "UPDATE schema_version SET version = ?", (v,)
+                    )
+                current_v = v
+
+    def _exec_migration(self, path: Path) -> None:
+        """Execute a .sql file statement-by-statement, tolerating duplicate-column errors."""
+        sql = path.read_text()
+        for stmt in sql.split(";"):
+            lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
+            stmt = "\n".join(lines).strip()
+            if not stmt:
+                continue
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError as e:
+                if "duplicate column" in str(e).lower():
+                    continue
+                raise
         self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -130,32 +116,32 @@ class SQLiteStateProvider(StateProvider):
                 )
 
     # ------------------------------------------------------------------
-    # Events
+    # Events (multi-channel)
     # ------------------------------------------------------------------
 
-    def push_event(self, event: dict) -> None:
+    def push_event(self, event: dict, channel: str = "system") -> None:
         ts = datetime.now(timezone.utc).isoformat()
         etype = event.get("type", "unknown")
         attempts = event.get("_attempts", 0)
-        # Store everything except _attempts in data (attempts is a column)
-        data = {k: v for k, v in event.items() if k not in ("type", "_attempts")}
+        data = {k: v for k, v in event.items() if k not in ("type", "_attempts", "_channel")}
         with self._conn:
             self._conn.execute(
-                "INSERT INTO events (ts, type, attempts, data) VALUES (?,?,?,?)",
-                (ts, etype, attempts, json.dumps(data)),
+                "INSERT INTO events (ts, type, channel, attempts, data) VALUES (?,?,?,?,?)",
+                (ts, etype, channel, attempts, json.dumps(data)),
             )
 
-    def pop_event(self) -> Optional[dict]:
+    def _pop_from_channel(self, channel: str) -> Optional[dict]:
+        """Pop oldest event from a specific channel. Dead-letters poison events."""
         while True:
             row = self._conn.execute(
-                "SELECT id, ts, type, attempts, data FROM events ORDER BY id LIMIT 1"
+                "SELECT id, ts, type, channel, attempts, data FROM events WHERE channel = ? ORDER BY id LIMIT 1",
+                (channel,),
             ).fetchone()
             if row is None:
                 return None
 
             attempts = row["attempts"]
             if attempts >= self.MAX_EVENT_ATTEMPTS:
-                # Dead-letter it
                 with self._conn:
                     self._conn.execute(
                         "INSERT INTO dead_events (ts, type, attempts, data, dead_at) VALUES (?,?,?,?,?)",
@@ -165,30 +151,83 @@ class SQLiteStateProvider(StateProvider):
                     self._conn.execute("DELETE FROM events WHERE id = ?", (row["id"],))
                 continue
 
-            # Increment attempts and delete
             event = json.loads(row["data"])
             event["type"] = row["type"]
-            event["_attempts"] = attempts + 1
+            event["_attempts"] = attempts
+            event["_channel"] = row["channel"]
             with self._conn:
                 self._conn.execute("DELETE FROM events WHERE id = ?", (row["id"],))
             return event
 
-    def read_events(self) -> List[dict]:
-        rows = self._conn.execute("SELECT type, attempts, data FROM events ORDER BY id").fetchall()
+    def pop_event(self, channel: Optional[str] = None) -> Optional[dict]:
+        if channel is not None:
+            return self._pop_from_channel(channel)
+        # Round-robin across all channels
+        for _ in range(len(CHANNELS)):
+            ch = CHANNELS[self._rr_index % len(CHANNELS)]
+            self._rr_index += 1
+            event = self._pop_from_channel(ch)
+            if event is not None:
+                return event
+        return None
+
+    def read_events(self, channel: Optional[str] = None) -> List[dict]:
+        if channel:
+            rows = self._conn.execute(
+                "SELECT type, channel, attempts, data FROM events WHERE channel = ? ORDER BY id", (channel,)
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT type, channel, attempts, data FROM events ORDER BY id"
+            ).fetchall()
         result = []
         for r in rows:
             event = json.loads(r["data"])
             event["type"] = r["type"]
             event["_attempts"] = r["attempts"]
+            event["_channel"] = r["channel"]
             result.append(event)
         return result
 
     def nack_event(self, event: dict) -> None:
         event["_attempts"] = event.get("_attempts", 0) + 1
-        self.push_event(event)
+        channel = event.pop("_channel", "system")
+        self.push_event(event, channel=channel)
 
     # ------------------------------------------------------------------
-    # Designs (extended beyond base StateProvider for full migration)
+    # Dead events
+    # ------------------------------------------------------------------
+
+    def list_dead_events(self) -> List[dict]:
+        rows = self._conn.execute(
+            "SELECT ts, type, attempts, data, dead_at FROM dead_events ORDER BY id"
+        ).fetchall()
+        result = []
+        for r in rows:
+            event = json.loads(r["data"])
+            event["type"] = r["type"]
+            event["_attempts"] = r["attempts"]
+            event["_dead_at"] = r["dead_at"]
+            result.append(event)
+        return result
+
+    def retry_dead_events(self) -> int:
+        """Move all dead events back to live queue with attempts reset."""
+        rows = self._conn.execute("SELECT type, data FROM dead_events").fetchall()
+        count = 0
+        with self._conn:
+            for r in rows:
+                event = json.loads(r["data"])
+                event["type"] = r["type"]
+                event["_attempts"] = 0
+                channel = _channel_for(event.get("type", "unknown"))
+                self.push_event(event, channel=channel)
+                count += 1
+            self._conn.execute("DELETE FROM dead_events")
+        return count
+
+    # ------------------------------------------------------------------
+    # Designs
     # ------------------------------------------------------------------
 
     def read_design(self, design_id: str) -> Optional[dict]:
@@ -240,61 +279,6 @@ class SQLiteStateProvider(StateProvider):
         return [json.loads(r["data"]) for r in rows]
 
     # ------------------------------------------------------------------
-    # Log
-    # ------------------------------------------------------------------
-
-    def append_log(self, action: str, **data: Any) -> None:
-        ts = datetime.now(timezone.utc).isoformat()
-        with self._conn:
-            self._conn.execute(
-                "INSERT INTO log (ts, action, data) VALUES (?,?,?)",
-                (ts, action, json.dumps(data)),
-            )
-
-    def read_log(self, last: int = 50) -> List[dict]:
-        rows = self._conn.execute(
-            "SELECT ts, action, data FROM log ORDER BY id DESC LIMIT ?", (last,)
-        ).fetchall()
-        result = []
-        for r in reversed(rows):  # Reverse to get chronological order
-            entry = json.loads(r["data"])
-            entry["ts"] = r["ts"]
-            entry["action"] = r["action"]
-            result.append(entry)
-        return result
-
-    # ------------------------------------------------------------------
-    # Dead events
-    # ------------------------------------------------------------------
-
-    def list_dead_events(self) -> List[dict]:
-        rows = self._conn.execute(
-            "SELECT ts, type, attempts, data, dead_at FROM dead_events ORDER BY id"
-        ).fetchall()
-        result = []
-        for r in rows:
-            event = json.loads(r["data"])
-            event["type"] = r["type"]
-            event["_attempts"] = r["attempts"]
-            event["_dead_at"] = r["dead_at"]
-            result.append(event)
-        return result
-
-    def retry_dead_events(self) -> int:
-        """Move all dead events back to live queue with attempts reset."""
-        rows = self._conn.execute("SELECT type, data FROM dead_events").fetchall()
-        count = 0
-        with self._conn:
-            for r in rows:
-                event = json.loads(r["data"])
-                event["type"] = r["type"]
-                event["_attempts"] = 0
-                self.push_event(event)
-                count += 1
-            self._conn.execute("DELETE FROM dead_events")
-        return count
-
-    # ------------------------------------------------------------------
     # Migration from file-based state
     # ------------------------------------------------------------------
 
@@ -302,7 +286,7 @@ class SQLiteStateProvider(StateProvider):
     def migrate_from_files(cls, file_base: Path, db_path: Path) -> "SQLiteStateProvider":
         """Create a new SQLite DB and migrate all file-based state into it.
 
-        Preserves all data — designs, sessions, watches, events, logs.
+        Preserves all data — designs, sessions, watches, events.
         Original files are NOT deleted (caller decides when to clean up).
         """
         provider = cls(db_path)
@@ -317,15 +301,27 @@ class SQLiteStateProvider(StateProvider):
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Migrate events
+        # Migrate events (flat files or channel subdirs)
         events_dir = file_base / "events"
         if events_dir.exists():
+            # Flat event files (legacy)
             for f in sorted(events_dir.glob("*.json")):
                 try:
                     event = json.loads(f.read_text())
-                    provider.push_event(event)
+                    channel = _channel_for(event.get("type", "unknown"))
+                    provider.push_event(event, channel=channel)
                 except (json.JSONDecodeError, OSError):
                     pass
+            # Channel subdirs
+            for ch in CHANNELS:
+                ch_dir = events_dir / ch
+                if ch_dir.exists():
+                    for f in sorted(ch_dir.glob("*.json")):
+                        try:
+                            event = json.loads(f.read_text())
+                            provider.push_event(event, channel=ch)
+                        except (json.JSONDecodeError, OSError):
+                            pass
 
         # Migrate dead events
         dead_dir = file_base / "dead_events"
@@ -365,23 +361,5 @@ class SQLiteStateProvider(StateProvider):
                     provider.write_session(issue_key, session)
                 except (json.JSONDecodeError, OSError):
                     pass
-
-        # Migrate log
-        log_file = file_base / "log.jsonl"
-        if log_file.exists():
-            try:
-                for line in log_file.read_text().strip().split("\n"):
-                    if not line:
-                        continue
-                    entry = json.loads(line)
-                    ts = entry.pop("ts", datetime.now(timezone.utc).isoformat())
-                    action = entry.pop("action", "unknown")
-                    with provider._conn:
-                        provider._conn.execute(
-                            "INSERT INTO log (ts, action, data) VALUES (?,?,?)",
-                            (ts, action, json.dumps(entry)),
-                        )
-            except (json.JSONDecodeError, OSError):
-                pass
 
         return provider

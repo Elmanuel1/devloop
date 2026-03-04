@@ -27,31 +27,26 @@ import urllib.error
 from urllib.error import HTTPError, URLError
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+from cli_utils import load_dotenv, flag as _flag, ToolError
+
+# Lazy-init: env is loaded on first use, not at import time
+_env_loaded = False
+SITE  = ""
+EMAIL = ""
+TOKEN = ""
 
 
-# ---------------------------------------------------------------------------
-# Load .env
-# ---------------------------------------------------------------------------
-
-def load_dotenv() -> None:
-    env_path = SCRIPT_DIR / ".env"
-    if not env_path.exists():
+def _ensure_env() -> None:
+    """Load .env and set module globals on first call. No-op after that."""
+    global _env_loaded, SITE, EMAIL, TOKEN
+    if _env_loaded:
         return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, _, value = line.partition("=")
-            if key and key not in os.environ:
-                os.environ[key] = value
-
-
-load_dotenv()
-
-SITE  = os.environ.get("ATLASSIAN_SITE", "")
-EMAIL = os.environ.get("ATLASSIAN_EMAIL", "")
-TOKEN = os.environ.get("ATLASSIAN_TOKEN", "")
+    load_dotenv(str(SCRIPT_DIR / ".env"))
+    SITE  = os.environ.get("ATLASSIAN_SITE", "")
+    EMAIL = os.environ.get("ATLASSIAN_EMAIL", "")
+    TOKEN = os.environ.get("ATLASSIAN_TOKEN", "")
+    _env_loaded = True
 
 
 # ---------------------------------------------------------------------------
@@ -62,8 +57,9 @@ def _run_acli(*args: str) -> dict:
     """Run an acli command, capture output, return parsed JSON.
 
     Appends --json to every call so we always get machine-readable output.
-    Exits with code 1 on failure.
+    Raises ToolError on failure.
     """
+    _ensure_env()
     cmd = ["acli", "jira", "workitem"] + list(args) + ["--json"]
     print(f"[jira] RUN: {' '.join(cmd)}", file=sys.stderr)
     try:
@@ -74,15 +70,12 @@ def _run_acli(*args: str) -> dict:
             timeout=60,
         )
     except FileNotFoundError:
-        print("[jira] ERROR: `acli` not found in PATH", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError("`acli` not found in PATH")
     except subprocess.TimeoutExpired:
-        print("[jira] ERROR: acli timed out", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError("acli timed out")
 
     if result.returncode != 0:
-        print(f"[jira] FAIL (exit {result.returncode}): {result.stderr.strip()}", file=sys.stderr)
-        sys.exit(result.returncode)
+        raise ToolError(f"acli failed (exit {result.returncode}): {result.stderr.strip()}", result.returncode)
 
     stdout = result.stdout.strip()
     if not stdout:
@@ -97,6 +90,7 @@ def _run_acli(*args: str) -> dict:
 
 def _jira_rest(path: str) -> dict:
     """GET from the Jira REST API v3 (for operations acli doesn't expose)."""
+    _ensure_env()
     url = f"https://{SITE}/rest/api/3{path}"
     creds = base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
     headers = {
@@ -110,11 +104,9 @@ def _jira_rest(path: str) -> dict:
         return json.loads(resp.read().decode())
     except HTTPError as e:
         body = e.fp.read().decode()
-        print(f"[jira] REST FAIL GET {path} — HTTP {e.code}: {body[:200]}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"REST GET {path} failed — HTTP {e.code}: {body[:200]}")
     except URLError as e:
-        print(f"[jira] REST FAIL GET {path} — {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"REST GET {path} failed — {e.reason}")
 
 
 # ---------------------------------------------------------------------------
@@ -206,17 +198,6 @@ def cmd_comment(issue_key: str, message: str) -> None:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
-
-def _flag(args: list, flag: str, default: str = None) -> Optional[str]:
-    """Return the value after a CLI flag, or default if absent."""
-    try:
-        idx = args.index(flag)
-        if idx + 1 < len(args):
-            return args[idx + 1]
-    except ValueError:
-        pass
-    return default
-
 
 def main() -> None:
     args = sys.argv[1:]
@@ -311,4 +292,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ToolError as e:
+        print(f"[jira] ERROR: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)

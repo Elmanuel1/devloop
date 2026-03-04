@@ -41,11 +41,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 # ---------------------------------------------------------------------------
-# Abstract provider interface
+# Abstract provider interfaces (one per entity — ISP)
 # ---------------------------------------------------------------------------
 
-class StateProvider(ABC):
-    """Abstract interface for state storage. File-based now, swappable later."""
+class WatchProvider(ABC):
+    """Storage for watch entries."""
 
     @abstractmethod
     def read_watches(self) -> List[dict]:
@@ -55,16 +55,21 @@ class StateProvider(ABC):
     def write_watches(self, watches: List[dict]) -> None:
         ...
 
+
+class EventProvider(ABC):
+    """Multi-channel event queue with round-robin pop."""
+
     @abstractmethod
-    def read_events(self) -> List[dict]:
+    def push_event(self, event: dict, channel: str = "system") -> None:
         ...
 
     @abstractmethod
-    def push_event(self, event: dict) -> None:
+    def pop_event(self, channel: Optional[str] = None) -> Optional[dict]:
+        """Pop oldest event. channel=None → round-robin across all channels."""
         ...
 
     @abstractmethod
-    def pop_event(self) -> Optional[dict]:
+    def read_events(self, channel: Optional[str] = None) -> List[dict]:
         ...
 
     @abstractmethod
@@ -73,12 +78,103 @@ class StateProvider(ABC):
         ...
 
 
+class DeadEventProvider(ABC):
+    """Dead-lettered events that exceeded max attempts."""
+
+    @abstractmethod
+    def list_dead_events(self) -> List[dict]:
+        ...
+
+    @abstractmethod
+    def retry_dead_events(self) -> int:
+        """Move all dead events back to live queue. Returns count retried."""
+        ...
+
+
+class DesignProvider(ABC):
+    """Storage for design documents."""
+
+    @abstractmethod
+    def read_design(self, design_id: str) -> Optional[dict]:
+        ...
+
+    @abstractmethod
+    def write_design(self, design: dict) -> None:
+        ...
+
+    @abstractmethod
+    def delete_design(self, design_id: str) -> bool:
+        ...
+
+    @abstractmethod
+    def list_designs(self) -> List[dict]:
+        ...
+
+
+class SessionProvider(ABC):
+    """Storage for agent sessions."""
+
+    @abstractmethod
+    def read_session(self, issue_key: str) -> Optional[dict]:
+        ...
+
+    @abstractmethod
+    def write_session(self, issue_key: str, session: dict) -> None:
+        ...
+
+    @abstractmethod
+    def delete_session(self, issue_key: str) -> bool:
+        ...
+
+    @abstractmethod
+    def list_sessions(self) -> List[dict]:
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Channel routing — maps event type prefix to channel name
+# ---------------------------------------------------------------------------
+
+CHANNELS = ("ci", "pr", "design", "task", "system")
+
+_CHANNEL_MAP = {
+    "ci":    "ci",
+    "pr":    "pr",
+    "page":  "design",
+    "task":  "task",
+    "watch": "system",
+}
+
+
+def _channel_for(event_type: str) -> str:
+    """Derive channel from event type (e.g. 'ci:passed' → 'ci', 'page:comment' → 'design')."""
+    prefix = event_type.split(":")[0] if ":" in event_type else event_type
+    return _CHANNEL_MAP.get(prefix, "system")
+
+
+def _dedup_key(event: dict) -> Optional[str]:
+    """Compute a dedup key for an event. Returns None if no dedup applies."""
+    etype = event.get("type", "")
+    if etype == "pr:comment":
+        cid = event.get("commentId")
+        return f"pr:comment:{cid}" if cid else None
+    if etype in ("ci:passed", "ci:failed"):
+        sha = event.get("headSha")
+        if sha:
+            return f"{etype}:{event.get('repo', '')}:{sha}"
+        return None
+    if etype in ("pr:approved", "pr:changes_requested", "pr:merged"):
+        pr = event.get("prNumber")
+        return f"{etype}:{event.get('repo', '')}:{pr}" if pr else None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # File-based implementation
 # ---------------------------------------------------------------------------
 
-class FileStateProvider(StateProvider):
-    """File-based implementation. watches.json + events/ dir."""
+class FileStateProvider(WatchProvider, EventProvider, DeadEventProvider, DesignProvider, SessionProvider):
+    """File-based implementation. watches.json + events/{channel}/ + designs/ + sessions/."""
 
     MAX_EVENT_ATTEMPTS = 3
 
@@ -87,8 +183,25 @@ class FileStateProvider(StateProvider):
         self.watches_file = base_dir / "watches.json"
         self.events_dir = base_dir / "events"
         self.dead_events_dir = base_dir / "dead_events"
-        self.events_dir.mkdir(parents=True, exist_ok=True)
-        self.dead_events_dir.mkdir(parents=True, exist_ok=True)
+        self.designs_dir = base_dir / "designs"
+        self.sessions_dir = base_dir / "sessions"
+        for d in (self.dead_events_dir, self.designs_dir, self.sessions_dir):
+            d.mkdir(parents=True, exist_ok=True)
+        # Create channel subdirs
+        for ch in CHANNELS:
+            (self.events_dir / ch).mkdir(parents=True, exist_ok=True)
+        # Migrate old flat events/ files into "system" channel
+        self._migrate_flat_events()
+        # Round-robin state
+        self._rr_index = 0
+
+    def _migrate_flat_events(self) -> None:
+        """Move any .json files in the flat events/ dir into the system channel subdir."""
+        for f in self.events_dir.glob("*.json"):
+            dest = self.events_dir / "system" / f.name
+            f.rename(dest)
+
+    # --- Watches ---
 
     def read_watches(self) -> List[dict]:
         if not self.watches_file.exists():
@@ -101,39 +214,228 @@ class FileStateProvider(StateProvider):
     def write_watches(self, watches: List[dict]) -> None:
         self.watches_file.write_text(json.dumps(watches))
 
-    def push_event(self, event: dict) -> None:
+    # --- Events (multi-channel) ---
+
+    def push_event(self, event: dict, channel: str = "system") -> None:
+        ch_dir = self.events_dir / channel
+        ch_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-        path = self.events_dir / f"{ts}.json"
+        path = ch_dir / f"{ts}.json"
         path.write_text(json.dumps(event))
 
-    def pop_event(self) -> Optional[dict]:
-        files = sorted(self.events_dir.glob("*.json"))
+    def _pop_from_channel(self, channel: str) -> Optional[dict]:
+        """Pop oldest event from a specific channel. Dead-letters poison events."""
+        ch_dir = self.events_dir / channel
+        if not ch_dir.exists():
+            return None
+        files = sorted(ch_dir.glob("*.json"))
         for path in files:
             try:
                 event = json.loads(path.read_text())
             except (json.JSONDecodeError, OSError):
                 path.unlink(missing_ok=True)
                 continue
-            # Backward compatible: old events without _attempts default to 0
             attempts = event.get("_attempts", 0)
             if attempts >= self.MAX_EVENT_ATTEMPTS:
-                # Poison event — move to dead letter queue, skip to next
                 dest = self.dead_events_dir / path.name
                 path.rename(dest)
                 continue
             event["_attempts"] = attempts
+            event["_channel"] = channel
             path.unlink()
             return event
         return None
 
-    def nack_event(self, event: dict) -> None:
-        """Re-queue an event with incremented attempts (orchestrator failed to process it).
-        If max attempts exceeded, it will be dead-lettered on next pop."""
-        event["_attempts"] = event.get("_attempts", 0) + 1
-        self.push_event(event)
+    def pop_event(self, channel: Optional[str] = None) -> Optional[dict]:
+        if channel is not None:
+            return self._pop_from_channel(channel)
+        # Round-robin across all channels
+        for _ in range(len(CHANNELS)):
+            ch = CHANNELS[self._rr_index % len(CHANNELS)]
+            self._rr_index += 1
+            event = self._pop_from_channel(ch)
+            if event is not None:
+                return event
+        return None
 
-    def read_events(self) -> List[dict]:
-        return [json.loads(f.read_text()) for f in sorted(self.events_dir.glob("*.json"))]
+    def nack_event(self, event: dict) -> None:
+        """Re-queue with incremented attempts. Routes back to original channel."""
+        event["_attempts"] = event.get("_attempts", 0) + 1
+        channel = event.pop("_channel", "system")
+        self.push_event(event, channel=channel)
+
+    def read_events(self, channel: Optional[str] = None) -> List[dict]:
+        channels = [channel] if channel else list(CHANNELS)
+        result = []
+        for ch in channels:
+            ch_dir = self.events_dir / ch
+            if not ch_dir.exists():
+                continue
+            for f in sorted(ch_dir.glob("*.json")):
+                try:
+                    event = json.loads(f.read_text())
+                    event["_channel"] = ch
+                    result.append(event)
+                except (json.JSONDecodeError, OSError):
+                    pass
+        return result
+
+    # --- Dead events ---
+
+    def list_dead_events(self) -> List[dict]:
+        dead = []
+        for f in sorted(self.dead_events_dir.glob("*.json")):
+            try:
+                dead.append(json.loads(f.read_text()))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return dead
+
+    def retry_dead_events(self) -> int:
+        count = 0
+        for f in sorted(self.dead_events_dir.glob("*.json")):
+            try:
+                event = json.loads(f.read_text())
+                event["_attempts"] = 0
+                channel = _channel_for(event.get("type", "unknown"))
+                self.push_event(event, channel=channel)
+                f.unlink()
+                count += 1
+            except (json.JSONDecodeError, OSError):
+                pass
+        return count
+
+    # --- Designs ---
+
+    def read_design(self, design_id: str) -> Optional[dict]:
+        path = self.designs_dir / f"{design_id}.json"
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def write_design(self, design: dict) -> None:
+        path = self.designs_dir / f"{design['id']}.json"
+        path.write_text(json.dumps(design))
+
+    def delete_design(self, design_id: str) -> bool:
+        path = self.designs_dir / f"{design_id}.json"
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+    def list_designs(self) -> List[dict]:
+        designs = []
+        for path in sorted(self.designs_dir.glob("*.json")):
+            try:
+                designs.append(json.loads(path.read_text()))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return designs
+
+    # --- Sessions ---
+
+    def read_session(self, issue_key: str) -> Optional[dict]:
+        path = self.sessions_dir / f"{issue_key}.json"
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def write_session(self, issue_key: str, session: dict) -> None:
+        path = self.sessions_dir / f"{issue_key}.json"
+        path.write_text(json.dumps(session))
+
+    def delete_session(self, issue_key: str) -> bool:
+        path = self.sessions_dir / f"{issue_key}.json"
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+    def list_sessions(self) -> List[dict]:
+        sessions = []
+        for path in sorted(self.sessions_dir.glob("*.json")):
+            try:
+                sessions.append(json.loads(path.read_text()))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return sessions
+
+
+# ---------------------------------------------------------------------------
+# Design stage machine — valid transitions
+# ---------------------------------------------------------------------------
+
+VALID_STAGE_TRANSITIONS: Dict[str, List[str]] = {
+    "design":         ["review"],
+    "review":         ["approved", "design"],       # design = sent back for rework
+    "approved":       ["jira-breakdown"],
+    "jira-breakdown": ["implementation"],
+    "implementation": ["complete"],
+}
+
+
+class InvalidStageTransition(ValueError):
+    """Raised when a design stage transition violates the allowed flow."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Design update handlers (plain functions for the handler registry)
+# ---------------------------------------------------------------------------
+
+def _apply_add_child_ticket(design, value, now):
+    design.setdefault("childTickets", []).append(value)
+    design.setdefault("history", []).append({"ts": now, "action": "child_ticket_added", "ticket": value})
+
+
+def _apply_add_pr(design, value, now):
+    design.setdefault("prs", []).append(value)
+    design.setdefault("history", []).append({"ts": now, "action": "pr_added", "pr": value})
+
+
+def _apply_add_artifact(design, value, now):
+    if isinstance(value, dict):
+        design.setdefault("artifacts", {}).update(value)
+    design.setdefault("history", []).append({"ts": now, "action": "artifact_added"})
+
+
+def _apply_add_history(design, value, now):
+    design.setdefault("history", []).append(value)
+
+
+def _apply_set_in_flight_comments(design, value, now):
+    design["inFlightCommentIds"] = list(value) if value else []
+    design.setdefault("history", []).append({"ts": now, "action": "architect_in_flight"})
+
+
+def _apply_merge_in_flight_comments(design, value, now):
+    existing = set(design.get("inFlightCommentIds", []))
+    existing.update(value or [])
+    design["inFlightCommentIds"] = list(existing)
+    design.setdefault("history", []).append({"ts": now, "action": "in_flight_comments_merged"})
+
+
+def _apply_clear_in_flight_comments(design, value, now):
+    finished = design.get("inFlightCommentIds", [])
+    handled = set(design.get("handledCommentIds", []))
+    handled.update(finished)
+    design["handledCommentIds"] = list(handled)
+    design["inFlightCommentIds"] = []
+    design.setdefault("history", []).append({"ts": now, "action": "architect_in_flight_cleared"})
+
+
+def _apply_add_handled_comments(design, value, now):
+    handled = set(design.get("handledCommentIds", []))
+    handled.update(value or [])
+    design["handledCommentIds"] = list(handled)
+    design.setdefault("history", []).append({"ts": now, "action": "comments_marked_handled", "count": len(value or [])})
 
 
 # ---------------------------------------------------------------------------
@@ -161,24 +463,29 @@ class State:
         "confluence:comments": ("type", "pageId"),
     }
 
-    def __init__(self, base_dir: Optional[str] = None, provider: Optional[StateProvider] = None) -> None:
+    def __init__(self, base_dir: Optional[str] = None, provider=None) -> None:
         default_base = os.environ.get("STATE_DIR", str(SCRIPT_DIR / ".orchestrator"))
         self.base = Path(base_dir) if base_dir else Path(default_base)
-        self.designs_dir = self.base / "designs"
-        self.sessions_dir = self.base / "sessions"
-        self.log_file = self.base / "log.jsonl"
-        self.designs_dir.mkdir(parents=True, exist_ok=True)
-        self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        self.log_file.touch(exist_ok=True)
+        self.base.mkdir(parents=True, exist_ok=True)
 
-        if provider:
-            self.provider = provider
-        else:
+        if provider is None:
             backend = os.environ.get("STATE_BACKEND", "file").lower()
             if backend == "sqlite":
-                self.provider = self._init_sqlite_provider()
+                provider = self._init_sqlite_provider()
             else:
-                self.provider = FileStateProvider(self.base)
+                provider = FileStateProvider(self.base)
+
+        # Typed refs — all point to the same composite provider object
+        self.provider = provider  # kept for backward compat
+        self.watches: WatchProvider = provider
+        self.events: EventProvider = provider
+        self.dead_events: DeadEventProvider = provider
+        self.designs: DesignProvider = provider
+        self.sessions: SessionProvider = provider
+
+        # Log is always file-based (not abstracted into a provider)
+        self.log_file = self.base / "log.jsonl"
+        self.log_file.touch(exist_ok=True)
 
     def _init_sqlite_provider(self):
         """Initialize SQLite provider, auto-migrating from files if needed."""
@@ -229,16 +536,24 @@ class State:
             "handledCommentIds":  [],
             "history":            [{"ts": now, "action": "created"}],
         }
-        self._write_design(design)
+        self.designs.write_design(design)
         self.log("design_created", design_id=did, description=description, category=category)
         return design
 
     def get_design(self, design_id: str) -> Optional[dict]:
         """Read a design by ID."""
-        path = self.designs_dir / f"{design_id}.json"
-        if not path.exists():
-            return None
-        return json.loads(path.read_text())
+        return self.designs.read_design(design_id)
+
+    _UPDATE_HANDLERS = {
+        "add_child_ticket":         _apply_add_child_ticket,
+        "add_pr":                   _apply_add_pr,
+        "add_artifact":             _apply_add_artifact,
+        "add_history":              _apply_add_history,
+        "set_in_flight_comments":   _apply_set_in_flight_comments,
+        "merge_in_flight_comments": _apply_merge_in_flight_comments,
+        "clear_in_flight_comments": _apply_clear_in_flight_comments,
+        "add_handled_comments":     _apply_add_handled_comments,
+    }
 
     def update_design(self, design_id: str, updates: dict) -> Optional[dict]:
         """Update fields on a design. Automatically logs stage changes and appends to history."""
@@ -248,44 +563,24 @@ class State:
         now = datetime.now(timezone.utc).isoformat()
         old_stage = design.get("stage")
 
+        # Validate stage transition before applying any changes
+        new_stage = updates.get("stage")
+        if new_stage and new_stage != old_stage:
+            allowed = VALID_STAGE_TRANSITIONS.get(old_stage, [])
+            if new_stage not in allowed:
+                raise InvalidStageTransition(
+                    f"Cannot transition design from '{old_stage}' to '{new_stage}'. "
+                    f"Allowed: {allowed}"
+                )
+
         for key, value in updates.items():
-            if key == "add_child_ticket":
-                design.setdefault("childTickets", []).append(value)
-                design.setdefault("history", []).append({"ts": now, "action": "child_ticket_added", "ticket": value})
-            elif key == "add_pr":
-                design.setdefault("prs", []).append(value)
-                design.setdefault("history", []).append({"ts": now, "action": "pr_added", "pr": value})
-            elif key == "add_artifact":
-                if isinstance(value, dict):
-                    design.setdefault("artifacts", {}).update(value)
-                design.setdefault("history", []).append({"ts": now, "action": "artifact_added"})
-            elif key == "add_history":
-                design.setdefault("history", []).append(value)
-            elif key == "set_in_flight_comments":
-                design["inFlightCommentIds"] = list(value) if value else []
-                design.setdefault("history", []).append({"ts": now, "action": "architect_in_flight"})
-            elif key == "merge_in_flight_comments":
-                existing = set(design.get("inFlightCommentIds", []))
-                existing.update(value or [])
-                design["inFlightCommentIds"] = list(existing)
-                design.setdefault("history", []).append({"ts": now, "action": "in_flight_comments_merged"})
-            elif key == "clear_in_flight_comments":
-                finished = design.get("inFlightCommentIds", [])
-                handled = set(design.get("handledCommentIds", []))
-                handled.update(finished)
-                design["handledCommentIds"] = list(handled)
-                design["inFlightCommentIds"] = []
-                design.setdefault("history", []).append({"ts": now, "action": "architect_in_flight_cleared"})
-            elif key == "add_handled_comments":
-                handled = set(design.get("handledCommentIds", []))
-                handled.update(value or [])
-                design["handledCommentIds"] = list(handled)
-                design.setdefault("history", []).append({"ts": now, "action": "comments_marked_handled", "count": len(value or [])})
+            handler = self._UPDATE_HANDLERS.get(key)
+            if handler:
+                handler(design, value, now)
             else:
                 design[key] = value
 
-        new_stage = design.get("stage")
-        if new_stage != old_stage:
+        if new_stage and new_stage != old_stage:
             design.setdefault("history", []).append({
                 "ts": now,
                 "action": "stage_changed",
@@ -294,22 +589,16 @@ class State:
             })
             self.log(f"stage_{old_stage}_to_{new_stage}", design_id=design_id)
 
-        self._write_design(design)
+        self.designs.write_design(design)
         return design
 
     def list_designs(self, stage: Optional[str] = None, active_only: bool = False) -> List[dict]:
         """List designs, optionally filtered by stage. active_only excludes 'complete' stage."""
-        designs = []
-        for path in sorted(self.designs_dir.glob("*.json")):
-            try:
-                d = json.loads(path.read_text())
-                if active_only and d.get("stage") == "complete":
-                    continue
-                if stage and d.get("stage") != stage:
-                    continue
-                designs.append(d)
-            except (json.JSONDecodeError, OSError):
-                pass
+        designs = self.designs.list_designs()
+        if active_only:
+            designs = [d for d in designs if d.get("stage") != "complete"]
+        if stage:
+            designs = [d for d in designs if d.get("stage") == stage]
         return designs
 
     def complete_design(self, design_id: str) -> Optional[dict]:
@@ -317,17 +606,11 @@ class State:
         return self.update_design(design_id, {"stage": "complete"})
 
     def delete_design(self, design_id: str) -> bool:
-        """Delete a design file."""
-        path = self.designs_dir / f"{design_id}.json"
-        if not path.exists():
-            return False
-        path.unlink()
-        self.log("design_deleted", design_id=design_id)
-        return True
-
-    def _write_design(self, design: dict) -> None:
-        path = self.designs_dir / f"{design['id']}.json"
-        path.write_text(json.dumps(design))
+        """Delete a design."""
+        ok = self.designs.delete_design(design_id)
+        if ok:
+            self.log("design_deleted", design_id=design_id)
+        return ok
 
     # ------------------------------------------------------------------
     # Sessions
@@ -345,43 +628,31 @@ class State:
             "savedAt":    now,
             **(extra or {}),
         }
-        path = self.sessions_dir / f"{issue_key}.json"
-        path.write_text(json.dumps(session))
+        self.sessions.write_session(issue_key, session)
         self.log("session_saved", issue_key=issue_key, session_id=session_id, agent=agent)
         return session
 
     def get_session(self, issue_key: str) -> Optional[dict]:
         """Read a session by issue key."""
-        path = self.sessions_dir / f"{issue_key}.json"
-        if not path.exists():
-            return None
-        return json.loads(path.read_text())
+        return self.sessions.read_session(issue_key)
 
     def delete_session(self, issue_key: str) -> bool:
-        """Delete a session file."""
-        path = self.sessions_dir / f"{issue_key}.json"
-        if not path.exists():
-            return False
-        path.unlink()
-        self.log("session_deleted", issue_key=issue_key)
-        return True
+        """Delete a session."""
+        ok = self.sessions.delete_session(issue_key)
+        if ok:
+            self.log("session_deleted", issue_key=issue_key)
+        return ok
 
     def list_sessions(self) -> List[dict]:
         """List all active sessions."""
-        sessions = []
-        for path in sorted(self.sessions_dir.glob("*.json")):
-            try:
-                sessions.append(json.loads(path.read_text()))
-            except (json.JSONDecodeError, OSError):
-                pass
-        return sessions
+        return self.sessions.list_sessions()
 
     # ------------------------------------------------------------------
     # Action log
     # ------------------------------------------------------------------
 
     def log(self, action: str, **data: Any) -> None:
-        """Append an action to the log."""
+        """Append an action to the log (always file-based JSONL)."""
         entry = {
             "ts":     datetime.now(timezone.utc).isoformat(),
             "action": action,
@@ -409,7 +680,7 @@ class State:
 
     def add_watch(self, watch_type: str, interval: int = 30, **fields: Any) -> dict:
         """Add a watch entry. Deduplicates by type + key params."""
-        watches = self.provider.read_watches()
+        watches = self.watches.read_watches()
         dedup_fields = self._DEDUP_KEYS.get(watch_type, ("type",))
         candidate = {"type": watch_type, **fields}
 
@@ -448,31 +719,31 @@ class State:
             watch["expiresAt"] = expires.isoformat()
 
         watches.append(watch)
-        self.provider.write_watches(watches)
+        self.watches.write_watches(watches)
         self.log("watch_added", watch_id=new_id, watch_type=watch_type, **fields)
         return watch
 
     def remove_watch(self, watch_id: str) -> bool:
         """Remove a watch by ID."""
-        watches = self.provider.read_watches()
+        watches = self.watches.read_watches()
         before = len(watches)
         watches = [w for w in watches if w.get("id") != watch_id]
         if len(watches) == before:
             return False
-        self.provider.write_watches(watches)
+        self.watches.write_watches(watches)
         self.log("watch_removed", watch_id=watch_id)
         return True
 
     def list_watches(self, watch_type: Optional[str] = None) -> List[dict]:
         """List watches, optionally filtered by type."""
-        watches = self.provider.read_watches()
+        watches = self.watches.read_watches()
         if watch_type:
             watches = [w for w in watches if w.get("type") == watch_type]
         return watches
 
     def expire_watches(self) -> List[dict]:
         """Remove expired watches and queue watch:expired events. Returns expired list."""
-        watches = self.provider.read_watches()
+        watches = self.watches.read_watches()
         now = datetime.now(timezone.utc)
         alive = []
         expired = []
@@ -488,33 +759,39 @@ class State:
                     pass
             alive.append(w)
         if expired:
-            self.provider.write_watches(alive)
+            self.watches.write_watches(alive)
             for w in expired:
                 self.queue_event({"type": "watch:expired", **{k: v for k, v in w.items()}})
                 self.log("watch_expired", watch_id=w.get("id"), watch_type=w.get("type"))
         return expired
 
     def queue_event(self, event: dict) -> None:
-        """Push an event to the FIFO queue."""
-        self.provider.push_event(event)
-        self.log("event_queued", type=event.get("type"))
+        """Push an event to the appropriate channel queue. Deduplicates by event-specific key."""
+        channel = _channel_for(event.get("type", "unknown"))
+        key = _dedup_key(event)
+        if key:
+            for existing in self.events.read_events(channel=channel):
+                if _dedup_key(existing) == key:
+                    self.log("event_deduped", type=event.get("type"), key=key)
+                    return
+        self.events.push_event(event, channel=channel)
+        self.log("event_queued", type=event.get("type"), channel=channel)
 
     def nack_event(self, event: dict) -> None:
         """Re-queue a failed event. Increments _attempts; dead-lettered on next pop if over limit."""
-        self.provider.nack_event(event)
+        self.events.nack_event(event)
         attempts = event.get("_attempts", 0)
         self.log("event_nacked", type=event.get("type"), attempts=attempts)
 
-    def pop_event(self) -> Optional[dict]:
-        """Pop the oldest event from the queue (read + delete).
+    def pop_event(self, channel: Optional[str] = None) -> Optional[dict]:
+        """Pop an event from the queue (round-robin across channels by default).
 
         - Poison protection: events with _attempts >= 3 are dead-lettered (skipped).
         - page:comment gating: if the target design has inFlightCommentIds set
           (architect is already working), the new comment IDs are merged and the event is deferred.
         """
-        # Use provider's pop which handles poison detection + dead-lettering
         while True:
-            event = self.provider.pop_event()
+            event = self.events.pop_event(channel=channel)
             if event is None:
                 return None
 
@@ -536,11 +813,23 @@ class State:
                             continue
                         event["newCommentIds"] = new_ids
 
+            self.log("event_popped", type=event.get("type"), channel=event.get("_channel"))
             return event
 
-    def list_events(self) -> List[dict]:
+    def list_events(self, channel: Optional[str] = None) -> List[dict]:
         """List all pending events without removing them."""
-        return self.provider.read_events()
+        return self.events.read_events(channel=channel)
+
+    def list_dead_events(self) -> List[dict]:
+        """List dead-lettered events (failed 3+ times)."""
+        return self.dead_events.list_dead_events()
+
+    def retry_dead_events(self) -> int:
+        """Move all dead events back to live queue with attempts reset. Returns count retried."""
+        count = self.dead_events.retry_dead_events()
+        if count:
+            self.log("dead_events_retried", count=count)
+        return count
 
     # ------------------------------------------------------------------
     # Summary
@@ -614,360 +903,12 @@ class State:
 
 
 # ---------------------------------------------------------------------------
-# CLI helpers
+# CLI helpers (re-exported for backward compat)
 # ---------------------------------------------------------------------------
 
-def _flag(args: list, flag: str, default: str = None):
-    """Return the value after a flag, or default if absent."""
-    try:
-        idx = args.index(flag)
-        if idx + 1 < len(args):
-            return args[idx + 1]
-    except ValueError:
-        pass
-    return default
-
-
-def cli() -> None:
-    args = sys.argv[1:]
-    if not args:
-        print(__doc__)
-        sys.exit(0)
-
-    state = State()
-    group = args[0]
-    rest  = args[1:]
-
-    # ------------------------------------------------------------------
-    # summary
-    # ------------------------------------------------------------------
-    if group == "summary":
-        print(state.summary())
-        return
-
-    # ------------------------------------------------------------------
-    # design
-    # ------------------------------------------------------------------
-    if group == "design":
-        if not rest:
-            print("Usage: state.py design <create|get|update|list|complete|delete>")
-            sys.exit(1)
-        command = rest[0]
-        rest = rest[1:]
-
-        if command == "create":
-            description = rest[0] if rest else ""
-            category    = _flag(rest, "--category", "feature")
-            design_id   = _flag(rest, "--id")
-            d = state.create_design(description, category=category, design_id=design_id)
-            print(json.dumps(d))
-
-        elif command == "get":
-            design_id = rest[0] if rest else ""
-            d = state.get_design(design_id)
-            if d:
-                print(json.dumps(d))
-            else:
-                print(f"Design {design_id} not found")
-                sys.exit(1)
-
-        elif command == "update":
-            design_id = rest[0] if rest else ""
-            rest = rest[1:]
-            updates: dict = {}
-            idx = 0
-            while idx < len(rest):
-                key = rest[idx]
-                if key == "--stage":
-                    updates["stage"] = rest[idx + 1]; idx += 2
-                elif key == "--confluence-page":
-                    updates["confluencePageId"] = rest[idx + 1]; idx += 2
-                elif key == "--jira-parent":
-                    updates["jiraParentKey"] = rest[idx + 1]; idx += 2
-                elif key == "--add-child":
-                    updates["add_child_ticket"] = rest[idx + 1]; idx += 2
-                elif key == "--add-pr":
-                    val = rest[idx + 1]
-                    try:
-                        updates["add_pr"] = int(val)
-                    except ValueError:
-                        updates["add_pr"] = val
-                    idx += 2
-                elif key == "--add-artifact":
-                    raw = rest[idx + 1]
-                    try:
-                        updates["add_artifact"] = json.loads(raw)
-                    except json.JSONDecodeError:
-                        updates["add_artifact"] = raw
-                    idx += 2
-                elif key == "--set-in-flight-comments":
-                    raw = rest[idx + 1]
-                    updates["set_in_flight_comments"] = [c.strip() for c in raw.split(",") if c.strip()]
-                    idx += 2
-                elif key == "--merge-in-flight-comments":
-                    raw = rest[idx + 1]
-                    updates["merge_in_flight_comments"] = [c.strip() for c in raw.split(",") if c.strip()]
-                    idx += 2
-                elif key == "--clear-in-flight-comments":
-                    updates["clear_in_flight_comments"] = True
-                    idx += 1
-                elif key == "--add-handled-comments":
-                    raw = rest[idx + 1]
-                    updates["add_handled_comments"] = [c.strip() for c in raw.split(",") if c.strip()]
-                    idx += 2
-                else:
-                    idx += 1
-            d = state.update_design(design_id, updates)
-            print(json.dumps(d))
-
-        elif command == "list":
-            active_only = "--active" in rest
-            stage = _flag(rest, "--stage")
-            designs = state.list_designs(stage=stage, active_only=active_only)
-            print(json.dumps(designs))
-
-        elif command == "complete":
-            design_id = rest[0] if rest else ""
-            state.complete_design(design_id)
-            print(json.dumps({"ok": True}))
-
-        elif command == "delete":
-            design_id = rest[0] if rest else ""
-            ok = state.delete_design(design_id)
-            print("Deleted" if ok else "Not found")
-
-        else:
-            print(f"Unknown: design {command}")
-            sys.exit(1)
-        return
-
-    # ------------------------------------------------------------------
-    # session
-    # ------------------------------------------------------------------
-    if group == "session":
-        if not rest:
-            print("Usage: state.py session <save|get|delete|list>")
-            sys.exit(1)
-        command = rest[0]
-        rest = rest[1:]
-
-        if command == "save":
-            issue_key  = rest[0] if rest else ""
-            session_id = _flag(rest, "--session-id", str(uuid.uuid4()))
-            agent      = _flag(rest, "--agent", "unknown")
-            pr_raw     = _flag(rest, "--pr")
-            pr         = int(pr_raw) if pr_raw else None
-            s = state.save_session(issue_key, session_id, agent=agent, pr_number=pr)
-            print(json.dumps(s))
-
-        elif command == "get":
-            issue_key = rest[0] if rest else ""
-            s = state.get_session(issue_key)
-            if s:
-                print(json.dumps(s))
-            else:
-                print(f"Session {issue_key} not found")
-                sys.exit(1)
-
-        elif command == "delete":
-            issue_key = rest[0] if rest else ""
-            ok = state.delete_session(issue_key)
-            print("Deleted" if ok else "Not found")
-
-        elif command == "list":
-            sessions = state.list_sessions()
-            print(json.dumps(sessions))
-
-        else:
-            print(f"Unknown: session {command}")
-            sys.exit(1)
-        return
-
-    # ------------------------------------------------------------------
-    # watch
-    # ------------------------------------------------------------------
-    if group == "watch":
-        if not rest:
-            print("Usage: state.py watch <add|remove|list>")
-            sys.exit(1)
-        command = rest[0]
-        rest = rest[1:]
-
-        if command == "add":
-            watch_type = rest[0] if rest else ""
-            rest = rest[1:]
-            interval_raw = _flag(rest, "--interval")
-            interval = int(interval_raw) if interval_raw else 30
-
-            fields: dict = {}
-
-            # Convenience: --repo, --pr, --branch, --page, --issue, --design
-            repo   = _flag(rest, "--repo")
-            if repo:   fields["repo"] = repo
-            pr_raw = _flag(rest, "--pr")
-            if pr_raw: fields["prNumber"] = int(pr_raw)
-            branch = _flag(rest, "--branch")
-            if branch: fields["branch"] = branch
-            page   = _flag(rest, "--page")
-            if page:   fields["pageId"] = page
-            issue  = _flag(rest, "--issue")
-            if issue:  fields["issueKey"] = issue
-            design = _flag(rest, "--design")
-            if design: fields["designId"] = design
-
-            # TTL override
-            ttl_raw = _flag(rest, "--ttl")
-            if ttl_raw:
-                ttl_sec = int(ttl_raw)
-                expires = datetime.now(timezone.utc) + timedelta(seconds=ttl_sec)
-                fields["expiresAt"] = expires.isoformat()
-
-            # confluence:review registers a single unified watch
-            if watch_type == "confluence:review":
-                w = state.add_watch("confluence:review", interval=interval, **fields)
-            else:
-                w = state.add_watch(watch_type, interval=interval, **fields)
-            print(json.dumps(w))
-
-        elif command == "remove":
-            watch_id = rest[0] if rest else ""
-            ok = state.remove_watch(watch_id)
-            print("Removed" if ok else "Not found")
-
-        elif command == "list":
-            wtype   = _flag(rest, "--type")
-            watches = state.list_watches(watch_type=wtype)
-            print(json.dumps(watches))
-
-        else:
-            print(f"Unknown: watch {command}")
-            sys.exit(1)
-        return
-
-    # ------------------------------------------------------------------
-    # events
-    # ------------------------------------------------------------------
-    if group == "events":
-        if not rest:
-            print("Usage: state.py events <pop|list>")
-            sys.exit(1)
-        command = rest[0]
-
-        if command == "pop":
-            event = state.pop_event()
-            print(json.dumps(event) if event else json.dumps({"type": "empty"}))
-
-        elif command == "list":
-            events = state.list_events()
-            print(json.dumps(events))
-
-        elif command == "nack":
-            # Re-queue from stdin: echo '{"type":"ci:failed",...}' | python3 state.py events nack
-            raw = sys.stdin.read().strip()
-            if raw:
-                event = json.loads(raw)
-                state.nack_event(event)
-                print(json.dumps({"ok": True, "attempts": event.get("_attempts", 0)}))
-            else:
-                print("Pipe event JSON to stdin")
-                sys.exit(1)
-
-        elif command == "dead":
-            # List dead-lettered events
-            dead_dir = state.base / "dead_events"
-            dead_dir.mkdir(parents=True, exist_ok=True)
-            dead = []
-            for f in sorted(dead_dir.glob("*.json")):
-                try:
-                    dead.append(json.loads(f.read_text()))
-                except (json.JSONDecodeError, OSError):
-                    pass
-            print(json.dumps(dead))
-
-        elif command == "retry-dead":
-            # Move all dead events back to the live queue with attempts reset
-            dead_dir = state.base / "dead_events"
-            dead_dir.mkdir(parents=True, exist_ok=True)
-            count = 0
-            for f in sorted(dead_dir.glob("*.json")):
-                try:
-                    event = json.loads(f.read_text())
-                    event["_attempts"] = 0
-                    state.queue_event(event)
-                    f.unlink()
-                    count += 1
-                except (json.JSONDecodeError, OSError):
-                    pass
-            print(json.dumps({"ok": True, "retried": count}))
-
-        else:
-            print(f"Unknown: events {command}")
-            sys.exit(1)
-        return
-
-    # ------------------------------------------------------------------
-    # log
-    # ------------------------------------------------------------------
-    if group == "log":
-        if not rest:
-            print("Usage: state.py log <append|show>")
-            sys.exit(1)
-        command = rest[0]
-        rest = rest[1:]
-
-        if command == "append":
-            action     = rest[0] if rest else "action"
-            data: dict = {}
-            design_id  = _flag(rest, "--design-id")
-            issue_key  = _flag(rest, "--issue-key")
-            detail     = _flag(rest, "--detail")
-            if design_id: data["design_id"]  = design_id
-            if issue_key: data["issue_key"]  = issue_key
-            if detail:    data["detail"]      = detail
-            state.log(action, **data)
-            print("Logged")
-
-        elif command == "show":
-            last_raw = _flag(rest, "--last", "20")
-            last     = int(last_raw)
-            for entry in state.read_log(last=last):
-                print(json.dumps(entry))
-
-        else:
-            print(f"Unknown: log {command}")
-            sys.exit(1)
-        return
-
-    # ------------------------------------------------------------------
-    # migrate
-    # ------------------------------------------------------------------
-    if group == "migrate":
-        target = rest[0] if rest else ""
-        if target != "sqlite":
-            print("Usage: state.py migrate sqlite")
-            sys.exit(1)
-        db_path = state.base / "state.db"
-        if db_path.exists():
-            print(f"SQLite DB already exists at {db_path}")
-            print("Delete it first if you want to re-migrate.")
-            sys.exit(1)
-        from store_sqlite import SQLiteStateProvider
-        print(f"Migrating file-based state from {state.base} to SQLite...")
-        provider = SQLiteStateProvider.migrate_from_files(state.base, db_path)
-        # Count migrated items
-        designs = len(provider.list_designs())
-        sessions = len(provider.list_sessions())
-        watches = len(provider.read_watches())
-        events = len(provider.read_events())
-        log_entries = len(provider.read_log(last=99999))
-        print(f"Migrated: {designs} designs, {sessions} sessions, {watches} watches, {events} events, {log_entries} log entries")
-        print(f"SQLite DB: {db_path}")
-        print("Set STATE_BACKEND=sqlite in .env to use it.")
-        return
-
-    print(f"Unknown group: {group}")
-    sys.exit(1)
+from cli_utils import flag as _flag
 
 
 if __name__ == "__main__":
+    from state_cli import cli
     cli()

@@ -32,34 +32,28 @@ import urllib.parse
 from urllib.parse import quote
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+from cli_utils import load_dotenv, ToolError
 
-
-# ---------------------------------------------------------------------------
-# Load .env
-# ---------------------------------------------------------------------------
-
-def load_dotenv() -> None:
-    env_path = SCRIPT_DIR / ".env"
-    if not env_path.exists():
-        return
-    with open(env_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            key, _, value = line.partition("=")
-            if key and key not in os.environ:
-                os.environ[key] = os.environ.get(key, value)
-
-
-load_dotenv()
-
-SITE  = os.environ.get("ATLASSIAN_SITE", "")
-EMAIL = os.environ.get("ATLASSIAN_EMAIL", "")
-TOKEN = os.environ.get("ATLASSIAN_TOKEN", "")
-
+# Lazy-init: env is loaded on first use, not at import time
+_env_loaded = False
+SITE  = ""
+EMAIL = ""
+TOKEN = ""
 CACHE_DIR = SCRIPT_DIR / ".orchestrator" / "confluence_cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_env() -> None:
+    """Load .env and set module globals on first call. No-op after that."""
+    global _env_loaded, SITE, EMAIL, TOKEN
+    if _env_loaded:
+        return
+    load_dotenv(str(SCRIPT_DIR / ".env"))
+    SITE  = os.environ.get("ATLASSIAN_SITE", "")
+    EMAIL = os.environ.get("ATLASSIAN_EMAIL", "")
+    TOKEN = os.environ.get("ATLASSIAN_TOKEN", "")
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    _env_loaded = True
 
 # Bot label prefix used on all replies/reactions posted by the orchestrator
 BOT_LABEL = "🤖 <strong>Orchestrator:</strong>"
@@ -70,6 +64,7 @@ BOT_LABEL = "🤖 <strong>Orchestrator:</strong>"
 # ---------------------------------------------------------------------------
 
 def _base_url() -> str:
+    _ensure_env()
     return f"https://{SITE}/wiki"
 
 
@@ -92,11 +87,9 @@ def api_get(path: str) -> dict:
         return data
     except HTTPError as e:
         body = e.fp.read().decode()
-        print(f"[confluence] FAIL GET {path} — HTTP {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"GET {path} failed — HTTP {e.code}")
     except URLError as e:
-        print(f"[confluence] FAIL GET {path} — {e.reason}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"GET {path} failed — {e.reason}")
 
 
 def api_post(path: str, data: dict) -> dict:
@@ -111,8 +104,7 @@ def api_post(path: str, data: dict) -> dict:
         return result
     except HTTPError as e:
         body_text = e.fp.read().decode()
-        print(f"[confluence] FAIL POST {path} — HTTP {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"POST {path} failed — HTTP {e.code}")
 
 
 def api_put(path: str, data: dict) -> dict:
@@ -127,15 +119,39 @@ def api_put(path: str, data: dict) -> dict:
         return result
     except HTTPError as e:
         body_text = e.fp.read().decode()
-        print(f"[confluence] FAIL PUT {path} — HTTP {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"PUT {path} failed — HTTP {e.code}")
 
 
 def save_and_print(data: dict, cache_name: str) -> None:
     """Save raw response to cache file, print compact version."""
+    _ensure_env()
     cache_path = CACHE_DIR / cache_name
     cache_path.write_text(json.dumps(data))
     print(json.dumps(data, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _extract_comments(results: list, unresolved_only: bool = False) -> list:
+    """Parse Confluence comment API results into compact dicts."""
+    out = []
+    for c in results:
+        inline_props = c.get("extensions", {}).get("inlineProperties", {})
+        resolution   = c.get("extensions", {}).get("resolution", {})
+        is_resolved  = bool(resolution.get("lastModifier"))
+        if unresolved_only and is_resolved:
+            continue
+        out.append({
+            "id":        c.get("id"),
+            "resolved":  is_resolved,
+            "author":    c.get("history", {}).get("createdBy", {}).get("displayName", "unknown"),
+            "body":      c.get("body", {}).get("storage", {}).get("value", ""),
+            "created":   c.get("createdDate"),
+            "selection": inline_props.get("originalSelection"),
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -152,26 +168,10 @@ def cmd_get_comments(page_id: str, unresolved_only: bool = False) -> None:
     footer_raw = api_get(f"/rest/api/content/{page_id}/child/comment?expand={expand}&depth=all&limit=50")
     inline_raw = api_get(f"/rest/api/content/{page_id}/child/comment?expand={expand}&depth=all&limit=50&location=inline")
 
-    def extract(results, out):
-        for c in results:
-            inline_props = c.get("extensions", {}).get("inlineProperties", {})
-            resolution   = c.get("extensions", {}).get("resolution", {})
-            is_resolved  = bool(resolution.get("lastModifier"))
-            if unresolved_only and is_resolved:
-                continue
-            entry = {
-                "id":        c.get("id"),
-                "resolved":  is_resolved,
-                "author":    c.get("history", {}).get("createdBy", {}).get("displayName", "unknown"),
-                "body":      c.get("body", {}).get("storage", {}).get("value", ""),
-                "created":   c.get("createdDate"),
-                "selection": inline_props.get("originalSelection"),
-            }
-            out.append(entry)
-
-    result = {"footer": [], "inline": []}
-    extract(footer_raw.get("results", []), result["footer"])
-    extract(inline_raw.get("results", []), result["inline"])
+    result = {
+        "footer": _extract_comments(footer_raw.get("results", []), unresolved_only),
+        "inline": _extract_comments(inline_raw.get("results", []), unresolved_only),
+    }
     save_and_print(result, f"comments_{page_id}.json")
 
 
@@ -213,27 +213,11 @@ def cmd_poll_page(page_id: str) -> None:
     else:
         status = "in-review"
 
-    def extract(results):
-        out = []
-        for c in results:
-            inline_props = c.get("extensions", {}).get("inlineProperties", {})
-            resolution   = c.get("extensions", {}).get("resolution", {})
-            is_resolved  = bool(resolution.get("lastModifier"))
-            out.append({
-                "id":        c.get("id"),
-                "resolved":  is_resolved,
-                "author":    c.get("history", {}).get("createdBy", {}).get("displayName", "unknown"),
-                "body":      c.get("body", {}).get("storage", {}).get("value", ""),
-                "created":   c.get("createdDate"),
-                "selection": inline_props.get("originalSelection"),
-            })
-        return out
-
     result = {
         "labels": labels,
         "status": status,
-        "footer": extract(footer_raw.get("results", [])),
-        "inline": extract(inline_raw.get("results", [])),
+        "footer": _extract_comments(footer_raw.get("results", [])),
+        "inline": _extract_comments(inline_raw.get("results", [])),
     }
     save_and_print(result, f"poll_{page_id}.json")
 
@@ -246,6 +230,7 @@ def cmd_add_label(page_id: str, label: str) -> None:
 
 def cmd_remove_label(page_id: str, label: str) -> None:
     """Remove a label from a page."""
+    _ensure_env()
     url = f"https://{SITE}/wiki/rest/api/content/{page_id}/label?name={label}"
     req = Request(url, headers=_headers(), method="DELETE")
     print(f"[confluence] START DELETE /rest/api/content/{page_id}/label?name={label}", file=sys.stderr)
@@ -254,8 +239,7 @@ def cmd_remove_label(page_id: str, label: str) -> None:
         print(f"[confluence] OK DELETE label={label}", file=sys.stderr)
     except HTTPError as e:
         body = e.fp.read().decode()
-        print(f"[confluence] FAIL DELETE label={label} — HTTP {e.code}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"DELETE label={label} failed — HTTP {e.code}")
     print(f"removed:{label}")
 
 
@@ -281,8 +265,7 @@ def cmd_get_page(page_id: str, output_path: str) -> None:
 def cmd_create_page(space_key: str, title: str, body_file: str) -> None:
     """Create a Confluence page from a local file."""
     if not Path(body_file).exists():
-        print(f"File not found: {body_file}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"File not found: {body_file}")
     body = Path(body_file).read_text()
     data = {
         "type":  "page",
@@ -298,8 +281,7 @@ def cmd_create_page(space_key: str, title: str, body_file: str) -> None:
 def cmd_update_page(page_id: str, title: str, body_file: str) -> None:
     """Update an existing Confluence page from a local file."""
     if not Path(body_file).exists():
-        print(f"File not found: {body_file}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"File not found: {body_file}")
     body    = Path(body_file).read_text()
     current = api_get(f"/rest/api/content/{page_id}?expand=version")
     version = current.get("version", {}).get("number", 1)
@@ -329,29 +311,13 @@ def cmd_search(cql: str) -> None:
 
 def _post_comment_reply(container_id: str, container_type: str, html_body: str) -> str:
     """Internal helper: post a comment reply. Returns the new comment ID."""
-    creds   = base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
-    headers = {
-        "Content-Type":  "application/json",
-        "Authorization": f"Basic {creds}",
-    }
-    post_url = f"https://{SITE}/wiki/rest/api/content"
-    payload  = {
+    payload = {
         "type":      "comment",
         "container": {"id": container_id, "type": container_type},
         "body":      {"storage": {"value": html_body, "representation": "storage"}},
     }
-    req = Request(post_url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-    print(f"[confluence] START POST comment reply on {container_id}", file=sys.stderr)
-    try:
-        resp   = urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode())
-        new_id = result.get("id")
-        print(f"[confluence] OK POST comment reply id={new_id}", file=sys.stderr)
-        return new_id
-    except HTTPError as e:
-        body_text = e.fp.read().decode()
-        print(f"[confluence] FAIL POST comment reply — HTTP {e.code}", file=sys.stderr)
-        sys.exit(1)
+    result = api_post("/rest/api/content", payload)
+    return result.get("id")
 
 
 def cmd_add_reaction(comment_id: str, emoji: str) -> None:
@@ -408,11 +374,11 @@ def cmd_list_spaces() -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    _ensure_env()
     missing = [k for k in ("ATLASSIAN_SITE", "ATLASSIAN_EMAIL", "ATLASSIAN_TOKEN")
                if not os.environ.get(k)]
     if missing:
-        print(f"Missing in .env: {', '.join(missing)}", file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"Missing in .env: {', '.join(missing)}")
 
     args = sys.argv[1:]
     if not args:
@@ -486,4 +452,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ToolError as e:
+        print(f"[confluence] ERROR: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)

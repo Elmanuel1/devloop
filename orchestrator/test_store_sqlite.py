@@ -86,50 +86,70 @@ class TestSQLiteWatches:
 
 class TestSQLiteEvents:
     def test_push_and_pop(self, provider):
-        provider.push_event({"type": "ci:passed", "repo": "a/b"})
-        event = provider.pop_event()
+        provider.push_event({"type": "ci:passed", "repo": "a/b"}, channel="ci")
+        event = provider.pop_event(channel="ci")
         assert event["type"] == "ci:passed"
         assert event["repo"] == "a/b"
-        assert event["_attempts"] == 1
+        assert event["_attempts"] == 0
+        assert event["_channel"] == "ci"
 
     def test_pop_empty(self, provider):
         assert provider.pop_event() is None
 
     def test_fifo_order(self, provider):
-        provider.push_event({"type": "first"})
-        provider.push_event({"type": "second"})
-        assert provider.pop_event()["type"] == "first"
-        assert provider.pop_event()["type"] == "second"
+        provider.push_event({"type": "first"}, channel="system")
+        provider.push_event({"type": "second"}, channel="system")
+        assert provider.pop_event(channel="system")["type"] == "first"
+        assert provider.pop_event(channel="system")["type"] == "second"
 
     def test_read_events(self, provider):
-        provider.push_event({"type": "a"})
-        provider.push_event({"type": "b"})
+        provider.push_event({"type": "a"}, channel="ci")
+        provider.push_event({"type": "b"}, channel="pr")
         events = provider.read_events()
         assert len(events) == 2
 
+    def test_read_events_by_channel(self, provider):
+        provider.push_event({"type": "ci:passed"}, channel="ci")
+        provider.push_event({"type": "pr:comment"}, channel="pr")
+        assert len(provider.read_events(channel="ci")) == 1
+        assert len(provider.read_events(channel="pr")) == 1
+
     def test_poison_dead_lettered(self, provider):
-        provider.push_event({"type": "bad", "_attempts": 3})
-        event = provider.pop_event()
+        provider.push_event({"type": "bad", "_attempts": 3}, channel="system")
+        event = provider.pop_event(channel="system")
         assert event is None
         dead = provider.list_dead_events()
         assert len(dead) == 1
         assert dead[0]["type"] == "bad"
 
     def test_nack_increments(self, provider):
-        provider.push_event({"type": "retry"})
-        event = provider.pop_event()
+        provider.push_event({"type": "retry"}, channel="system")
+        event = provider.pop_event(channel="system")
         provider.nack_event(event)
-        event2 = provider.pop_event()
-        assert event2["_attempts"] == 3  # 1 from first pop + 1 from nack + 1 from second pop
+        event2 = provider.pop_event(channel="system")
+        assert event2["_attempts"] == 1
 
     def test_retry_dead_events(self, provider):
-        provider.push_event({"type": "doomed", "_attempts": 3})
-        provider.pop_event()  # Dead-letters it
+        provider.push_event({"type": "doomed", "_attempts": 3}, channel="system")
+        provider.pop_event(channel="system")  # Dead-letters it
         count = provider.retry_dead_events()
         assert count == 1
         event = provider.pop_event()
         assert event is not None
         assert event["type"] == "doomed"
+
+    def test_round_robin_pop(self, provider):
+        provider.push_event({"type": "ci:passed"}, channel="ci")
+        provider.push_event({"type": "pr:comment"}, channel="pr")
+        # Round-robin should return events from different channels
+        types = set()
+        e1 = provider.pop_event()
+        if e1:
+            types.add(e1["_channel"])
+        e2 = provider.pop_event()
+        if e2:
+            types.add(e2["_channel"])
+        assert len(types) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -197,32 +217,6 @@ class TestSQLiteSessions:
 
 
 # ---------------------------------------------------------------------------
-# SQLiteStateProvider — log
-# ---------------------------------------------------------------------------
-
-class TestSQLiteLog:
-    def test_append_and_read(self, provider):
-        provider.append_log("test_action", detail="hello")
-        entries = provider.read_log(last=10)
-        assert len(entries) == 1
-        assert entries[0]["action"] == "test_action"
-        assert entries[0]["detail"] == "hello"
-
-    def test_read_limit(self, provider):
-        for i in range(10):
-            provider.append_log(f"action_{i}")
-        entries = provider.read_log(last=3)
-        assert len(entries) == 3
-
-    def test_chronological_order(self, provider):
-        provider.append_log("first")
-        provider.append_log("second")
-        entries = provider.read_log(last=10)
-        assert entries[0]["action"] == "first"
-        assert entries[1]["action"] == "second"
-
-
-# ---------------------------------------------------------------------------
 # Migration — file → SQLite
 # ---------------------------------------------------------------------------
 
@@ -241,8 +235,8 @@ class TestMigration:
 
     def test_migrate_events(self, tmp_dir):
         fp = FileStateProvider(tmp_dir)
-        fp.push_event({"type": "ci:passed"})
-        fp.push_event({"type": "task:requested"})
+        fp.push_event({"type": "ci:passed"}, channel="ci")
+        fp.push_event({"type": "task:requested"}, channel="task")
         db_path = tmp_dir / "state.db"
         sp = SQLiteStateProvider.migrate_from_files(tmp_dir, db_path)
         events = sp.read_events()
@@ -271,18 +265,6 @@ class TestMigration:
         sessions = sp.list_sessions()
         assert len(sessions) == 1
         assert sessions[0]["agent"] == "writer"
-
-    def test_migrate_log(self, tmp_dir):
-        log_file = tmp_dir / "log.jsonl"
-        entries = [
-            {"ts": "2024-01-01T00:00:00", "action": "design_created", "detail": "test"},
-            {"ts": "2024-01-01T00:01:00", "action": "watch_added"},
-        ]
-        log_file.write_text("\n".join(json.dumps(e) for e in entries))
-        db_path = tmp_dir / "state.db"
-        sp = SQLiteStateProvider.migrate_from_files(tmp_dir, db_path)
-        log = sp.read_log(last=10)
-        assert len(log) == 2
 
     def test_auto_migrate_on_sqlite_init(self, tmp_dir):
         """State(STATE_BACKEND=sqlite) auto-migrates existing file state."""
@@ -350,7 +332,7 @@ class TestSQLiteIntegration:
 
     def test_nack_in_sqlite(self, sqlite_state):
         s = sqlite_state
-        s.queue_event({"type": "test"})
+        s.queue_event({"type": "ci:passed"})
         e = s.pop_event()
         s.nack_event(e)
         e2 = s.pop_event()

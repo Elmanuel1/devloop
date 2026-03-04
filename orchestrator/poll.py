@@ -44,24 +44,10 @@ def env_int(key: str, fallback: int = 0) -> int:
         return fallback
 
 
-def load_dotenv(path: str) -> None:
-    if not os.path.exists(path):
-        return
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            if '=' not in line:
-                continue
-            key, _, value = line.partition('=')
-            key = key.strip()
-            value = value.strip()
-            if not os.environ.get(key):
-                os.environ[key] = value
-
-
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+from cli_utils import load_dotenv
+
 load_dotenv(str(SCRIPT_DIR / '.env'))
 
 SLACK_APP_TOKEN       = env('SLACK_APP_TOKEN', '')
@@ -91,7 +77,6 @@ def reload_config(signum=None, frame=None) -> None:
 
 CLAUDE_BIN = shutil.which('claude')
 
-sys.path.insert(0, str(SCRIPT_DIR))
 from state import State
 
 # ---------------------------------------------------------------------------
@@ -291,7 +276,7 @@ class PRCIHandler(WatchHandler):
             '--repo',   repo,
             '--branch', branch,
             '--status', 'completed',
-            '--json',   'databaseId,conclusion,name',
+            '--json',   'databaseId,conclusion,name,headSha',
             '--limit',  '5',
         )
         if code != 0:
@@ -313,6 +298,7 @@ class PRCIHandler(WatchHandler):
             'issueKey':   self.watch.get('issueKey'),
             'runName':    latest.get('name', ''),
             'runId':      latest['databaseId'],
+            'headSha':    latest.get('headSha', ''),
             'conclusion': conclusion,
         }
 
@@ -1003,6 +989,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 'repo': repo,
                 'branch': branch,
                 'prNumber': pr_number,
+                'headSha': suite.get('head_sha', ''),
                 'conclusion': conclusion,
                 'source': 'webhook',
             }

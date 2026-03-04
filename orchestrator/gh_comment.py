@@ -21,6 +21,10 @@ import argparse
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from cli_utils import ToolError
 
 
 def gh_api(endpoint: str, body: str) -> dict:
@@ -31,9 +35,7 @@ def gh_api(endpoint: str, body: str) -> dict:
         text=True,
     )
     if proc.returncode != 0:
-        print(f"[gh_comment] ERROR: {endpoint}", file=sys.stderr)
-        print(proc.stderr.strip(), file=sys.stderr)
-        sys.exit(1)
+        raise ToolError(f"gh api {endpoint} failed: {proc.stderr.strip()}")
     return json.loads(proc.stdout) if proc.stdout.strip() else {}
 
 
@@ -117,4 +119,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ToolError as e:
+        print(f"[gh_comment] ERROR: {e}", file=sys.stderr)
+        sys.exit(e.exit_code)
