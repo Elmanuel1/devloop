@@ -1,6 +1,5 @@
 package com.tosspaper.precon
 
-import com.tosspaper.aiengine.client.reducto.ReductoClient
 import com.tosspaper.aiengine.client.reducto.dto.ReductoStatus
 import com.tosspaper.models.exception.ReductoIntermediateStatusException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
@@ -14,7 +13,6 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
     ExtractionLockManager lockManager = Mock()
-    ReductoClient reductoClient = Mock()
 
     /**
      * Synchronous executor: runs submitted tasks immediately in the calling thread.
@@ -25,7 +23,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     @Subject
     ExtractionPipelineRunner runner = new ExtractionPipelineRunner(
-            repository, lockManager, reductoClient, syncExecutor)
+            repository, lockManager, syncExecutor)
 
     // ==================== execute — lock not acquired ====================
 
@@ -53,7 +51,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             // Non-running executor: capture tasks without executing to avoid UnsupportedOperationException
             Executor capturingExecutor = { Runnable r -> /* captured, not run */ }
             ExtractionPipelineRunner runnerWithCapture = new ExtractionPipelineRunner(
-                    repository, lockManager, reductoClient, capturingExecutor)
+                    repository, lockManager, capturingExecutor)
 
         when: "execute is called"
             runnerWithCapture.execute(extraction)
@@ -82,7 +80,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def submittedCount = 0
             Executor countingExecutor = { Runnable r -> submittedCount++ }
             ExtractionPipelineRunner r = new ExtractionPipelineRunner(
-                    repository, lockManager, reductoClient, countingExecutor)
+                    repository, lockManager, countingExecutor)
 
         when: "scatterGather is called"
             r.scatterGather(extraction)
@@ -151,7 +149,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to throw a hard prepare error"
             def extraction = buildExtractionWithDocs("ext-fail", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, lockManager, reductoClient, syncExecutor])
+                    constructorArgs: [repository, lockManager, syncExecutor])
             runnerSpy.callReducto(_) >> { throw new RuntimeException("network error — prepare failed") }
 
         when: "scatterGather is called"
@@ -168,7 +166,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to signal Reducto is still processing"
             def extraction = buildExtractionWithDocs("ext-processing", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, lockManager, reductoClient, syncExecutor])
+                    constructorArgs: [repository, lockManager, syncExecutor])
             runnerSpy.callReducto(_) >> {
                 throw new ReductoIntermediateStatusException(ReductoStatus.PROCESSING.name())
             }
@@ -187,7 +185,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to signal Reducto task is queued"
             def extraction = buildExtractionWithDocs("ext-pending", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, lockManager, reductoClient, syncExecutor])
+                    constructorArgs: [repository, lockManager, syncExecutor])
             runnerSpy.callReducto(_) >> {
                 throw new ReductoIntermediateStatusException(ReductoStatus.PENDING.name())
             }

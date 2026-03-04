@@ -1,6 +1,5 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.aiengine.client.reducto.ReductoClient;
 import com.tosspaper.models.exception.ReductoIntermediateStatusException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,7 +40,8 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
  * </ul>
  *
  * <p>TODO [TOS-38] Wire {@link #callReducto} to the real Reducto extraction
- * flow once the document-to-extraction pipeline is finalised.
+ * flow once the document-to-extraction pipeline is finalised. At that point
+ * re-inject {@code ReductoClient} as a constructor dependency.
  */
 @Slf4j
 @Component
@@ -50,7 +50,6 @@ public class ExtractionPipelineRunner {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ExtractionLockManager lockManager;
-    private final ReductoClient reductoClient;
 
     @Qualifier("extractionProcessingExecutor")
     private final Executor reductoExecutor;
