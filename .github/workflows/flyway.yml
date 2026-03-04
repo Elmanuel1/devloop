@@ -126,8 +126,7 @@ jobs:
             -user=postgres
             -password=postgres
             -locations=filesystem:./flyway
-            migrate
-            ${{ inputs.flyway-flags }}
+            migrate ${{ inputs.flyway-flags }}
 
   # ===========================================================================
   # SSM - run Flyway on EC2 (has RDS access)
