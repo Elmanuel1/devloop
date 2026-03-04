@@ -55,7 +55,8 @@ public interface TenderMapper {
     @Mapping(target = "status", constant = "pending")
     @Mapping(target = "companyId", source = "companyId")
     @Mapping(target = "createdBy", source = "createdBy")
-    @Mapping(target = "name", source = "request.name")
+    @Mapping(target = "name", source = "request.name",
+             nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.SET_TO_NULL)
     @Mapping(target = "platform", source = "request.platform")
     @Mapping(target = "currency", source = "request.currency", qualifiedByName = "currencyToString")
     @Mapping(target = "closingDate", source = "request.closingDate")

@@ -91,6 +91,110 @@ class TenderServiceSpec extends Specification {
             thrown(DuplicateException)
     }
 
+    // ==================== createTender — null name (TOS-45) ====================
+
+    def "should create tender with null name and return result with name=null"() {
+        given: "a create request with name=null"
+            def companyId = 1L
+            def request = new TenderCreateRequest()
+            request.setName(null)
+            def record = createNullNameRecord("tender-null-1", companyId.toString())
+            def insertedRecord = createNullNameRecord("tender-null-1", companyId.toString())
+            def dto = createTenderDtoNullName("tender-null-1")
+
+        when: "creating a tender with no name"
+            def result = service.createTender(companyId, request)
+
+        then: "mapper converts request to record (name propagates as null)"
+            1 * tenderMapper.toRecord(request, "1", "test-user") >> record
+
+        and: "repository inserts the record successfully"
+            1 * tenderRepository.insert(record) >> insertedRecord
+
+        and: "mapper converts to DTO with null name"
+            1 * tenderMapper.toDto(insertedRecord) >> dto
+
+        and: "result is returned with name=null and a valid version"
+            result != null
+            result.tender().name == null
+            result.version() == 0
+    }
+
+    def "should create tender with name omitted (null) without throwing DuplicateException"() {
+        given: "a create request that has no name set at all (field omitted by client)"
+            def companyId = 1L
+            def request = new TenderCreateRequest()
+            // name is never set — it is null by default
+            def record = createNullNameRecord("tender-omit-1", companyId.toString())
+            def insertedRecord = createNullNameRecord("tender-omit-1", companyId.toString())
+            def dto = createTenderDtoNullName("tender-omit-1")
+
+        when: "creating a tender with name omitted"
+            def result = service.createTender(companyId, request)
+
+        then: "mapper and repository are called normally — null name is not special-cased"
+            1 * tenderMapper.toRecord(request, "1", "test-user") >> record
+            1 * tenderRepository.insert(record) >> insertedRecord
+            1 * tenderMapper.toDto(insertedRecord) >> dto
+
+        and: "DuplicateKeyException is NOT thrown — null names do not trigger the unique index"
+            noExceptionThrown()
+
+        and: "result contains name=null"
+            result.tender().name == null
+    }
+
+    def "should not reach DuplicateKeyException catch block when name is null"() {
+        given: "two create requests both with null name for the same company"
+            def companyId = 1L
+            def request1 = new TenderCreateRequest()
+            request1.setName(null)
+            def request2 = new TenderCreateRequest()
+            request2.setName(null)
+            def record1 = createNullNameRecord("tender-null-a", companyId.toString())
+            def record2 = createNullNameRecord("tender-null-b", companyId.toString())
+            def inserted1 = createNullNameRecord("tender-null-a", companyId.toString())
+            def inserted2 = createNullNameRecord("tender-null-b", companyId.toString())
+            def dto1 = createTenderDtoNullName("tender-null-a")
+            def dto2 = createTenderDtoNullName("tender-null-b")
+
+        when: "creating both tenders"
+            def result1 = service.createTender(companyId, request1)
+            def result2 = service.createTender(companyId, request2)
+
+        then: "both succeed without any DuplicateKeyException — null names are NULLS DISTINCT"
+            1 * tenderMapper.toRecord(request1, "1", "test-user") >> record1
+            1 * tenderRepository.insert(record1) >> inserted1
+            1 * tenderMapper.toDto(inserted1) >> dto1
+            1 * tenderMapper.toRecord(request2, "1", "test-user") >> record2
+            1 * tenderRepository.insert(record2) >> inserted2
+            1 * tenderMapper.toDto(inserted2) >> dto2
+            noExceptionThrown()
+            result1.tender().name == null
+            result2.tender().name == null
+    }
+
+    def "should still throw DuplicateException when non-null name conflicts"() {
+        given: "a request with a non-null duplicate name"
+            def companyId = 1L
+            def request = new TenderCreateRequest()
+            request.setName("Existing RFP")
+            def record = createRecord("tender-dup", companyId.toString())
+
+        when: "creating a tender with a duplicate name"
+            service.createTender(companyId, request)
+
+        then: "mapper converts the request"
+            1 * tenderMapper.toRecord(request, "1", "test-user") >> record
+
+        and: "repository throws DuplicateKeyException (unique constraint on non-null name)"
+            1 * tenderRepository.insert(record) >> { throw new DuplicateKeyException("unique constraint") }
+
+        and: "DuplicateException is re-thrown with message referencing the name"
+            def ex = thrown(DuplicateException)
+            ex != null
+    }
+
     // ==================== listTenders ====================
 
     def "should return paginated list of tenders"() {
@@ -463,6 +567,30 @@ class TenderServiceSpec extends Specification {
         def tender = new Tender()
         tender.setId(UUID.fromString(id.length() == 36 ? id : "00000000-0000-0000-0000-000000000001"))
         tender.setName("Test Tender")
+        tender.setStatus(TenderStatus.PENDING)
+        tender.setCreatedAt(OffsetDateTime.now())
+        tender.setUpdatedAt(OffsetDateTime.now())
+        tender.setCreatedBy(UUID.fromString("00000000-0000-0000-0000-000000000001"))
+        return tender
+    }
+
+    private static TendersRecord createNullNameRecord(String id, String companyId) {
+        def record = new TendersRecord()
+        record.setId(id)
+        record.setCompanyId(companyId)
+        record.setName(null)
+        record.setStatus("pending")
+        record.setCreatedBy("user-1")
+        record.setVersion(0)
+        record.setCreatedAt(OffsetDateTime.now())
+        record.setUpdatedAt(OffsetDateTime.now())
+        return record
+    }
+
+    private static Tender createTenderDtoNullName(String id) {
+        def tender = new Tender()
+        tender.setId(UUID.fromString(id.length() == 36 ? id : "00000000-0000-0000-0000-000000000001"))
+        tender.setName(null)
         tender.setStatus(TenderStatus.PENDING)
         tender.setCreatedAt(OffsetDateTime.now())
         tender.setUpdatedAt(OffsetDateTime.now())

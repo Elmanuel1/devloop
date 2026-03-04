@@ -49,6 +49,11 @@ public class TenderRepositoryImpl implements TenderRepository {
         // Status filter
         if (query.getStatus() != null && !query.getStatus().isBlank()) {
             conditions.add(TENDERS.STATUS.eq(query.getStatus()));
+        } else {
+            // Exclude pending tenders from the default list.
+            // Pending tenders are created by the system and not yet user-ready.
+            // Pass status=pending explicitly to retrieve them.
+            conditions.add(TENDERS.STATUS.notEqual("pending"));
         }
 
         // Cursor pagination
