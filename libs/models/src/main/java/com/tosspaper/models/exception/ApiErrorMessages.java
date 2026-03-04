@@ -67,4 +67,8 @@ public final class ApiErrorMessages {
     public static final String FORBIDDEN_CODE = "api.forbidden";
     public static final String FORBIDDEN_DOMAIN_CODE = "api.forbidden.domain";
     public static final String INTERNAL_SERVER_ERROR_CODE = "api.internalError";
+
+    // ── Reducto pipeline ──
+    public static final String REDUCTO_INTERMEDIATE_STATUS_CODE = "api.extraction.reductoIntermediateStatus";
+    public static final String REDUCTO_INTERMEDIATE_STATUS = "Reducto task is not yet complete — current status: %s";
 } 

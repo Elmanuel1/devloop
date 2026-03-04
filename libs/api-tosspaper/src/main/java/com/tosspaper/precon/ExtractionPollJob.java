@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ExtractionPollJob implements SmartLifecycle {
 
     /** Maximum number of PENDING rows fetched in a single poll cycle. */
@@ -50,15 +52,6 @@ public class ExtractionPollJob implements SmartLifecycle {
             Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "extraction-poll"));
 
     private volatile boolean running = false;
-
-    public ExtractionPollJob(
-            PreconExtractionRepository preconExtractionRepository,
-            ExtractionPipelineRunner pipelineRunner,
-            ExtractionPollProperties pollProperties) {
-        this.preconExtractionRepository = preconExtractionRepository;
-        this.pipelineRunner = pipelineRunner;
-        this.pollProperties = pollProperties;
-    }
 
     // ── SmartLifecycle ────────────────────────────────────────────────────────
 

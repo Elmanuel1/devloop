@@ -2,6 +2,7 @@ package com.tosspaper.precon;
 
 import com.tosspaper.aiengine.client.reducto.ReductoClient;
 import com.tosspaper.models.exception.ReductoIntermediateStatusException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -10,7 +11,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
-import java.util.stream.Collectors;
 
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.supplyAsync;
@@ -45,23 +45,15 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ExtractionPipelineRunner {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ExtractionLockManager lockManager;
     private final ReductoClient reductoClient;
-    private final Executor reductoExecutor;
 
-    public ExtractionPipelineRunner(
-            PreconExtractionRepository preconExtractionRepository,
-            ExtractionLockManager lockManager,
-            ReductoClient reductoClient,
-            @Qualifier("extractionProcessingExecutor") Executor reductoExecutor) {
-        this.preconExtractionRepository = preconExtractionRepository;
-        this.lockManager = lockManager;
-        this.reductoClient = reductoClient;
-        this.reductoExecutor = reductoExecutor;
-    }
+    @Qualifier("extractionProcessingExecutor")
+    private final Executor reductoExecutor;
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -114,7 +106,7 @@ public class ExtractionPipelineRunner {
 
         List<CompletableFuture<DocResult>> futures = docIds.stream()
                 .map(docId -> supplyAsync(() -> callReducto(docId), reductoExecutor))
-                .collect(Collectors.toList());
+                .toList();
 
         allOf(futures.toArray(new CompletableFuture[0]))
                 .thenRun(() -> combineAndSave(extractionId, futures))
@@ -179,7 +171,7 @@ public class ExtractionPipelineRunner {
         try {
             List<DocResult> results = futures.stream()
                     .map(CompletableFuture::join)
-                    .collect(Collectors.toList());
+                    .toList();
 
             log.info("[ExtractionPipeline] Combining {} doc result(s) for extraction {}",
                     results.size(), extractionId);

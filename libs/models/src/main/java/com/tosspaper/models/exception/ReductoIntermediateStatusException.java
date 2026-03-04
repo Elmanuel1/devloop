@@ -21,7 +21,7 @@ public class ReductoIntermediateStatusException extends RuntimeException {
      *               (typically {@code "PENDING"} or {@code "PROCESSING"})
      */
     public ReductoIntermediateStatusException(String status) {
-        super("Reducto task is not yet complete — current status: " + status);
+        super(ApiErrorMessages.REDUCTO_INTERMEDIATE_STATUS.formatted(status));
         this.status = status;
     }
 
