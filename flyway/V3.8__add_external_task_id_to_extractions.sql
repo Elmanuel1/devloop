@@ -1,4 +1,4 @@
--- V3.7__add_external_task_id_to_extractions.sql
+-- V3.8__add_external_task_id_to_extractions.sql
 -- Add external_task_id to the extractions table.
 --
 -- This column stores the opaque task identifier returned by the Reducto AI

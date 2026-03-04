@@ -20,7 +20,7 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
  * jOOQ-based implementation of {@link PreconExtractionRepository}.
  *
  * <p>{@code external_task_id} was added to the {@code extractions} table by
- * migration {@code V3.7__add_external_task_id_to_extractions.sql}. The
+ * migration {@code V3.8__add_external_task_id_to_extractions.sql}. The
  * {@code flyway-jooq-classes} artifact is published separately and has not
  * yet been regenerated with this column, so it is accessed via
  * {@link DSL#field(String, Class)} as a typed bridge.
