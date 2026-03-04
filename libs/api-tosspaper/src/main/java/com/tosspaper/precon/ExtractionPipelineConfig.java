@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import java.time.Clock;
 import java.util.concurrent.Executor;
 
 /**
@@ -19,19 +18,6 @@ import java.util.concurrent.Executor;
  */
 @Configuration
 public class ExtractionPipelineConfig {
-
-    /**
-     * UTC system clock for deterministic time injection.
-     *
-     * <p>Inject {@link Clock} instead of calling {@code OffsetDateTime.now()}
-     * directly so that unit tests can supply a fixed clock without static mocking.
-     *
-     * @return system clock in UTC
-     */
-    @Bean
-    public Clock clock() {
-        return Clock.systemUTC();
-    }
 
     /**
      * Fixed-size executor for processing individual document extractions.

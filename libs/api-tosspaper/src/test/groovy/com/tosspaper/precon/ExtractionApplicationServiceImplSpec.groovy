@@ -10,15 +10,11 @@ import com.tosspaper.precon.generated.model.Extraction
 import com.tosspaper.precon.generated.model.ExtractionStatus
 import spock.lang.Specification
 
-import java.time.Clock
-import java.time.Instant
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 
 class ExtractionApplicationServiceImplSpec extends Specification {
 
     ExtractionService extractionService
-    Clock clock = Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC)
     ExtractionApplicationServiceImpl service
 
     def COMPANY_ID   = 42L
@@ -27,7 +23,7 @@ class ExtractionApplicationServiceImplSpec extends Specification {
 
     def setup() {
         extractionService = Mock()
-        service = new ExtractionApplicationServiceImpl(extractionService, clock)
+        service = new ExtractionApplicationServiceImpl(extractionService)
     }
 
     // ==================== apply ====================

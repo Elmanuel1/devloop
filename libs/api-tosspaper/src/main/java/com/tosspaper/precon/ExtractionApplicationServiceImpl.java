@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +31,6 @@ import java.util.UUID;
 public class ExtractionApplicationServiceImpl implements ExtractionApplicationService {
 
     private final ExtractionService extractionService;
-    private final Clock clock;
 
     /**
      * Applies the extraction results to the target entity.
@@ -77,7 +75,7 @@ public class ExtractionApplicationServiceImpl implements ExtractionApplicationSe
         //  apply-fields PR. The Application record is created here as a structural placeholder;
         //  the actual field values are deferred until field application is implemented.
         application.setFieldsApplied(List.of());
-        application.setAppliedAt(OffsetDateTime.now(clock));
+        application.setAppliedAt(OffsetDateTime.now());
         return application;
     }
 }
