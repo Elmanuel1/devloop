@@ -44,7 +44,7 @@ public class ExtractionPollJob implements SmartLifecycle {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ExtractionPipelineRunner pipelineRunner;
-    private final long delayMs;
+    private final ExtractionPollProperties pollProperties;
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "extraction-poll"));
@@ -57,7 +57,7 @@ public class ExtractionPollJob implements SmartLifecycle {
             ExtractionPollProperties pollProperties) {
         this.preconExtractionRepository = preconExtractionRepository;
         this.pipelineRunner = pipelineRunner;
-        this.delayMs = pollProperties.getDelayMs();
+        this.pollProperties = pollProperties;
     }
 
     // ── SmartLifecycle ────────────────────────────────────────────────────────
@@ -65,8 +65,8 @@ public class ExtractionPollJob implements SmartLifecycle {
     @Override
     public void start() {
         running = true;
-        scheduler.scheduleWithFixedDelay(this::poll, 0, delayMs, TimeUnit.MILLISECONDS);
-        log.info("[ExtractionPoll] Scheduler started (fixed delay {} ms)", delayMs);
+        scheduler.scheduleWithFixedDelay(this::poll, 0, pollProperties.getDelayMs(), TimeUnit.MILLISECONDS);
+        log.info("[ExtractionPoll] Scheduler started (fixed delay {} ms)", pollProperties.getDelayMs());
     }
 
     @Override

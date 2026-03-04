@@ -8,9 +8,10 @@ class ExtractionPollJobSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
     ExtractionPipelineRunner pipelineRunner = Mock()
+    ExtractionPollProperties pollProperties = new ExtractionPollProperties()
 
     @Subject
-    ExtractionPollJob job = new ExtractionPollJob(repository, pipelineRunner, 5000L)
+    ExtractionPollJob job = new ExtractionPollJob(repository, pipelineRunner, pollProperties)
 
     // ==================== SmartLifecycle ====================
 
