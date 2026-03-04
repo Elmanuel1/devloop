@@ -129,30 +129,24 @@ class TenderControllerSpec extends BaseIntegrationTest {
             response.statusCode == HttpStatus.FORBIDDEN
     }
 
-    def "POST /v1/tenders returns 201 with explicit null name field in JSON body"() {
-        given: "auth headers and body with name explicitly set to null in JSON"
+    def "POST /v1/tenders returns 201 when name is omitted"() {
+        given: "auth headers and a body with no name field"
             def headers = buildAuthHeaders()
             headers.add("X-Context-Id", companyId.toString())
             headers.setContentType(MediaType.APPLICATION_JSON)
-            // Send name as JSON null rather than omitting the field entirely.
-            // The openapi-precon 0.6.3 generated class still has @NotNull on name
-            // (the artifact predates TOS-44's spec update). Once the artifact is
-            // republished with the updated spec, the omitted-name form will also work.
-            def body = "{\"name\": null}"
+            def body = [:]
 
-        when: "creating a tender with name=null"
+        when: "creating a tender without a name"
             def response = restTemplate.exchange(
                 "/v1/tenders",
                 HttpMethod.POST,
                 new HttpEntity<>(body, headers),
                 Map)
 
-        then: "400 is returned until openapi-precon is republished without @NotNull on name"
-            // The @NotNull / @NotBlank from the old artifact blocks this path.
-            // name=null support is fully validated at the repository and service layers.
-            // This test documents the current API-layer constraint.
-            response.statusCode == HttpStatus.BAD_REQUEST
-            response.body.code == "api.validation.error"
+        then: "201 returned with name=null in the response body"
+            response.statusCode == HttpStatus.CREATED
+            response.body.id != null
+            response.body.name == null
     }
 
     def "POST /v1/tenders returns 201 when duplicate name exists (unique index was dropped in V3.7)"() {
