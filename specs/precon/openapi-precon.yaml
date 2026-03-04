@@ -4,16 +4,9 @@ servers:
     description: Default server
 info:
   title: Precon API
-  version: v1.1
+  version: v1
   description: |
     REST API for Tenders, TenderDocuments, and Extractions.
-
-    ## Changelog
-
-    ### v1.1 (TOS-44)
-    - Make `TenderCreateRequest.name` optional (nullable). Tenders can now be created without a name.
-    - Make `Tender.name` nullable in the response. Clients must handle `null` for this field.
-    - Tender ID is auto-generated on creation; name is deferred and populated later by AI extraction.
 
     ## Architecture Overview
 
