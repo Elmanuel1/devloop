@@ -155,6 +155,28 @@ class TenderControllerSpec extends BaseIntegrationTest {
             response.body.code == "api.validation.error"
     }
 
+    def "POST /v1/tenders returns 201 when duplicate name exists (unique index was dropped in V3.7)"() {
+        given: "an existing tender with a name"
+            insertTender(companyId.toString(), "Bridge RFP", "pending")
+
+        and: "auth headers"
+            def headers = buildAuthHeaders()
+            headers.add("X-Context-Id", companyId.toString())
+            headers.setContentType(MediaType.APPLICATION_JSON)
+            def body = [name: "bridge rfp"]
+
+        when: "creating a second tender with the same name (different case)"
+            def response = restTemplate.exchange(
+                "/v1/tenders",
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Map)
+
+        then: "201 returned — unique index was dropped so duplicate names are now allowed"
+            response.statusCode == HttpStatus.CREATED
+            response.body.id != null
+    }
+
     def "POST /v1/tenders returns 201 with null JSONB fields"() {
         given: "auth headers"
             def headers = buildAuthHeaders()
