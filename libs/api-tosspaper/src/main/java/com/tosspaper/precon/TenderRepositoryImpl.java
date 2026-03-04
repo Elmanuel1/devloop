@@ -2,6 +2,7 @@ package com.tosspaper.precon;
 
 import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.TendersRecord;
+import com.tosspaper.precon.generated.model.TenderStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.Condition;
@@ -50,10 +51,7 @@ public class TenderRepositoryImpl implements TenderRepository {
         if (query.getStatus() != null && !query.getStatus().isBlank()) {
             conditions.add(TENDERS.STATUS.eq(query.getStatus()));
         } else {
-            // Exclude pending tenders from the default list.
-            // Pending tenders are created by the system and not yet user-ready.
-            // Pass status=pending explicitly to retrieve them.
-            conditions.add(TENDERS.STATUS.notEqual("pending"));
+            conditions.add(TENDERS.STATUS.notEqual(TenderStatus.PENDING.getValue()));
         }
 
         // Cursor pagination
