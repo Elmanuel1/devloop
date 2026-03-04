@@ -19,10 +19,13 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 /**
  * jOOQ-based implementation of {@link PreconExtractionRepository}.
  *
- * <p>{@code external_task_id} is a forthcoming column (added by a later
- * migration). Until the jOOQ-generated schema catches up it is accessed via
- * {@link DSL#field(String, Class)}, the same pattern used for the V3.5
- * columns ({@code started_at}, {@code completed_at}, {@code errors}).
+ * <p>{@code external_task_id} was added to the {@code extractions} table by
+ * migration {@code V3.7__add_external_task_id_to_extractions.sql}. The
+ * {@code flyway-jooq-classes} artifact is published separately and has not
+ * yet been regenerated with this column, so it is accessed via
+ * {@link DSL#field(String, Class)} as a typed bridge.
+ * Replace with {@code EXTRACTIONS.EXTERNAL_TASK_ID} once the artifact is
+ * republished and the version in {@code libs.versions.toml} is bumped.
  *
  * <p>{@link #findPendingExtractions(int)} reads the {@code document_ids} JSONB
  * column from each row and parses it into a {@code List<String>} inline,
