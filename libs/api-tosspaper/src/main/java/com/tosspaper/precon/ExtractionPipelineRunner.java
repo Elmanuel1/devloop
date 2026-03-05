@@ -15,24 +15,24 @@ import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.supplyAsync;
 
 /**
- * Executes the full extraction pipeline for a single {@link ExtractionWithDocs}:
- * scatters its documents to the common ForkJoinPool (backed by virtual threads),
- * gathers all results, and saves.
+ * Executes the full extraction pipeline for a batch of {@link ExtractionWithDocs}
+ * records: scatters all documents across the batch to the bounded virtual-thread
+ * executor in one shot, gathers results per extraction, and saves.
  *
  * <h3>Single responsibility</h3>
- * <p>This class owns the <em>how</em> of processing one extraction.
+ * <p>This class owns the <em>how</em> of processing a batch of extractions.
  * The <em>when</em> (scheduling, poll cadence, reaping) is the responsibility
  * of {@link ExtractionPollJob}.
  *
  * <h3>No distributed lock</h3>
  * <p>Row ownership is established by {@link PreconExtractionRepository#claimNextBatch(int)}
- * before this runner is called. By the time {@link #run(ExtractionWithDocs)} is
- * invoked the row is already in {@code PROCESSING} status, so no application-level
+ * before this runner is called. By the time {@link #run(List)} is invoked every
+ * row in the batch is already in {@code PROCESSING} status, so no application-level
  * lock is required here.
  *
  * <h3>Parallelism</h3>
- * <p>{@link #scatterGather(ExtractionWithDocs)} submits per-document tasks via
- * {@link CompletableFuture#supplyAsync} to a <em>bounded</em> virtual-thread
+ * <p>{@link #run(List)} submits all per-document tasks across the entire batch in
+ * one shot via {@link CompletableFuture#supplyAsync} to the bounded virtual-thread
  * executor ({@code extractionProcessingExecutor}).  The pool size defaults to 5
  * and is configurable via {@code extraction.processing.thread-pool-size}.
  * Virtual threads mean blocking I/O (Reducto HTTP calls) does not consume OS
@@ -40,7 +40,7 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
  * the external service.
  *
  * <h3>Error handling — prepare vs checkback</h3>
- * <p>Two distinct failure modes are handled differently in
+ * <p>Two distinct failure modes are handled differently inside
  * {@link #scatterGather(ExtractionWithDocs)}:
  * <ul>
  *   <li><strong>Prepare failure</strong> — a hard error during document
@@ -69,47 +69,69 @@ public class ExtractionPipelineRunner {
     // ── Entry point ───────────────────────────────────────────────────────────
 
     /**
-     * Runs the full extraction pipeline for the given extraction.
+     * Runs the full extraction pipeline for an entire claimed batch.
      *
-     * <p>The row is already in {@code PROCESSING} status when this method is
+     * <p>All documents across all extractions in the batch are submitted as
+     * parallel futures in one shot — there is no sequential loop over the list.
+     * Each extraction's futures are grouped and gathered independently so that a
+     * failure in one extraction does not affect others in the same batch.
+     *
+     * <p>All rows are already in {@code PROCESSING} status when this method is
      * called (claimed by {@link PreconExtractionRepository#claimNextBatch(int)}).
-     * This method simply fans out the documents and wires the completion handler.
      *
-     * @param extraction the extraction to process
+     * @param batch the list of claimed extractions to process
      */
-    public void run(ExtractionWithDocs extraction) {
-        log.debug("[ExtractionPipeline] Starting pipeline for extraction {}", extraction.getId());
-        scatterGather(extraction);
+    public void run(List<ExtractionWithDocs> batch) {
+        if (batch.isEmpty()) {
+            return;
+        }
+        log.debug("[ExtractionPipeline] Starting pipeline for batch of {} extraction(s)", batch.size());
+
+        // Fan out: submit all per-extraction scatter-gather chains in one shot.
+        // Each CompletableFuture returned by scatterGather already carries its
+        // own exceptionally handler, so failures are isolated per extraction.
+        List<CompletableFuture<Void>> batchFutures = batch.stream()
+                .map(this::scatterGather)
+                .toList();
+
+        // Join all chains so the poll cycle waits for the whole batch before
+        // the next fixedDelay fires. Processing work itself runs on virtual threads.
+        allOf(batchFutures.toArray(new CompletableFuture[0])).join();
     }
 
-    // ── Scatter-gather ────────────────────────────────────────────────────────
+    // ── Per-extraction scatter-gather ─────────────────────────────────────────
 
     /**
-     * Submits all documents to the common ForkJoinPool via {@code supplyAsync},
-     * then wires the resulting {@code allOf()} to call {@link #combineAndSave}
-     * on success.
+     * Submits all documents for a single extraction to the bounded virtual-thread
+     * executor via {@code supplyAsync}, then wires the resulting {@code allOf()}
+     * to call {@link #combineAndSave} on success.
+     *
+     * <p>Returns a {@link CompletableFuture}{@code <Void>} so that {@link #run(List)}
+     * can gather all extractions in the batch with a single {@code allOf}.
      *
      * <p>On failure, the {@code exceptionally} handler distinguishes between
      * a hard prepare failure (marks {@code FAILED}) and a Reducto intermediate
      * status (no-op — the reaper will reset the row on the next reap cycle).
      *
      * @param extraction the extraction and its document IDs
+     * @return a future that completes when this extraction's pipeline has finished
+     *         (either successfully or via its own error handler)
      */
-    void scatterGather(ExtractionWithDocs extraction) {
+    CompletableFuture<Void> scatterGather(ExtractionWithDocs extraction) {
         String extractionId = extraction.getId();
         List<String> docIds = extraction.documentIds();
 
         if (docIds.isEmpty()) {
             log.debug("[ExtractionPipeline] No documents to process for extraction {}", extractionId);
             combineAndSave(extractionId, List.of());
-            return;
+            return CompletableFuture.completedFuture(null);
         }
 
         List<CompletableFuture<DocResult>> futures = docIds.stream()
                 .map(docId -> supplyAsync(() -> callReducto(docId), extractionProcessingExecutor))
                 .toList();
 
-        allOf(futures.toArray(new CompletableFuture[0]))
+        return allOf(futures.toArray(new CompletableFuture[0]))
                 .thenRun(() -> combineAndSave(extractionId, futures))
                 .exceptionally(ex -> {
                     Throwable cause = ex instanceof CompletionException ? ex.getCause() : ex;

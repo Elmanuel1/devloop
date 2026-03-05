@@ -25,9 +25,9 @@ class ExtractionPollJobSpec extends Specification {
             0 * pipelineRunner.run(_)
     }
 
-    // ==================== poll — records found ====================
+    // ==================== poll — batch submitted as a whole ====================
 
-    def "TC-PJ-02: should invoke pipelineRunner.run for each claimed extraction"() {
+    def "TC-PJ-02: should pass the entire claimed batch to pipelineRunner.run in one call"() {
         given: "two claimed extractions"
             def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
@@ -36,9 +36,8 @@ class ExtractionPollJobSpec extends Specification {
         when: "poll runs"
             job.poll()
 
-        then: "one run call per extraction"
-            1 * pipelineRunner.run(e1)
-            1 * pipelineRunner.run(e2)
+        then: "run is called exactly once with the full list — no per-extraction loop"
+            1 * pipelineRunner.run([e1, e2])
     }
 
     def "TC-PJ-03: should claim repository with exactly POLL_BATCH_SIZE"() {
@@ -67,7 +66,7 @@ class ExtractionPollJobSpec extends Specification {
             0 * pipelineRunner.run(_)
     }
 
-    def "TC-PJ-06: should invoke pipelineRunner.run exactly once for a single claimed extraction"() {
+    def "TC-PJ-06: should pass a single-element list when only one extraction is claimed"() {
         given: "one claimed extraction"
             def e1 = buildExtractionWithDocs("ext-id-single", ["doc-1", "doc-2"])
             repository.claimNextBatch(ExtractionPollJob.POLL_BATCH_SIZE) >> [e1]
@@ -75,8 +74,8 @@ class ExtractionPollJobSpec extends Specification {
         when: "poll runs"
             job.poll()
 
-        then: "run is called exactly once"
-            1 * pipelineRunner.run(e1)
+        then: "run is called with a one-element list — consistent list API"
+            1 * pipelineRunner.run([e1])
     }
 
     // ==================== reap ====================

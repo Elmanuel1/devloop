@@ -25,20 +25,34 @@ class ExtractionPipelineRunnerSpec extends Specification {
     @Subject
     ExtractionPipelineRunner runner = new ExtractionPipelineRunner(repository, sameThreadExecutor)
 
-    // ==================== run — delegates to scatterGather ====================
+    // ==================== run(List) — batch entry point ====================
 
-    def "TC-PR-01: run should start processing for extraction with documents"() {
-        given: "spy that stubs scatterGather to avoid real execution"
-            def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1"])
+    def "TC-PR-01: run should call scatterGather once per extraction in the batch"() {
+        given: "two extractions in the batch"
+            def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
+            def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, sameThreadExecutor])
-            runnerSpy.scatterGather(_) >> {}
+            runnerSpy.scatterGather(_) >> CompletableFuture.completedFuture(null)
 
-        when: "run is called"
-            runnerSpy.run(extraction)
+        when: "run is called with the full batch"
+            runnerSpy.run([e1, e2])
 
-        then: "scatterGather was delegated to"
-            1 * runnerSpy.scatterGather(extraction)
+        then: "scatterGather was called once per extraction"
+            1 * runnerSpy.scatterGather(e1)
+            1 * runnerSpy.scatterGather(e2)
+    }
+
+    def "TC-PR-12: run with empty batch is a no-op — scatterGather is never called"() {
+        given: "a spy to detect any scatterGather calls"
+            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
+                    constructorArgs: [repository, sameThreadExecutor])
+
+        when: "run is called with an empty batch"
+            runnerSpy.run([])
+
+        then: "scatterGather is never invoked"
+            0 * runnerSpy.scatterGather(_)
     }
 
     // ==================== scatterGather — document submission ====================
@@ -55,7 +69,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             }
 
         when: "scatterGather is called"
-            runnerSpy.scatterGather(extraction)
+            runnerSpy.scatterGather(extraction).join()
 
         then: "callReducto was called once per document (synchronous — no sleep needed)"
             calledDocIds.size() == 2
@@ -67,10 +81,25 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def extraction = buildExtractionWithDocs("ext-empty", [])
 
         when: "scatterGather is called"
-            runner.scatterGather(extraction)
+            runner.scatterGather(extraction).join()
 
         then: "extraction is marked COMPLETED via combineAndSave"
             1 * repository.markAsCompleted("ext-empty") >> 1
+    }
+
+    def "TC-PR-13: scatterGather returns a CompletableFuture that completes normally on success"() {
+        given: "a spy with successful callReducto"
+            def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
+            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
+                    constructorArgs: [repository, sameThreadExecutor])
+            runnerSpy.callReducto(_) >> { String docId -> new DocResult(docId, "text") }
+
+        when: "scatterGather is called"
+            def future = runnerSpy.scatterGather(extraction)
+
+        then: "the returned future completes without exception"
+            future.join() == null
+            !future.isCompletedExceptionally()
     }
 
     // ==================== callReducto — stub behavior ====================
@@ -116,7 +145,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             runnerSpy.callReducto(_) >> { throw new RuntimeException("network error — prepare failed") }
 
         when: "scatterGather is called (synchronous via same-thread executor)"
-            runnerSpy.scatterGather(extraction)
+            runnerSpy.scatterGather(extraction).join()
 
         then: "extraction IS marked FAILED — hard errors are permanent"
             1 * repository.markAsFailed("ext-fail") >> 1
@@ -132,7 +161,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             }
 
         when: "scatterGather is called (synchronous via same-thread executor)"
-            runnerSpy.scatterGather(extraction)
+            runnerSpy.scatterGather(extraction).join()
 
         then: "extraction is NOT marked FAILED — task is still in-flight; reaper will handle it"
             0 * repository.markAsFailed(_)
@@ -148,7 +177,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             }
 
         when: "scatterGather is called (synchronous via same-thread executor)"
-            runnerSpy.scatterGather(extraction)
+            runnerSpy.scatterGather(extraction).join()
 
         then: "extraction is NOT marked FAILED — PENDING is a transient state"
             0 * repository.markAsFailed(_)
@@ -178,10 +207,29 @@ class ExtractionPipelineRunnerSpec extends Specification {
             runnerSpy.callReducto(_) >> { String docId -> new DocResult(docId, "text") }
 
         when: "scatterGather is called"
-            runnerSpy.scatterGather(extraction)
+            runnerSpy.scatterGather(extraction).join()
 
         then: "the executor received one task submission per document"
             submittedTasks.size() == 3
+    }
+
+    def "TC-PR-14: failure in one extraction does not prevent other batch members from completing"() {
+        given: "a batch of two extractions — one fails, one succeeds"
+            def failing  = buildExtractionWithDocs("ext-fail", ["doc-bad"])
+            def succeeds = buildExtractionWithDocs("ext-ok",   ["doc-good"])
+            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
+                    constructorArgs: [repository, sameThreadExecutor])
+            runnerSpy.callReducto("doc-bad")  >> { throw new RuntimeException("boom") }
+            runnerSpy.callReducto("doc-good") >> { String docId -> new DocResult(docId, "text") }
+
+        when: "run is called with the full batch"
+            runnerSpy.run([failing, succeeds])
+
+        then: "the failing extraction is marked FAILED"
+            1 * repository.markAsFailed("ext-fail") >> 1
+
+        and: "the succeeding extraction is marked COMPLETED"
+            1 * repository.markAsCompleted("ext-ok") >> 1
     }
 
     // ==================== Helper Methods ====================

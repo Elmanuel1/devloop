@@ -6,7 +6,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 /**
  * Scheduled job that polls for {@code PENDING} extractions and hands each one
@@ -50,14 +49,13 @@ public class ExtractionPollJob {
     // ── Poll ──────────────────────────────────────────────────────────────────
 
     /**
-     * Claims up to {@link #POLL_BATCH_SIZE} pending extractions and fans them
-     * out to the pipeline runner in parallel.
+     * Claims up to {@link #POLL_BATCH_SIZE} pending extractions and submits the
+     * entire batch to the pipeline runner in one call.
      *
-     * <p>Uses {@code fixedDelay} so the next cycle starts only after all
-     * claimed rows have been dispatched (fire-and-forget via
-     * {@link CompletableFuture}). The actual document processing happens on
-     * the virtual-thread ForkJoinPool — this thread is free immediately after
-     * {@link ExtractionPipelineRunner#run(ExtractionWithDocs)} returns.
+     * <p>Uses {@code fixedDelay} so the next cycle starts only after
+     * {@link ExtractionPipelineRunner#run(List)} returns (i.e. after all futures
+     * in the batch have completed). This prevents unbounded in-flight accumulation
+     * when processing is slower than the poll cadence.
      */
     @Scheduled(fixedDelay = 500)
     void poll() {
@@ -70,10 +68,7 @@ public class ExtractionPollJob {
         }
 
         log.info("[ExtractionPoll] Claimed {} extraction(s) for processing", claimed.size());
-
-        for (ExtractionWithDocs extraction : claimed) {
-            pipelineRunner.run(extraction);
-        }
+        pipelineRunner.run(claimed);
     }
 
     // ── Reaper ────────────────────────────────────────────────────────────────
