@@ -2,6 +2,8 @@ package com.tosspaper.precon;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -21,8 +23,11 @@ import org.springframework.validation.annotation.Validated;
  *   webhook-path: "/internal/reducto/webhook"
  *   batch-size: 20
  *   stale-minutes: 15
+ *   timeout-seconds: 30
  * </pre>
  */
+@Getter
+@Setter
 @ConfigurationProperties(prefix = "reducto")
 @Validated
 public class ReductoProperties {
@@ -50,7 +55,7 @@ public class ReductoProperties {
 
     /**
      * Maximum number of documents claimed from the DB in a single seeder cycle.
-     * Hard cap aligned with the 20-document-per-batch limit enforced at creation.
+     * Hard cap aligned with the 20-document-per-extraction limit enforced at creation.
      * Defaults to {@code 20}.
      */
     @Positive
@@ -64,25 +69,12 @@ public class ReductoProperties {
     @Positive
     private int staleMinutes = 15;
 
-    // ── Getters & setters ─────────────────────────────────────────────────────
-
-    public String getBaseUrl() { return baseUrl; }
-    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
-
-    public String getApiKey() { return apiKey; }
-    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
-
-    public String getWebhookBaseUrl() { return webhookBaseUrl; }
-    public void setWebhookBaseUrl(String webhookBaseUrl) { this.webhookBaseUrl = webhookBaseUrl; }
-
-    public String getWebhookPath() { return webhookPath; }
-    public void setWebhookPath(String webhookPath) { this.webhookPath = webhookPath; }
-
-    public int getBatchSize() { return batchSize; }
-    public void setBatchSize(int batchSize) { this.batchSize = batchSize; }
-
-    public int getStaleMinutes() { return staleMinutes; }
-    public void setStaleMinutes(int staleMinutes) { this.staleMinutes = staleMinutes; }
+    /**
+     * HTTP request timeout in seconds for each Reducto API call.
+     * Defaults to {@code 30}.
+     */
+    @Positive
+    private int timeoutSeconds = 30;
 
     /** Returns the full webhook URL by concatenating base URL and path. */
     public String buildWebhookUrl() {

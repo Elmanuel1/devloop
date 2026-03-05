@@ -127,6 +127,7 @@ reducto:
   webhook-path: "/internal/reducto/webhook"
   batch-size: 20
   stale-minutes: 15
+  timeout-seconds: 30
 
 extraction:
   processing:

@@ -3,6 +3,7 @@ package com.tosspaper.precon;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.models.exception.ReductoClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -31,7 +32,6 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class HttpReductoClient implements ReductoClient {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(30);
     private static final String CONTENT_TYPE_JSON = "application/json";
 
     private final ReductoProperties props;
@@ -73,7 +73,7 @@ public class HttpReductoClient implements ReductoClient {
                 .uri(URI.create(props.getBaseUrl() + "/extract"))
                 .header("Content-Type", CONTENT_TYPE_JSON)
                 .header("Authorization", "Bearer " + props.getApiKey())
-                .timeout(TIMEOUT)
+                .timeout(Duration.ofSeconds(props.getTimeoutSeconds()))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
     }

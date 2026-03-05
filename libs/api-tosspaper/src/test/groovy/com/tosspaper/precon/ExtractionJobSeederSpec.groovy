@@ -20,6 +20,7 @@ class ExtractionJobSeederSpec extends Specification {
         reductoProperties.setWebhookPath("/internal/reducto/webhook")
         reductoProperties.setBatchSize(20)
         reductoProperties.setStaleMinutes(15)
+        reductoProperties.setTimeoutSeconds(30)
 
         seeder = new ExtractionJobSeeder(preconExtractionRepository, pipelineRunner, reductoProperties)
     }

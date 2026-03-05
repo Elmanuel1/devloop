@@ -3,6 +3,7 @@ package com.tosspaper.precon
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.NullNode
 import com.tosspaper.common.NotFoundException
+import com.tosspaper.models.exception.ReductoClientException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
 import software.amazon.awssdk.services.s3.S3Client
@@ -49,6 +50,7 @@ class ExtractionWorkerSpec extends Specification {
         reductoProperties.setWebhookPath("/internal/reducto/webhook")
         reductoProperties.setBatchSize(20)
         reductoProperties.setStaleMinutes(15)
+        reductoProperties.setTimeoutSeconds(30)
 
         fileProperties.getUploadBucket() >> BUCKET
     }
@@ -102,8 +104,8 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Hard cap ──────────────────────────────────────────────────────────────
 
-    def "TC-EW-03: process caps at MAX_DOCUMENTS_PER_BATCH even if more are provided"() {
-        given: "extraction with 25 documents — exceeds the 20-doc cap"
+    def "TC-EW-03: process caps at reductoProperties.batchSize even if more documents are provided"() {
+        given: "extraction with 25 documents — exceeds the default 20-doc cap"
             def docIds = (1..25).collect { "doc-$it" as String }
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = spyWorker()
@@ -117,9 +119,20 @@ class ExtractionWorkerSpec extends Specification {
             20 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
     }
 
-    def "TC-EW-04: MAX_DOCUMENTS_PER_BATCH constant is 20"() {
-        expect:
-            ExtractionWorker.MAX_DOCUMENTS_PER_BATCH == 20
+    def "TC-EW-04: process respects reductoProperties.batchSize as the cap — not a hardcoded constant"() {
+        given: "batch size configured to 5"
+            reductoProperties.setBatchSize(5)
+            def docIds = (1..10).collect { "doc-$it" as String }
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
+            def worker = spyWorker()
+            documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
+            documentClassifier.isSupported(_, _) >> true
+
+        when:
+            worker.process(extraction)
+
+        then: "only 5 documents submitted"
+            5 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
     }
 
     // ── Unsupported document type ─────────────────────────────────────────────

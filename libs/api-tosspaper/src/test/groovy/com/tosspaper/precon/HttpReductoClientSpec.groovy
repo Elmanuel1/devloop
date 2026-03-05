@@ -1,6 +1,7 @@
 package com.tosspaper.precon
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.tosspaper.models.exception.ReductoClientException
 import spock.lang.Specification
 import spock.lang.Subject
 
@@ -25,6 +26,7 @@ class HttpReductoClientSpec extends Specification {
         props.setWebhookPath("/internal/reducto/webhook")
         props.setBatchSize(20)
         props.setStaleMinutes(15)
+        props.setTimeoutSeconds(30)
 
         client = new HttpReductoClient(props, mapper, httpClient)
     }
@@ -195,5 +197,33 @@ class HttpReductoClientSpec extends Specification {
 
         then:
             capturedRequests[0].headers().firstValue("Content-Type").orElse("") == "application/json"
+    }
+
+    // ── Timeout from properties ───────────────────────────────────────────────
+
+    def "TC-RC-11: request timeout uses reductoProperties.timeoutSeconds — not a hardcoded constant"() {
+        given: "timeout configured to 10 seconds"
+            props.setTimeoutSeconds(10)
+            def capturedRequests = []
+            httpResponse.statusCode() >> 200
+            httpResponse.body() >> '{"task_id": "task-to"}'
+            httpClient.send(_ as HttpRequest, _ as HttpResponse.BodyHandler) >> { HttpRequest req, handler ->
+                capturedRequests << req
+                return httpResponse
+            }
+
+        when:
+            client.submit(new ReductoSubmitRequest(
+                    "ext-to", "doc-to", "key/file.pdf",
+                    "https://hook.example.com/webhook"))
+
+        then:
+            capturedRequests[0].timeout().isPresent()
+            capturedRequests[0].timeout().get().toSeconds() == 10
+    }
+
+    def "TC-RC-12: default timeoutSeconds in ReductoProperties is 30"() {
+        expect:
+            new ReductoProperties().getTimeoutSeconds() == 30
     }
 }

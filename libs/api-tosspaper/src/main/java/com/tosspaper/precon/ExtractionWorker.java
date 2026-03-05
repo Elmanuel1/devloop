@@ -2,6 +2,7 @@ package com.tosspaper.precon;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.models.exception.ReductoClientException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,8 @@ import java.util.List;
  * </ol>
  *
  * <h3>Hard cap</h3>
- * <p>At most {@value #MAX_DOCUMENTS_PER_BATCH} documents are processed per extraction.
+ * <p>The number of documents processed per extraction is capped at
+ * {@link ReductoProperties#getBatchSize()} (default 20).
  *
  * <h3>Idempotency</h3>
  * <p>The worker is safe to call multiple times for the same extraction. Step 1 (classify)
@@ -50,9 +52,6 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ExtractionWorker {
-
-    /** Hard cap on documents processed per extraction batch. */
-    static final int MAX_DOCUMENTS_PER_BATCH = 20;
 
     private final DocumentClassifier documentClassifier;
     private final ReductoClient reductoClient;
@@ -74,11 +73,12 @@ public class ExtractionWorker {
      */
     public PipelineExtractionResult process(ExtractionWithDocs extraction) {
         List<String> docIds = extraction.documentIds();
-        int cap = Math.min(docIds.size(), MAX_DOCUMENTS_PER_BATCH);
+        int batchSize = reductoProperties.getBatchSize();
+        int cap = Math.min(docIds.size(), batchSize);
 
-        if (docIds.size() > MAX_DOCUMENTS_PER_BATCH) {
+        if (docIds.size() > batchSize) {
             log.warn("[ExtractionWorker] Extraction '{}' has {} documents — capping at {}",
-                    extraction.getId(), docIds.size(), MAX_DOCUMENTS_PER_BATCH);
+                    extraction.getId(), docIds.size(), batchSize);
         }
 
         List<String> failedDocIds = new ArrayList<>();
