@@ -1,6 +1,7 @@
 package com.tosspaper.precon;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repository for extraction pipeline operations.
@@ -44,4 +45,19 @@ public interface PreconExtractionRepository {
      * @return number of rows updated
      */
     int markAsFailed(String id, String errorReason);
+
+    /**
+     * Looks up the extraction whose {@code external_task_id} matches the given
+     * value. Returns an empty {@code Optional} when no row matches (e.g. the task ID
+     * is unknown or has already been deleted).
+     *
+     * <p>The method is provider-agnostic: the column is named {@code external_task_id}
+     * rather than {@code reducto_task_id} so the repository does not need to change if
+     * the extraction engine is swapped.
+     *
+     * @param externalTaskId the opaque task identifier assigned by the extraction provider
+     * @return an {@code Optional} containing the matching extraction with its document IDs,
+     *         or {@code Optional.empty()} if none found
+     */
+    Optional<ExtractionWithDocs> findByExternalTaskId(String externalTaskId);
 }
