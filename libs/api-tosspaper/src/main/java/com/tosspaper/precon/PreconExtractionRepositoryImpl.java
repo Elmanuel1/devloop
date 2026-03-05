@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
@@ -100,12 +101,23 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     }
 
     @Override
-    public int putDocumentExternalId(String extractionId, String documentId, ExternalId externalId) {
-        String serialized = serializeExternalId(externalId);
+    public Map<String, ExternalId> getDocumentExternalIds(String extractionId) {
+        org.jooq.JSONB raw = dsl
+                .select(DSL.field("document_external_ids", org.jooq.JSONB.class))
+                .from(EXTRACTIONS)
+                .where(EXTRACTIONS.ID.eq(extractionId))
+                .and(EXTRACTIONS.DELETED_AT.isNull())
+                .fetchOne(DSL.field("document_external_ids", org.jooq.JSONB.class));
+        return deserializeMap(raw);
+    }
+
+    @Override
+    public int updateDocumentExternalIds(String extractionId, Map<String, ExternalId> documentExternalIds) {
+        String serialized = serializeMap(documentExternalIds);
         return dsl.execute(
-                "UPDATE extractions SET document_external_ids = document_external_ids || jsonb_build_object(?::text, ?::jsonb)," +
-                        " updated_at = NOW() WHERE id = ? AND deleted_at IS NULL",
-                documentId, serialized, extractionId);
+                "UPDATE extractions SET document_external_ids = ?::jsonb, updated_at = NOW()" +
+                        " WHERE id = ? AND deleted_at IS NULL",
+                serialized, extractionId);
     }
 
     @Override
@@ -140,11 +152,23 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
         }
     }
 
-    private String serializeExternalId(ExternalId externalId) {
+    private String serializeMap(Map<String, ExternalId> map) {
         try {
-            return objectMapper.writeValueAsString(externalId);
+            return objectMapper.writeValueAsString(map);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize ExternalId", e);
+            throw new IllegalStateException("Failed to serialize document_external_ids map", e);
+        }
+    }
+
+    private Map<String, ExternalId> deserializeMap(org.jooq.JSONB jsonb) {
+        if (jsonb == null || jsonb.data() == null || jsonb.data().isBlank()) {
+            return new java.util.HashMap<>();
+        }
+        try {
+            return objectMapper.readValue(jsonb.data(), new TypeReference<Map<String, ExternalId>>() {});
+        } catch (Exception e) {
+            log.warn("[ExtractionPoll] Failed to deserialize document_external_ids: {}", e.getMessage());
+            return new java.util.HashMap<>();
         }
     }
 }

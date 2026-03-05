@@ -3,6 +3,7 @@ package com.tosspaper.precon;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -49,15 +50,24 @@ public interface PreconExtractionRepository {
     int markAsFailed(String id, String errorReason);
 
     /**
-     * Stores or replaces the {@link ExternalId} for a single document within
-     * the extraction's {@code document_external_ids} JSONB map.
+     * Reads the current {@code document_external_ids} map for the given extraction.
+     * Returns an empty mutable map when the extraction does not exist or the column is empty.
      *
-     * @param extractionId the extraction that owns the map
-     * @param documentId   the key (document UUID)
-     * @param externalId   the Reducto task and file identifiers to store
+     * @param extractionId the extraction to read
+     * @return a mutable copy of the current map
+     */
+    Map<String, ExternalId> getDocumentExternalIds(String extractionId);
+
+    /**
+     * Overwrites the {@code document_external_ids} JSONB column with the
+     * provided map. The caller is responsible for building the updated map
+     * (read-modify-write in the service layer).
+     *
+     * @param extractionId        the extraction to update
+     * @param documentExternalIds the complete replacement map
      * @return number of rows updated
      */
-    int putDocumentExternalId(String extractionId, String documentId, ExternalId externalId);
+    int updateDocumentExternalIds(String extractionId, Map<String, ExternalId> documentExternalIds);
 
     /**
      * Finds the extraction whose {@code document_external_ids} map contains a

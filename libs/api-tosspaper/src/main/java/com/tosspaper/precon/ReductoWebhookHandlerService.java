@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 /** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ProcessingService} and stores per-document fields. */
 @Slf4j
 @Service
@@ -45,6 +47,23 @@ public class ReductoWebhookHandlerService {
             default          -> log.info("[ReductoWebhook] job_id={} reported status='{}' — no action taken",
                                         jobId, payload.status());
         }
+    }
+
+    /**
+     * Upserts an {@link ExternalId} entry for the given document within the
+     * extraction's {@code document_external_ids} map.
+     *
+     * <p>Reads the current map from the repository, puts or replaces the entry
+     * for {@code documentId}, then writes the entire updated map back.
+     *
+     * @param extractionId the extraction whose map is updated
+     * @param documentId   the document key within the map
+     * @param externalId   the Reducto task and file IDs to store
+     */
+    public void setDocumentExternalId(String extractionId, String documentId, ExternalId externalId) {
+        Map<String, ExternalId> current = preconExtractionRepository.getDocumentExternalIds(extractionId);
+        current.put(documentId, externalId);
+        preconExtractionRepository.updateDocumentExternalIds(extractionId, current);
     }
 
     // ── Private handlers ──────────────────────────────────────────────────────

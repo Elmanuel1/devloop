@@ -20,6 +20,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     static final String JOB_ID        = "reducto-job-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
+    static final String DOCUMENT_ID   = "document-uuid-001"
 
     // ==================== handle — job not found ====================
 
@@ -112,6 +113,54 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
         then:
             capturedJobId == "specific-job-id-99"
+    }
+
+    // ==================== setDocumentExternalId ====================
+
+    def "TC-WHS-08: setDocumentExternalId merges new entry into empty map and calls updateDocumentExternalIds"() {
+        given: "repository returns empty map for the extraction"
+            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> [:]
+            def externalId = new ExternalId("task-abc", "file-xyz")
+
+        when: "setting an external ID for a document"
+            handlerService.setDocumentExternalId(EXTRACTION_ID, DOCUMENT_ID, externalId)
+
+        then: "repository is called with a map containing the single new entry"
+            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, ExternalId> m ->
+                m.size() == 1 && m[DOCUMENT_ID]?.externalTaskId() == "task-abc"
+            })
+    }
+
+    def "TC-WHS-09: setDocumentExternalId merges into existing map preserving other entries"() {
+        given: "repository returns an existing map containing doc-1"
+            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >>
+                ["doc-1": new ExternalId("old-task", "old-file")]
+            def externalId = new ExternalId("new-task", "new-file")
+
+        when: "setting an external ID for a different document"
+            handlerService.setDocumentExternalId(EXTRACTION_ID, "doc-2", externalId)
+
+        then: "repository is called with both entries in the map"
+            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, ExternalId> m ->
+                m.size() == 2 &&
+                m["doc-1"]?.externalTaskId() == "old-task" &&
+                m["doc-2"]?.externalTaskId() == "new-task"
+            })
+    }
+
+    def "TC-WHS-10: setDocumentExternalId replaces existing entry for the same document key"() {
+        given: "repository returns an existing map with doc-1 already mapped"
+            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >>
+                ["doc-1": new ExternalId("stale-task", "stale-file")]
+            def externalId = new ExternalId("fresh-task", "fresh-file")
+
+        when: "setting a new ExternalId for the same doc-1 key"
+            handlerService.setDocumentExternalId(EXTRACTION_ID, "doc-1", externalId)
+
+        then: "repository is called with the updated entry"
+            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, ExternalId> m ->
+                m.size() == 1 && m["doc-1"]?.externalTaskId() == "fresh-task"
+            })
     }
 
     // ==================== Helper Methods ====================
