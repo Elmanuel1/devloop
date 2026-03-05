@@ -17,7 +17,6 @@ import java.io.IOException;
 public class ReductoWebhookHandlerService {
 
     private final PreconExtractionRepository preconExtractionRepository;
-    private final ConflictDetector conflictDetector;
     private final ReductoClient reductoClient;
 
     public void handle(ReductoWebhookPayload payload) throws IOException {
@@ -57,10 +56,6 @@ public class ReductoWebhookHandlerService {
         preconExtractionRepository.markAsCompleted(extractionId, result);
         log.info("[ReductoWebhook] Marked extraction_id={} as completed (raw_response length={})",
                 extractionId, jobResult.getRawResponse() != null ? jobResult.getRawResponse().length() : 0);
-
-        int conflictedRows = conflictDetector.detectAndMarkConflicts(extractionId);
-        log.info("[ReductoWebhook] Conflict detection complete for extraction_id={} — {} row(s) flagged",
-                extractionId, conflictedRows);
     }
 
     private void handleFailed(String jobId, String extractionId) throws IOException {

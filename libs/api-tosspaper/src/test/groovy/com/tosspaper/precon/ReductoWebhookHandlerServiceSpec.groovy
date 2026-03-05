@@ -7,15 +7,16 @@ import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
 
+import java.io.IOException
+
 class ReductoWebhookHandlerServiceSpec extends Specification {
 
     PreconExtractionRepository preconExtractionRepository = Mock()
-    ConflictDetector conflictDetector = Mock()
     ReductoClient reductoClient = Mock()
 
     @Subject
     ReductoWebhookHandlerService handlerService =
-            new ReductoWebhookHandlerService(preconExtractionRepository, conflictDetector, reductoClient)
+            new ReductoWebhookHandlerService(preconExtractionRepository, reductoClient)
 
     static final String JOB_ID        = "reducto-job-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
@@ -29,16 +30,15 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when: "handler is called for an unknown job"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "NotFoundException is thrown — Reducto API and ConflictDetector never called"
+        then: "NotFoundException is thrown — Reducto API never called"
             def ex = thrown(NotFoundException)
             ex.message != null
             0 * reductoClient.getJobStatus(_)
-            0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
     // ==================== handle — Completed status ====================
 
-    def "TC-WHS-02: on Completed — fetches job result, marks completed, runs conflict detection"() {
+    def "TC-WHS-02: on Completed — fetches job result and marks extraction completed"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -46,13 +46,12 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when: "handler receives a Completed webhook"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "job result fetched, extraction marked completed, conflict detection runs"
+        then: "job result fetched and extraction marked completed"
             1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus("some-raw-response")
             1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> 1
-            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 3
     }
 
-    def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also triggers fetch and conflict detection"() {
+    def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also triggers fetch and mark"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -63,7 +62,6 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         then:
             1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus(null)
             1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _) >> 1
-            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
     }
 
     // ==================== handle — Failed status ====================
@@ -79,7 +77,6 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         then: "job status fetched and extraction marked failed with reason"
             1 * reductoClient.getJobStatus(JOB_ID) >> failedJobStatus("OCR timeout after 900s")
             1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, "OCR timeout after 900s") >> 1
-            0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
     def "TC-WHS-05: on Failed with null reason — uses fallback reason string"() {
@@ -103,11 +100,10 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
 
-        then: "no Reducto API call, no state change, no conflict detection"
+        then: "no Reducto API call and no state change"
             0 * reductoClient.getJobStatus(_)
             0 * preconExtractionRepository.markAsCompleted(_, _)
             0 * preconExtractionRepository.markAsFailed(_, _)
-            0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
     // ==================== handle — Reducto API failure ====================
@@ -123,7 +119,6 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
         then:
             thrown(IOException)
-            0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
     // ==================== handle — lookup uses correct job_id ====================
