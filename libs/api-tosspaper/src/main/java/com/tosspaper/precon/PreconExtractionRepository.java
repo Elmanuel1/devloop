@@ -1,23 +1,11 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
-
 import java.util.List;
 
 /**
  * Repository for extraction pipeline operations.
  */
 public interface PreconExtractionRepository {
-
-    /**
-     * Finds a non-deleted extraction by the opaque external task ID assigned by
-     * the external extraction service.
-     *
-     * @param externalTaskId the task ID returned by the external service
-     * @return the matching extraction record
-     * @throws com.tosspaper.common.NotFoundException if no live record matches
-     */
-    ExtractionsRecord findByExternalTaskId(String externalTaskId);
 
     /**
      * Atomically claims up to {@code limit} {@code PENDING} extractions by
