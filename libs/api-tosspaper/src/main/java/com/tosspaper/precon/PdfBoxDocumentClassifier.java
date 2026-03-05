@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -7,37 +8,27 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
- * Default {@link DocumentClassifier} that uses Apache PDFBox to extract text from
- * a PDF document and then applies keyword matching to decide whether the document
- * is a procurement artefact that Reducto should process.
+ * Default {@link DocumentClassifier} that uses Apache PDFBox to extract text from a
+ * PDF document and then applies per-type exclusive keyword matching to classify it as
+ * a specific {@link TenderDocumentType}.
  *
- * <h3>Why PDFBox and not magic bytes?</h3>
- * <p>Magic-byte sniffing only identifies the file container format (PDF vs DOCX vs PNG).
- * It cannot distinguish a procurement document from an irrelevant PDF like an invoice
- * or a photo scanned as PDF. PDFBox lets us read the actual textual content and apply
- * domain-specific rules, making classification far more accurate.
- *
- * <h3>Keyword strategy</h3>
- * <p>The classifier looks for at least one keyword from each of two groups:
- * <ol>
- *   <li><b>Procurement indicators</b> — terms that confirm this is a procurement document
- *       (tender, invitation to bid, request for proposal, …)</li>
- *   <li><b>Document-type indicators</b> — terms that confirm this is a structured
- *       procurement document with extractable fields (bill of quantities,
- *       specifications, drawings, contract, scope of work, …)</li>
- * </ol>
- * <p>A document must match at least one keyword from <em>either</em> group to be
- * considered supported. Both lists together form a broad net that catches most
- * tender documents while rejecting generic PDFs.
+ * <h3>Classification strategy</h3>
+ * <p>Each {@link TenderDocumentType} owns a distinct, non-overlapping keyword set.
+ * For each type, the classifier counts how many of that type's keywords appear in the
+ * extracted text. The type with the highest hit count wins. Ties are broken by the
+ * natural declaration order of {@link TenderDocumentType}. If no type scores at least
+ * one hit, {@link TenderDocumentType#UNKNOWN} is returned.
  *
  * <h3>Non-PDF documents</h3>
- * <p>If PDFBox cannot load the stream (e.g. it is a DOCX or an image), the classifier
- * returns {@code false} and logs a warning. A separate pre-filter or a more capable
- * classifier can be substituted via the {@link DocumentClassifier} interface.
+ * <p>If PDFBox cannot load the stream (e.g. the document is a DOCX, a scanned image
+ * with no text layer, or an encrypted PDF), {@link TenderDocumentType#UNKNOWN} is
+ * returned and a warning is logged.
  */
 @Slf4j
 @Component
@@ -45,81 +36,160 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
 
     /**
      * Minimum number of extracted characters before keyword matching is attempted.
-     * Documents with fewer characters are likely scanned images with no OCR layer
-     * and are rejected.
+     * Documents below this threshold are likely scanned images with no OCR layer.
      */
     static final int MIN_TEXT_LENGTH = 50;
 
     /**
-     * Procurement indicator keywords — at least one must appear for a document to
-     * be classified as a supported procurement artefact.
+     * Exclusive keyword sets keyed by {@link TenderDocumentType}.
+     * No keyword appears in more than one type's list — they are mutually exclusive.
      */
-    static final List<String> PROCUREMENT_KEYWORDS = List.of(
-            "tender",
-            "invitation to bid",
-            "request for proposal",
-            "request for quotation",
-            "rfp",
-            "rfq",
-            "itb",
-            "procurement",
-            "bid document",
-            "bidding document"
-    );
+    static final Map<TenderDocumentType, List<String>> TYPE_KEYWORDS;
 
-    /**
-     * Document-type indicator keywords — at least one must appear in addition to a
-     * procurement keyword for a document to be classified as extractable.
-     */
-    static final List<String> DOCUMENT_TYPE_KEYWORDS = List.of(
-            "bill of quantities",
-            "boq",
-            "specifications",
-            "specification",
-            "drawings",
-            "contract",
-            "scope of work",
-            "terms of reference",
-            "tor",
-            "conditions of contract",
-            "instructions to bidders",
-            "evaluation criteria",
-            "technical requirements"
-    );
+    static {
+        Map<TenderDocumentType, List<String>> map = new EnumMap<>(TenderDocumentType.class);
+
+        // BILL_OF_QUANTITIES — pricing and measurement documents
+        map.put(TenderDocumentType.BILL_OF_QUANTITIES, List.of(
+                "bill of quantities",
+                "schedule of rates",
+                "preambles",
+                "measured work",
+                "provisional sum",
+                "prime cost",
+                "pc sum",
+                "daywork",
+                "boq",
+                "rate per unit",
+                "quantity surveyor"
+        ));
+
+        // DRAWINGS — graphical / plan documents
+        map.put(TenderDocumentType.DRAWINGS, List.of(
+                "drawing list",
+                "drawing no",
+                "drawing number",
+                "revision",
+                "architectural drawing",
+                "structural drawing",
+                "engineering drawing",
+                "site plan",
+                "floor plan",
+                "elevation",
+                "section detail",
+                "isometric",
+                "as built"
+        ));
+
+        // SPECIFICATIONS — technical description of works
+        map.put(TenderDocumentType.SPECIFICATIONS, List.of(
+                "technical specification",
+                "workmanship",
+                "materials and workmanship",
+                "scope of work",
+                "method statement",
+                "technical requirements",
+                "product specification",
+                "performance specification",
+                "compliance standard",
+                "test method",
+                "quality assurance"
+        ));
+
+        // CONDITIONS_OF_CONTRACT — legal / contractual framework
+        map.put(TenderDocumentType.CONDITIONS_OF_CONTRACT, List.of(
+                "conditions of contract",
+                "general conditions",
+                "special conditions",
+                "contract data",
+                "employer's requirements",
+                "form of contract",
+                "agreement",
+                "indemnity",
+                "liquidated damages",
+                "retention",
+                "defects liability",
+                "force majeure"
+        ));
+
+        // TENDER_NOTICE — cover / invitation documents
+        map.put(TenderDocumentType.TENDER_NOTICE, List.of(
+                "invitation to tender",
+                "tender notice",
+                "request for proposal",
+                "request for quotation",
+                "instructions to tenderers",
+                "instructions to bidders",
+                "tender submission",
+                "closing date",
+                "tender reference",
+                "evaluation criteria",
+                "tender validity"
+        ));
+
+        // PRELIMINARIES — general site establishment items
+        map.put(TenderDocumentType.PRELIMINARIES, List.of(
+                "preliminaries",
+                "prelims",
+                "site establishment",
+                "contractor's general obligations",
+                "temporary works",
+                "scaffolding",
+                "site security",
+                "health and safety plan",
+                "environmental management",
+                "site clearance",
+                "mobilisation"
+        ));
+
+        TYPE_KEYWORDS = Map.copyOf(map);
+    }
 
     @Override
-    public boolean isSupported(String documentId, InputStream contentStream) {
+    public TenderDocumentType classify(String documentId, InputStream contentStream) {
         if (contentStream == null) {
-            log.warn("[DocumentClassifier] Document '{}' — content stream is null, skipping", documentId);
-            return false;
+            log.warn("[DocumentClassifier] Document '{}' — content stream is null, returning UNKNOWN",
+                    documentId);
+            return TenderDocumentType.UNKNOWN;
         }
 
         String text = extractText(documentId, contentStream);
         if (text == null) {
-            return false;
+            return TenderDocumentType.UNKNOWN;
         }
 
         if (text.length() < MIN_TEXT_LENGTH) {
             log.info("[DocumentClassifier] Document '{}' — extracted text too short ({} chars), "
-                    + "likely a scanned image with no text layer, skipping", documentId, text.length());
-            return false;
+                    + "likely a scanned image with no text layer, returning UNKNOWN",
+                    documentId, text.length());
+            return TenderDocumentType.UNKNOWN;
         }
 
         String lowerText = text.toLowerCase(Locale.ROOT);
-        boolean hasProcurementKeyword = PROCUREMENT_KEYWORDS.stream().anyMatch(lowerText::contains);
-        boolean hasDocumentTypeKeyword = DOCUMENT_TYPE_KEYWORDS.stream().anyMatch(lowerText::contains);
+        TenderDocumentType best = TenderDocumentType.UNKNOWN;
+        int bestScore = 0;
 
-        boolean supported = hasProcurementKeyword || hasDocumentTypeKeyword;
-
-        if (supported) {
-            log.debug("[DocumentClassifier] Document '{}' — classified as supported procurement document "
-                    + "(procurementMatch={}, docTypeMatch={})", documentId, hasProcurementKeyword, hasDocumentTypeKeyword);
-        } else {
-            log.info("[DocumentClassifier] Document '{}' — no procurement or document-type keywords found, skipping",
-                    documentId);
+        for (TenderDocumentType type : TenderDocumentType.values()) {
+            if (type == TenderDocumentType.UNKNOWN) {
+                continue;
+            }
+            List<String> keywords = TYPE_KEYWORDS.getOrDefault(type, List.of());
+            int score = (int) keywords.stream().filter(lowerText::contains).count();
+            if (score > bestScore) {
+                bestScore = score;
+                best = type;
+            }
         }
 
-        return supported;
+        if (best == TenderDocumentType.UNKNOWN) {
+            log.info("[DocumentClassifier] Document '{}' — no type keywords matched, returning UNKNOWN",
+                    documentId);
+        } else {
+            log.debug("[DocumentClassifier] Document '{}' — classified as {} (score={})",
+                    documentId, best, bestScore);
+        }
+
+        return best;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -137,8 +207,8 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
                     documentId, text.length());
             return text;
         } catch (IOException e) {
-            log.warn("[DocumentClassifier] Document '{}' — PDFBox could not extract text (not a valid PDF or encrypted): {}",
-                    documentId, e.getMessage());
+            log.warn("[DocumentClassifier] Document '{}' — PDFBox could not extract text "
+                    + "(not a valid PDF or encrypted): {}", documentId, e.getMessage());
             return null;
         }
     }

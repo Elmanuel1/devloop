@@ -2,6 +2,7 @@ package com.tosspaper.precon
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.models.exception.ReductoClientException
+import com.tosspaper.models.precon.TenderDocumentType
 import spock.lang.Specification
 import spock.lang.Subject
 
@@ -42,7 +43,8 @@ class HttpReductoClientSpec extends Specification {
         when:
             def result = client.submit(new ReductoSubmitRequest(
                     "ext-1", "doc-1", "tenders/1/1/doc-1/file.pdf",
-                    "https://my-service.example.com/internal/reducto/webhook"))
+                    "https://my-service.example.com/internal/reducto/webhook",
+                    TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             result != null
@@ -62,7 +64,8 @@ class HttpReductoClientSpec extends Specification {
         when:
             client.submit(new ReductoSubmitRequest(
                     "ext-1", "doc-1", "key/file.pdf",
-                    "https://hook.example.com/webhook"))
+                    "https://hook.example.com/webhook",
+                    TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             capturedRequests.size() == 1
@@ -82,7 +85,8 @@ class HttpReductoClientSpec extends Specification {
         when:
             client.submit(new ReductoSubmitRequest(
                     "ext-2", "doc-2", "key/file.pdf",
-                    "https://hook.example.com/webhook"))
+                    "https://hook.example.com/webhook",
+                    TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             capturedRequests[0].uri().toString() == "https://api.reducto.ai/extract"
@@ -98,7 +102,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-3", "doc-3", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-3", "doc-3", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             thrown(ReductoClientException)
@@ -112,7 +116,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-4", "doc-4", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-4", "doc-4", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             thrown(ReductoClientException)
@@ -126,7 +130,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-5", "doc-5", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-5", "doc-5", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             thrown(ReductoClientException)
@@ -142,7 +146,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-6", "doc-6", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-6", "doc-6", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             thrown(ReductoClientException)
@@ -156,7 +160,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-7", "doc-7", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-7", "doc-7", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             thrown(ReductoClientException)
@@ -171,7 +175,7 @@ class HttpReductoClientSpec extends Specification {
 
         when:
             client.submit(new ReductoSubmitRequest(
-                    "ext-8", "doc-8", "key/file.pdf", "https://hook.example.com/webhook"))
+                    "ext-8", "doc-8", "key/file.pdf", "https://hook.example.com/webhook", TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             def ex = thrown(ReductoClientException)
@@ -193,7 +197,8 @@ class HttpReductoClientSpec extends Specification {
         when:
             client.submit(new ReductoSubmitRequest(
                     "ext-ct", "doc-ct", "key/file.pdf",
-                    "https://hook.example.com/webhook"))
+                    "https://hook.example.com/webhook",
+                    TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             capturedRequests[0].headers().firstValue("Content-Type").orElse("") == "application/json"
@@ -215,7 +220,8 @@ class HttpReductoClientSpec extends Specification {
         when:
             client.submit(new ReductoSubmitRequest(
                     "ext-to", "doc-to", "key/file.pdf",
-                    "https://hook.example.com/webhook"))
+                    "https://hook.example.com/webhook",
+                    TenderDocumentType.BILL_OF_QUANTITIES))
 
         then:
             capturedRequests[0].timeout().isPresent()

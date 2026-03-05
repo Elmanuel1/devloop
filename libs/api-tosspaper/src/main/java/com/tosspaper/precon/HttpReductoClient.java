@@ -58,7 +58,8 @@ public class HttpReductoClient implements ReductoClient {
                     request.s3Key(),
                     request.webhookUrl(),
                     request.extractionId(),
-                    request.documentId()
+                    request.documentId(),
+                    request.documentType().name().toLowerCase(java.util.Locale.ROOT)
             ));
         } catch (IOException e) {
             throw new ReductoClientException(
@@ -128,6 +129,7 @@ public class HttpReductoClient implements ReductoClient {
             String s3_key,
             String webhook_url,
             String extraction_id,
-            String document_id
+            String document_id,
+            String document_type
     ) {}
 }

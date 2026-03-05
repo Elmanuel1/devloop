@@ -6,6 +6,7 @@ import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.exception.ReductoClientException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
+import com.tosspaper.models.precon.TenderDocumentType
 import software.amazon.awssdk.services.s3.S3Client
 import spock.lang.Specification
 import spock.lang.Subject
@@ -42,6 +43,7 @@ class ExtractionWorkerSpec extends Specification {
     static final String BUCKET = "tosspaper-docs"
     static final String TASK_ID = "reducto-task-123"
     static final String WEBHOOK_URL = "https://my-service.example.com/internal/reducto/webhook"
+    static final TenderDocumentType BOQ = TenderDocumentType.BILL_OF_QUANTITIES
 
     def setup() {
         reductoProperties.setBaseUrl("https://api.reducto.ai")
@@ -75,7 +77,7 @@ class ExtractionWorkerSpec extends Specification {
             def worker = spyWorker()
             documentRepository.findById("doc-A") >> buildDocRecord("doc-A", "key/doc-A.pdf")
             documentRepository.findById("doc-B") >> buildDocRecord("doc-B", "key/doc-B.pdf")
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
             reductoClient.submit(_ as ReductoSubmitRequest) >>
                     new ReductoSubmitResponse("task-A") >>
                     new ReductoSubmitResponse("task-B")
@@ -93,7 +95,7 @@ class ExtractionWorkerSpec extends Specification {
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["d1", "d2", "d3"])
             def worker = spyWorker()
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
 
         when:
             worker.process(extraction)
@@ -110,7 +112,7 @@ class ExtractionWorkerSpec extends Specification {
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = spyWorker()
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
 
         when:
             worker.process(extraction)
@@ -126,7 +128,7 @@ class ExtractionWorkerSpec extends Specification {
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = spyWorker()
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
 
         when:
             worker.process(extraction)
@@ -135,30 +137,30 @@ class ExtractionWorkerSpec extends Specification {
             5 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
     }
 
-    // ── Unsupported document type ─────────────────────────────────────────────
+    // ── UNKNOWN document type → skip ─────────────────────────────────────────
 
-    def "TC-EW-05: unsupported document type is skipped — Reducto is NOT called"() {
-        given: "classifier rejects the document"
+    def "TC-EW-05: UNKNOWN document type is skipped — Reducto is NOT called"() {
+        given: "classifier returns UNKNOWN"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.isSupported(DOCUMENT_ID, _) >> false
+            documentClassifier.classify(DOCUMENT_ID, _) >> TenderDocumentType.UNKNOWN
 
         when:
             def result = worker.process(extraction)
 
-        then: "Reducto is never called for unsupported document"
+        then: "Reducto is never called for UNKNOWN document"
             0 * reductoClient.submit(_)
 
         and: "process returns a result (skip is not a failure)"
             result != null
     }
 
-    def "TC-EW-06: processDocument returns true for unsupported type (not a failure)"() {
+    def "TC-EW-06: processDocument returns true for UNKNOWN type (not a failure)"() {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.isSupported(_, _) >> false
+            documentClassifier.classify(_, _) >> TenderDocumentType.UNKNOWN
 
         when:
             def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
@@ -206,7 +208,7 @@ class ExtractionWorkerSpec extends Specification {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
             reductoClient.submit(_ as ReductoSubmitRequest) >> {
                 throw new ReductoClientException("HTTP 500")
             }
@@ -220,12 +222,12 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Reducto submit request fields ─────────────────────────────────────────
 
-    def "TC-EW-10: submit request contains the correct extraction ID, document ID, S3 key, and webhook URL"() {
+    def "TC-EW-10: submit request contains correct extraction ID, document ID, S3 key, webhook URL, and document type"() {
         given:
             def capturedRequests = []
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> TenderDocumentType.DRAWINGS
             reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
                 capturedRequests << req
                 return new ReductoSubmitResponse(TASK_ID)
@@ -241,7 +243,26 @@ class ExtractionWorkerSpec extends Specification {
                 documentId() == DOCUMENT_ID
                 s3Key() == S3_KEY
                 webhookUrl() == WEBHOOK_URL
+                documentType() == TenderDocumentType.DRAWINGS
             }
+    }
+
+    def "TC-EW-10b: document type from classifier is forwarded verbatim to ReductoSubmitRequest"() {
+        given: "classifier returns SPECIFICATIONS"
+            def capturedTypes = []
+            def worker = spyWorker()
+            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
+            documentClassifier.classify(_, _) >> TenderDocumentType.SPECIFICATIONS
+            reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
+                capturedTypes << req.documentType()
+                return new ReductoSubmitResponse(TASK_ID)
+            }
+
+        when:
+            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+
+        then:
+            capturedTypes == [TenderDocumentType.SPECIFICATIONS]
     }
 
     // ── One failure does not abort other documents ────────────────────────────
@@ -256,7 +277,7 @@ class ExtractionWorkerSpec extends Specification {
             }
             documentRepository.findById("ok-doc-1") >> buildDocRecord("ok-doc-1", "key/ok1.pdf")
             documentRepository.findById("ok-doc-2") >> buildDocRecord("ok-doc-2", "key/ok2.pdf")
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
 
         when:
             def result = worker.process(extraction)
@@ -321,7 +342,7 @@ class ExtractionWorkerSpec extends Specification {
                 return new ByteArrayInputStream("dummy".bytes)
             }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.isSupported(_, _) >> true
+            documentClassifier.classify(_, _) >> BOQ
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
 
         when:

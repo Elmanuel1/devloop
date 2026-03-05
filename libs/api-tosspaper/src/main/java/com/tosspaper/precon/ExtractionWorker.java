@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.exception.ReductoClientException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
+import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -26,9 +27,10 @@ import java.util.List;
  * <h3>Per-document steps</h3>
  * <ol>
  *   <li><b>Classify</b> — stream the full document from S3 and pass to
- *       {@link DocumentClassifier#isSupported}. The default implementation
+ *       {@link DocumentClassifier#classify}. The default implementation
  *       ({@link PdfBoxDocumentClassifier}) extracts PDF text via Apache PDFBox
- *       and applies keyword matching. Unsupported types are skipped.</li>
+ *       and returns a {@link com.tosspaper.models.precon.TenderDocumentType}.
+ *       Documents classified as {@code UNKNOWN} are skipped.</li>
  *   <li><b>Submit</b> — call {@link ReductoClient#submit} with the document's S3 key
  *       and the configured webhook URL. One call per document; Reducto has no
  *       batch endpoint.</li>
@@ -141,14 +143,15 @@ public class ExtractionWorker {
         if (contentStream == null) {
             return false;
         }
-        if (!documentClassifier.isSupported(documentId, contentStream)) {
-            log.info("[ExtractionWorker] Extraction '{}' document '{}' — unsupported type, skipping",
+        TenderDocumentType documentType = documentClassifier.classify(documentId, contentStream);
+        if (documentType == TenderDocumentType.UNKNOWN) {
+            log.warn("[ExtractionWorker] Extraction '{}' document '{}' — classified as UNKNOWN, skipping",
                     extractionId, documentId);
             return true; // skip is not a failure
         }
 
         // Step 2: submit to Reducto (one call per document — no batch API)
-        return submitToReducto(extractionId, documentId, document.getS3Key());
+        return submitToReducto(extractionId, documentId, document.getS3Key(), documentType);
     }
 
     // ── Step implementations ──────────────────────────────────────────────────
@@ -190,13 +193,15 @@ public class ExtractionWorker {
         }
     }
 
-    private boolean submitToReducto(String extractionId, String documentId, String s3Key) {
+    private boolean submitToReducto(String extractionId, String documentId, String s3Key,
+                                    TenderDocumentType documentType) {
         try {
             ReductoSubmitRequest request = new ReductoSubmitRequest(
                     extractionId,
                     documentId,
                     s3Key,
-                    reductoProperties.buildWebhookUrl()
+                    reductoProperties.buildWebhookUrl(),
+                    documentType
             );
             ReductoSubmitResponse response = reductoClient.submit(request);
             log.info("[ExtractionWorker] Extraction '{}' document '{}' submitted — taskId='{}'",
