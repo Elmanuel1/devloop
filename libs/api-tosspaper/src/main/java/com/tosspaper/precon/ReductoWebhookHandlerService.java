@@ -50,19 +50,19 @@ public class ReductoWebhookHandlerService {
     }
 
     /**
-     * Upserts an {@link ExternalId} entry for the given document within the
+     * Upserts an external task ID entry for the given document within the
      * extraction's {@code document_external_ids} map.
      *
      * <p>Reads the current map from the repository, puts or replaces the entry
      * for {@code documentId}, then writes the entire updated map back.
      *
-     * @param extractionId the extraction whose map is updated
-     * @param documentId   the document key within the map
-     * @param externalId   the Reducto task and file IDs to store
+     * @param extractionId   the extraction whose map is updated
+     * @param documentId     the document key within the map
+     * @param externalTaskId the Reducto job ID to store for this document
      */
-    public void setDocumentExternalId(String extractionId, String documentId, ExternalId externalId) {
-        Map<String, ExternalId> current = preconExtractionRepository.getDocumentExternalIds(extractionId);
-        current.put(documentId, externalId);
+    public void setDocumentExternalId(String extractionId, String documentId, String externalTaskId) {
+        Map<String, String> current = preconExtractionRepository.getDocumentExternalIds(extractionId);
+        current.put(documentId, externalTaskId);
         preconExtractionRepository.updateDocumentExternalIds(extractionId, current);
     }
 

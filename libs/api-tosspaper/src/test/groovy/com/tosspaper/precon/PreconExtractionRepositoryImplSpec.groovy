@@ -336,15 +336,14 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
         given: "an extraction and a written map"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
             preconExtractionRepository.updateDocumentExternalIds(extraction.id,
-                ["doc-1": new ExternalId("task-x", "file-x")])
+                ["doc-1": "task-x"])
 
         when: "reading the external IDs map"
             def result = preconExtractionRepository.getDocumentExternalIds(extraction.id)
 
         then: "the stored entry is returned"
             result.size() == 1
-            result["doc-1"]?.externalTaskId() == "task-x"
-            result["doc-1"]?.externalFileId() == "file-x"
+            result["doc-1"] == "task-x"
     }
 
     def "TC-PR-GDEI03: returns empty map for a nonexistent extraction"() {
@@ -360,8 +359,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     def "TC-PR-UDEI01: writes the full map and persists all entries"() {
         given: "an extraction and a map with two document entries"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-A","doc-B"]')
-            def map = ["doc-A": new ExternalId("task-A", "file-A"),
-                       "doc-B": new ExternalId("task-B", "file-B")]
+            def map = ["doc-A": "task-A", "doc-B": "task-B"]
 
         when: "writing the map"
             def rows = preconExtractionRepository.updateDocumentExternalIds(extraction.id, map)
@@ -369,12 +367,12 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
         then: "one row updated"
             rows == 1
 
-        and: "both entries are persisted"
+        and: "both entries are persisted as plain string values"
             def taskA = dsl.fetchValue(
-                "SELECT document_external_ids->'doc-A'->>'externalTaskId' FROM extractions WHERE id = ?",
+                "SELECT document_external_ids->>'doc-A' FROM extractions WHERE id = ?",
                 extraction.id)
             def taskB = dsl.fetchValue(
-                "SELECT document_external_ids->'doc-B'->>'externalTaskId' FROM extractions WHERE id = ?",
+                "SELECT document_external_ids->>'doc-B' FROM extractions WHERE id = ?",
                 extraction.id)
             taskA == "task-A"
             taskB == "task-B"
@@ -383,16 +381,14 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     def "TC-PR-UDEI02: replaces the entire map on a second write"() {
         given: "an extraction with a pre-existing map containing doc-1"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1","doc-2"]')
-            preconExtractionRepository.updateDocumentExternalIds(extraction.id,
-                ["doc-1": new ExternalId("old-task", "old-file")])
+            preconExtractionRepository.updateDocumentExternalIds(extraction.id, ["doc-1": "old-task"])
 
         when: "writing a new map with doc-2 only"
-            preconExtractionRepository.updateDocumentExternalIds(extraction.id,
-                ["doc-2": new ExternalId("new-task", "new-file")])
+            preconExtractionRepository.updateDocumentExternalIds(extraction.id, ["doc-2": "new-task"])
 
         then: "doc-2 entry is present"
             def task2 = dsl.fetchValue(
-                "SELECT document_external_ids->'doc-2'->>'externalTaskId' FROM extractions WHERE id = ?",
+                "SELECT document_external_ids->>'doc-2' FROM extractions WHERE id = ?",
                 extraction.id)
             task2 == "new-task"
 
@@ -406,8 +402,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     def "TC-PR-UDEI03: writes an empty map successfully"() {
         given: "an extraction with an existing entry"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
-            preconExtractionRepository.updateDocumentExternalIds(extraction.id,
-                ["doc-1": new ExternalId("task-x", "file-x")])
+            preconExtractionRepository.updateDocumentExternalIds(extraction.id, ["doc-1": "task-x"])
 
         when: "writing an empty map"
             def rows = preconExtractionRepository.updateDocumentExternalIds(extraction.id, [:])
@@ -425,7 +420,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     def "TC-PR-UDEI04: returns 0 for a nonexistent extraction"() {
         when:
             def rows = preconExtractionRepository.updateDocumentExternalIds(
-                "nonexistent-id", ["doc-1": new ExternalId("t", "f")])
+                "nonexistent-id", ["doc-1": "task-t"])
 
         then:
             rows == 0
@@ -434,9 +429,9 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     // ==================== findByDocumentExternalTaskId ====================
 
     def "TC-PR-FBDET01: finds extraction whose document_external_ids map contains the given externalTaskId"() {
-        given: "an extraction with a stored external ID"
+        given: "an extraction with a stored external task ID"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
-            setExternalIdDirectly(extraction.id, "doc-1", "task-find-me", "file-xyz")
+            setExternalIdDirectly(extraction.id, "doc-1", "task-find-me")
 
         when: "searching by externalTaskId"
             def result = preconExtractionRepository.findByDocumentExternalTaskId("task-find-me")
@@ -455,9 +450,9 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     }
 
     def "TC-PR-FBDET03: does not return a soft-deleted extraction"() {
-        given: "a soft-deleted extraction with a stored external ID"
+        given: "a soft-deleted extraction with a stored external task ID"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
-            setExternalIdDirectly(extraction.id, "doc-1", "task-deleted", "file-x")
+            setExternalIdDirectly(extraction.id, "doc-1", "task-deleted")
             dsl.update(Tables.EXTRACTIONS)
                 .set(Tables.EXTRACTIONS.DELETED_AT, OffsetDateTime.now())
                 .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
@@ -474,8 +469,8 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
         given: "two extractions each with a different task ID"
             def ext1 = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
             def ext2 = insertExtraction(companyIdStr, tenderId, "processing", '["doc-2"]')
-            setExternalIdDirectly(ext1.id, "doc-1", "task-for-ext1", "file-1")
-            setExternalIdDirectly(ext2.id, "doc-2", "task-for-ext2", "file-2")
+            setExternalIdDirectly(ext1.id, "doc-1", "task-for-ext1")
+            setExternalIdDirectly(ext2.id, "doc-2", "task-for-ext2")
 
         when: "searching for the second extraction's task ID"
             def result = preconExtractionRepository.findByDocumentExternalTaskId("task-for-ext2")
@@ -487,13 +482,11 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
 
     // ==================== Helper Methods ====================
 
-    /** Writes a single ExternalId entry directly via SQL — bypasses the repository to keep FBDET tests self-contained. */
-    private void setExternalIdDirectly(String extractionId, String documentId,
-                                       String externalTaskId, String externalFileId) {
-        String json = '{"externalTaskId":"' + externalTaskId + '","externalFileId":"' + externalFileId + '"}'
+    /** Writes a single externalTaskId entry directly via SQL — bypasses the repository to keep FBDET tests self-contained. */
+    private void setExternalIdDirectly(String extractionId, String documentId, String externalTaskId) {
         dsl.execute(
-            "UPDATE extractions SET document_external_ids = document_external_ids || jsonb_build_object(?::text, ?::jsonb) WHERE id = ?",
-            documentId, json, extractionId)
+            "UPDATE extractions SET document_external_ids = document_external_ids || jsonb_build_object(?::text, ?::text) WHERE id = ?",
+            documentId, externalTaskId, extractionId)
     }
 
     private ExtractionsRecord insertExtraction(String companyId, String entityId,

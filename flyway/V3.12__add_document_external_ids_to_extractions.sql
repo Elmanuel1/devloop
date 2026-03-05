@@ -5,3 +5,6 @@ ALTER TABLE extractions
 
 ALTER TABLE extractions
     ADD COLUMN IF NOT EXISTS document_external_ids JSONB NOT NULL DEFAULT '{}';
+
+ALTER TABLE tender_documents
+    ADD COLUMN IF NOT EXISTS external_file_id VARCHAR(255);

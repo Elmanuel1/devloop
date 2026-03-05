@@ -52,26 +52,28 @@ public interface PreconExtractionRepository {
     /**
      * Reads the current {@code document_external_ids} map for the given extraction.
      * Returns an empty mutable map when the extraction does not exist or the column is empty.
+     * The map is keyed by document ID and the values are Reducto external task IDs.
      *
      * @param extractionId the extraction to read
      * @return a mutable copy of the current map
      */
-    Map<String, ExternalId> getDocumentExternalIds(String extractionId);
+    Map<String, String> getDocumentExternalIds(String extractionId);
 
     /**
      * Overwrites the {@code document_external_ids} JSONB column with the
      * provided map. The caller is responsible for building the updated map
      * (read-modify-write in the service layer).
+     * The map is keyed by document ID and the values are Reducto external task IDs.
      *
      * @param extractionId        the extraction to update
-     * @param documentExternalIds the complete replacement map
+     * @param documentExternalIds the complete replacement map (documentId → externalTaskId)
      * @return number of rows updated
      */
-    int updateDocumentExternalIds(String extractionId, Map<String, ExternalId> documentExternalIds);
+    int updateDocumentExternalIds(String extractionId, Map<String, String> documentExternalIds);
 
     /**
      * Finds the extraction whose {@code document_external_ids} map contains a
-     * value with the given {@code externalTaskId}.
+     * value equal to the given {@code externalTaskId}.
      *
      * @param externalTaskId the Reducto job ID to search for
      * @return an Optional containing the matching extraction, or empty if not found

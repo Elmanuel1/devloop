@@ -102,7 +102,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
 
     @SneakyThrows
     @Override
-    public Map<String, ExternalId> getDocumentExternalIds(String extractionId) {
+    public Map<String, String> getDocumentExternalIds(String extractionId) {
         org.jooq.JSONB raw = dsl
                 .select(DSL.field("document_external_ids", org.jooq.JSONB.class))
                 .from(EXTRACTIONS)
@@ -112,12 +112,12 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
         if (raw == null || raw.data() == null || raw.data().isBlank()) {
             return new java.util.HashMap<>();
         }
-        return objectMapper.readValue(raw.data(), new TypeReference<Map<String, ExternalId>>() {});
+        return objectMapper.readValue(raw.data(), new TypeReference<Map<String, String>>() {});
     }
 
     @SneakyThrows
     @Override
-    public int updateDocumentExternalIds(String extractionId, Map<String, ExternalId> documentExternalIds) {
+    public int updateDocumentExternalIds(String extractionId, Map<String, String> documentExternalIds) {
         return dsl.execute(
                 "UPDATE extractions SET document_external_ids = ?::jsonb, updated_at = NOW()" +
                         " WHERE id = ? AND deleted_at IS NULL",
@@ -129,7 +129,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
         return dsl.selectFrom(EXTRACTIONS)
                 .where(EXTRACTIONS.DELETED_AT.isNull())
                 .and(DSL.condition(
-                        "EXISTS (SELECT 1 FROM jsonb_each(document_external_ids) AS e(k,v) WHERE v->>'externalTaskId' = ?)",
+                        "EXISTS (SELECT 1 FROM jsonb_each(document_external_ids) AS e(k,v) WHERE v#>>'{}'= ?)",
                         externalTaskId))
                 .fetchOptional()
                 .map(r -> r.into(ExtractionsRecord.class));
