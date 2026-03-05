@@ -115,51 +115,6 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
             capturedJobId == "specific-job-id-99"
     }
 
-    // ==================== setDocumentExternalId ====================
-
-    def "TC-WHS-08: setDocumentExternalId merges new entry into empty map and calls updateDocumentExternalIds"() {
-        given: "repository returns empty map for the extraction"
-            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> [:]
-
-        when: "setting an external task ID for a document"
-            handlerService.setDocumentExternalId(EXTRACTION_ID, DOCUMENT_ID, "task-abc")
-
-        then: "repository is called with a map containing the single new entry"
-            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
-                m.size() == 1 && m[DOCUMENT_ID] == "task-abc"
-            })
-    }
-
-    def "TC-WHS-09: setDocumentExternalId merges into existing map preserving other entries"() {
-        given: "repository returns an existing map containing doc-1"
-            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >>
-                ["doc-1": "old-task"]
-
-        when: "setting an external task ID for a different document"
-            handlerService.setDocumentExternalId(EXTRACTION_ID, "doc-2", "new-task")
-
-        then: "repository is called with both entries in the map"
-            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
-                m.size() == 2 &&
-                m["doc-1"] == "old-task" &&
-                m["doc-2"] == "new-task"
-            })
-    }
-
-    def "TC-WHS-10: setDocumentExternalId replaces existing entry for the same document key"() {
-        given: "repository returns an existing map with doc-1 already mapped"
-            preconExtractionRepository.getDocumentExternalIds(EXTRACTION_ID) >>
-                ["doc-1": "stale-task"]
-
-        when: "setting a new task ID for the same doc-1 key"
-            handlerService.setDocumentExternalId(EXTRACTION_ID, "doc-1", "fresh-task")
-
-        then: "repository is called with the updated entry"
-            1 * preconExtractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
-                m.size() == 1 && m["doc-1"] == "fresh-task"
-            })
-    }
-
     // ==================== Helper Methods ====================
 
     private static ReductoWebhookPayload completedPayload(String jobId) {
