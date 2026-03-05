@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.7]
 
-### Added
-- Regenerate jOOQ classes for V3.7 schema: make `tender.name` nullable
+### Changed
+- Add V3.7 migration: make tenders.name nullable; drop uq_tenders_company_name index (TOS-44)
 
 ## [0.1.6]
 

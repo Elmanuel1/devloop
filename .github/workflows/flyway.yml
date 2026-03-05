@@ -54,10 +54,15 @@ on:
         options:
           - stage
           - prod
+      flyway-flags:
+        description: 'Optional Flyway CLI flags, e.g. -outOfOrder=true'
+        type: string
+        default: ''
 
 permissions:
   id-token: write
   contents: read
+  pull-requests: read
 
 env:
   AWS_REGION: "us-west-2"
@@ -92,16 +97,19 @@ jobs:
         id: changes
         with:
           filters: |
+            flyway_migrations:
+              - 'flyway/**'
             jooq_version:
               - 'libs/flyway-jooq-classes/gradle.properties'
 
       - name: Require flyway-jooq-classes version bump
-        if: steps.changes.outputs.jooq_version != 'true'
+        if: steps.changes.outputs.flyway_migrations == 'true' && steps.changes.outputs.jooq_version != 'true'
         run: |
           echo "::error::Flyway migrations changed but libs/flyway-jooq-classes/gradle.properties was not updated. Bump moduleVersion before merging."
           exit 1
 
       - name: Validate CHANGELOG entry
+        if: steps.changes.outputs.flyway_migrations == 'true'
         run: |
           VERSION=$(grep '^moduleVersion=' libs/flyway-jooq-classes/gradle.properties | cut -d'=' -f2)
           if ! grep -q "## \[$VERSION\]" libs/flyway-jooq-classes/CHANGELOG.md; then
@@ -118,7 +126,7 @@ jobs:
             -user=postgres
             -password=postgres
             -locations=filesystem:./flyway
-            migrate
+            migrate ${{ inputs.flyway-flags }}
 
   # ===========================================================================
   # SSM - run Flyway on EC2 (has RDS access)
@@ -245,7 +253,7 @@ jobs:
             -v /tmp/flyway:/flyway/sql:ro \
             -v /tmp/flyway.conf:/flyway/conf/flyway.conf:ro \
             flyway/flyway:${{ env.FLYWAY_VERSION }} \
-            ${{ env.FLYWAY_ACTION }}
+            ${{ env.FLYWAY_ACTION }} ${{ inputs.flyway-flags }}
 
           # Cleanup config file
           rm -f /tmp/flyway.conf

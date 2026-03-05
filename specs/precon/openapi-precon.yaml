@@ -468,7 +468,6 @@ components:
       type: object
       required:
         - id
-        - name
         - status
         - created_at
         - updated_at
@@ -479,8 +478,10 @@ components:
           format: uuid
           description: Tender ID
         name:
-          type: string
-          description: Tender name
+          type:
+            - string
+            - 'null'
+          description: Tender name. Null if not yet assigned.
         platform:
           type:
             - string
@@ -668,14 +669,15 @@ components:
     TenderCreateRequest:
       type: object
       additionalProperties: false
-      required:
-        - name
       properties:
         name:
-          type: string
+          type:
+            - string
+            - 'null'
           maxLength: 255
-          description: Tender name
-          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+          description: >
+            Tender name. Optional — if omitted, the name will be populated later.
+            The tender is created with status pending regardless.
         platform:
           type:
             - string

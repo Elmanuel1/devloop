@@ -5,6 +5,13 @@ All notable changes to this module will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] - 2026-03-04
+
+### Changed
+- `TenderCreateRequest.name` is now nullable — optional on create, AI-deferred extraction fills it in later.
+- Removed `@NotBlank` from `TenderCreateRequest.name` (was enforcing non-empty on a field that may not yet be known).
+- `Tender.name` (response model) is nullable — reflects that a tender can exist without a name.
+
 ## [0.6.3] - 2026-02-27
 
 ### Changed
