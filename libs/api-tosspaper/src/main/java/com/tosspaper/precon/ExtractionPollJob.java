@@ -41,7 +41,7 @@ public class ExtractionPollJob {
             return;
         }
 
-        log.info("[ExtractionPoll] Claimed {} extraction(s) for processing", claimed.size());
+        log.info("[ExtractionPoll] Claimed {} extraction(s) — status set to PROCESSING, submitting now", claimed.size());
         pipelineRunner.run(claimed);
     }
 
