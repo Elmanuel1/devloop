@@ -26,4 +26,6 @@ public interface TenderDocumentRepository {
 
     Optional<TenderDocumentsRecord> findByExternalTaskId(String externalTaskId);
 
+    int updateExternalFileId(String id, String externalFileId);
+
 }

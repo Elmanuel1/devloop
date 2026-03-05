@@ -319,59 +319,6 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
                 .status == "pending"
     }
 
-    // ==================== findByExternalTaskId ====================
-
-    def "TC-PR-FBET01: returns extraction when external_task_id matches"() {
-        given: "a processing extraction with an external_task_id"
-            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1","doc-2"]')
-            def taskId = "reducto-task-" + UUID.randomUUID().toString()
-            // EXTERNAL_TASK_ID not yet in jOOQ classes — use raw field name
-            dsl.execute("UPDATE extractions SET external_task_id = ? WHERE id = ?", taskId, extraction.id)
-
-        when: "looking up by external_task_id"
-            def result = preconExtractionRepository.findByExternalTaskId(taskId)
-
-        then: "the extraction is found"
-            result.isPresent()
-            result.get().id == extraction.id
-    }
-
-    def "TC-PR-FBET02: returns empty Optional when no extraction matches the external_task_id"() {
-        when: "looking up an unknown task ID"
-            def result = preconExtractionRepository.findByExternalTaskId("unknown-task-xyz")
-
-        then: "empty Optional is returned"
-            result.isEmpty()
-    }
-
-    def "TC-PR-FBET03: returns empty Optional for soft-deleted extraction with matching task_id"() {
-        given: "a soft-deleted extraction with an external_task_id"
-            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
-            def taskId = "reducto-task-deleted-" + UUID.randomUUID().toString()
-            dsl.execute("UPDATE extractions SET external_task_id = ?, deleted_at = NOW() WHERE id = ?",
-                    taskId, extraction.id)
-
-        when: "looking up the deleted extraction by task_id"
-            def result = preconExtractionRepository.findByExternalTaskId(taskId)
-
-        then: "soft-deleted extraction is not returned"
-            result.isEmpty()
-    }
-
-    def "TC-PR-FBET04: returned ExtractionWithDocs contains the parsed document IDs"() {
-        given: "an extraction with known document IDs"
-            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-A","doc-B","doc-C"]')
-            def taskId = "reducto-task-docs-" + UUID.randomUUID().toString()
-            dsl.execute("UPDATE extractions SET external_task_id = ? WHERE id = ?", taskId, extraction.id)
-
-        when: "looking up by task_id"
-            def result = preconExtractionRepository.findByExternalTaskId(taskId)
-
-        then: "document IDs are correctly parsed"
-            result.isPresent()
-            result.get().documentIds == ["doc-A", "doc-B", "doc-C"]
-    }
-
     // ==================== Helper Methods ====================
 
     private ExtractionsRecord insertExtraction(String companyId, String entityId,

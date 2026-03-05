@@ -147,4 +147,15 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .fetchOptional();
     }
 
+    @Override
+    public int updateExternalFileId(String id, String externalFileId) {
+        // Raw field bridge until jOOQ classes jar is regenerated with the EXTERNAL_FILE_ID column.
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(DSL.field("external_file_id", String.class), externalFileId)
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
 }
