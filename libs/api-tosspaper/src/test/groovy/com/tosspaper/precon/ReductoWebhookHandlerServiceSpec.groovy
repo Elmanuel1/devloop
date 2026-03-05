@@ -4,28 +4,28 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult
 import com.tosspaper.aiengine.service.ProcessingService
 import com.tosspaper.common.NotFoundException
-import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
+import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
 
 class ReductoWebhookHandlerServiceSpec extends Specification {
 
-    TenderDocumentRepository tenderDocumentRepository = Mock()
+    PreconExtractionRepository preconExtractionRepository = Mock()
     ProcessingService processingService = Mock()
     ObjectMapper objectMapper = new ObjectMapper()
 
     @Subject
     ReductoWebhookHandlerService handlerService =
-            new ReductoWebhookHandlerService(tenderDocumentRepository, processingService, objectMapper)
+            new ReductoWebhookHandlerService(preconExtractionRepository, processingService, objectMapper)
 
-    static final String JOB_ID      = "reducto-job-abc123"
-    static final String DOCUMENT_ID = "document-uuid-001"
+    static final String JOB_ID        = "reducto-job-abc123"
+    static final String EXTRACTION_ID = "extraction-uuid-001"
 
     // ==================== handle — job not found ====================
 
-    def "TC-WHS-01: throws NotFoundException when no document matches the job_id"() {
+    def "TC-WHS-01: throws NotFoundException when no extraction matches the job_id"() {
         given: "repository returns empty Optional"
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.empty()
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.empty()
 
         when: "handler is called for an unknown job"
             handlerService.handle(completedPayload(JOB_ID))
@@ -38,9 +38,9 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — Completed status ====================
 
-    def "TC-WHS-02: on Completed — validates job belongs to a document and fetches result"() {
-        given: "document is found"
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildDocument(DOCUMENT_ID))
+    def "TC-WHS-02: on Completed — validates job belongs to an extraction and fetches result"() {
+        given: "extraction is found"
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.of(buildExtraction(EXTRACTION_ID))
 
         when: "handler receives a Completed webhook"
             handlerService.handle(completedPayload(JOB_ID))
@@ -51,7 +51,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also fetches result"() {
         given:
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildDocument(DOCUMENT_ID))
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.of(buildExtraction(EXTRACTION_ID))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
@@ -64,7 +64,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     def "TC-WHS-04: on Failed — validates job and fetches error reason"() {
         given:
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildDocument(DOCUMENT_ID))
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.of(buildExtraction(EXTRACTION_ID))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
@@ -75,7 +75,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     def "TC-WHS-05: on Failed with null error — uses fallback reason string"() {
         given:
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildDocument(DOCUMENT_ID))
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.of(buildExtraction(EXTRACTION_ID))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
@@ -86,7 +86,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     def "TC-WHS-06: does NOT call ProcessingService for unknown/intermediate status"() {
         given:
-            tenderDocumentRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildDocument(DOCUMENT_ID))
+            preconExtractionRepository.findByDocumentExternalTaskId(JOB_ID) >> Optional.of(buildExtraction(EXTRACTION_ID))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
@@ -97,10 +97,10 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — lookup uses correct job_id ====================
 
-    def "TC-WHS-07: passes job_id from payload to document repository lookup"() {
+    def "TC-WHS-07: passes job_id from payload to extraction repository lookup"() {
         given:
             String capturedJobId = null
-            tenderDocumentRepository.findByExternalTaskId(_ as String) >> { String id ->
+            preconExtractionRepository.findByDocumentExternalTaskId(_ as String) >> { String id ->
                 capturedJobId = id
                 return Optional.empty()
             }
@@ -134,16 +134,13 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
                 .build()
     }
 
-    private static TenderDocumentsRecord buildDocument(String id) {
-        def record = new TenderDocumentsRecord()
+    private static ExtractionsRecord buildExtraction(String id) {
+        def record = new ExtractionsRecord()
         record.setId(id)
         record.setStatus("processing")
         record.setCompanyId("company-1")
-        record.setTenderId("tender-uuid-1")
-        record.setFileName("tender-doc.pdf")
-        record.setContentType("application/pdf")
-        record.setFileSize(1024L)
-        record.setS3Key("uploads/tender-doc.pdf")
+        record.setEntityType("tender")
+        record.setEntityId("tender-uuid-1")
         return record
     }
 }

@@ -1,6 +1,9 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
+
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repository for extraction pipeline operations.
@@ -44,5 +47,25 @@ public interface PreconExtractionRepository {
      * @return number of rows updated
      */
     int markAsFailed(String id, String errorReason);
+
+    /**
+     * Stores or replaces the {@link ExternalId} for a single document within
+     * the extraction's {@code document_external_ids} JSONB map.
+     *
+     * @param extractionId the extraction that owns the map
+     * @param documentId   the key (document UUID)
+     * @param externalId   the Reducto task and file identifiers to store
+     * @return number of rows updated
+     */
+    int putDocumentExternalId(String extractionId, String documentId, ExternalId externalId);
+
+    /**
+     * Finds the extraction whose {@code document_external_ids} map contains a
+     * value with the given {@code externalTaskId}.
+     *
+     * @param externalTaskId the Reducto job ID to search for
+     * @return an Optional containing the matching extraction, or empty if not found
+     */
+    Optional<ExtractionsRecord> findByDocumentExternalTaskId(String externalTaskId);
 
 }
