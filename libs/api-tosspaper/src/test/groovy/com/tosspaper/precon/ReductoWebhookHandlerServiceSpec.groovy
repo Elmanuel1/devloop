@@ -58,7 +58,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
         then:
-            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult(null)
+            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult('{}')
     }
 
     // ==================== handle — Failed status ====================

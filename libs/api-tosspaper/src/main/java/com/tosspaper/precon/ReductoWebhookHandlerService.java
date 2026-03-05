@@ -8,6 +8,7 @@ import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -49,9 +50,10 @@ public class ReductoWebhookHandlerService {
 
     // ── Private handlers ──────────────────────────────────────────────────────
 
+    @SneakyThrows
     private void handleCompleted(String jobId, ExtractionsRecord extraction) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
-        JsonNode fields = parseRawResponse(jobResult.getRawResponse());
+        JsonNode fields = objectMapper.readTree(jobResult.getRawResponse());
         // TODO [TOS-38]: persist fields to extraction_fields table via ExtractionFieldRepository.
         log.info("[ReductoWebhook] job_id={} extraction_id={} completed — fields ready for TOS-38 persistence (size={})",
                 jobId, extraction.getId(), fields.size());
@@ -62,17 +64,5 @@ public class ReductoWebhookHandlerService {
         String reason = jobResult.getError() != null ? jobResult.getError() : "Reducto reported job as failed";
         // TODO [TOS-38]: record per-document failure via ExtractionFieldRepository or document status table.
         log.warn("[ReductoWebhook] job_id={} extraction_id={} failed — reason='{}'", jobId, extraction.getId(), reason);
-    }
-
-    private JsonNode parseRawResponse(String rawResponse) {
-        if (rawResponse == null) {
-            return objectMapper.nullNode();
-        }
-        try {
-            return objectMapper.readTree(rawResponse);
-        } catch (Exception e) {
-            log.warn("[ReductoWebhook] Could not parse raw_response as JSON — storing as text node");
-            return objectMapper.valueToTree(rawResponse);
-        }
     }
 }
