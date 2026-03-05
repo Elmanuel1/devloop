@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
 import java.net.http.HttpHeaders;
 import java.util.HashMap;
 import java.util.List;
@@ -57,7 +56,7 @@ public class PreconReductoWebhookController {
             @RequestHeader(value = SVIX_ID_HEADER,        required = false) String svixId,
             @RequestHeader(value = SVIX_TIMESTAMP_HEADER,  required = false) String svixTs,
             @RequestHeader(value = SVIX_SIGNATURE_HEADER,  required = false) String svixSig)
-            throws WebhookVerificationException, JsonProcessingException, IOException {
+            throws WebhookVerificationException, JsonProcessingException {
 
         log.debug("[ReductoWebhook] Received webhook — svix-id={}", svixId);
 

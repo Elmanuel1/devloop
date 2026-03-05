@@ -1,22 +1,20 @@
 package com.tosspaper.precon
 
-import com.tosspaper.aiengine.client.reducto.ReductoClient
-import com.tosspaper.aiengine.client.reducto.dto.ReductoJobStatusResponse
+import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult
+import com.tosspaper.aiengine.service.ProcessingService
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
 
-import java.io.IOException
-
 class ReductoWebhookHandlerServiceSpec extends Specification {
 
     PreconExtractionRepository preconExtractionRepository = Mock()
-    ReductoClient reductoClient = Mock()
+    ProcessingService processingService = Mock()
 
     @Subject
     ReductoWebhookHandlerService handlerService =
-            new ReductoWebhookHandlerService(preconExtractionRepository, reductoClient)
+            new ReductoWebhookHandlerService(preconExtractionRepository, processingService)
 
     static final String JOB_ID        = "reducto-job-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
@@ -30,10 +28,10 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when: "handler is called for an unknown job"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "NotFoundException is thrown — Reducto API never called"
+        then: "NotFoundException is thrown — ProcessingService never called"
             def ex = thrown(NotFoundException)
             ex.message != null
-            0 * reductoClient.getJobStatus(_)
+            0 * processingService.getExtractTask(_)
     }
 
     // ==================== handle — Completed status ====================
@@ -47,7 +45,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
             handlerService.handle(completedPayload(JOB_ID))
 
         then: "job result fetched and extraction marked completed"
-            1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus("some-raw-response")
+            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult("some-raw-response")
             1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> 1
     }
 
@@ -60,13 +58,13 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
         then:
-            1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus(null)
+            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult(null)
             1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _) >> 1
     }
 
     // ==================== handle — Failed status ====================
 
-    def "TC-WHS-04: on Failed — fetches job status for reason and marks extraction failed"() {
+    def "TC-WHS-04: on Failed — fetches job result for error and marks extraction failed"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -74,12 +72,12 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
-        then: "job status fetched and extraction marked failed with reason"
-            1 * reductoClient.getJobStatus(JOB_ID) >> failedJobStatus("OCR timeout after 900s")
+        then: "job result fetched and extraction marked failed with error"
+            1 * processingService.getExtractTask(JOB_ID) >> failedTaskResult("OCR timeout after 900s")
             1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, "OCR timeout after 900s") >> 1
     }
 
-    def "TC-WHS-05: on Failed with null reason — uses fallback reason string"() {
+    def "TC-WHS-05: on Failed with null error — uses fallback reason string"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -87,12 +85,12 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
-        then: "fallback reason is used when Reducto provides no reason"
-            1 * reductoClient.getJobStatus(JOB_ID) >> failedJobStatus(null)
+        then: "fallback reason is used when ProcessingService provides no error"
+            1 * processingService.getExtractTask(JOB_ID) >> failedTaskResult(null)
             1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, _ as String) >> 1
     }
 
-    def "TC-WHS-06: does NOT call Reducto API or mark extraction for unknown/intermediate status"() {
+    def "TC-WHS-06: does NOT call ProcessingService or mark extraction for unknown/intermediate status"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -100,30 +98,15 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
 
-        then: "no Reducto API call and no state change"
-            0 * reductoClient.getJobStatus(_)
+        then: "no ProcessingService call and no state change"
+            0 * processingService.getExtractTask(_)
             0 * preconExtractionRepository.markAsCompleted(_, _)
             0 * preconExtractionRepository.markAsFailed(_, _)
     }
 
-    // ==================== handle — Reducto API failure ====================
-
-    def "TC-WHS-07: propagates IOException from getJobStatus directly"() {
-        given:
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-            reductoClient.getJobStatus(JOB_ID) >> { throw new IOException("connection refused") }
-
-        when:
-            handlerService.handle(completedPayload(JOB_ID))
-
-        then:
-            thrown(IOException)
-    }
-
     // ==================== handle — lookup uses correct job_id ====================
 
-    def "TC-WHS-08: passes job_id from payload to repository lookup"() {
+    def "TC-WHS-07: passes job_id from payload to repository lookup"() {
         given:
             String capturedJobId = null
             preconExtractionRepository.findByExternalTaskId(_ as String) >> { String id ->
@@ -146,17 +129,17 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         return new ReductoWebhookPayload(jobId, "Completed")
     }
 
-    private static ReductoJobStatusResponse completedJobStatus(String rawResponse) {
-        return ReductoJobStatusResponse.builder()
-                .status("Completed")
+    private static ExtractTaskResult completedTaskResult(String rawResponse) {
+        return ExtractTaskResult.builder()
+                .found(true)
                 .rawResponse(rawResponse)
                 .build()
     }
 
-    private static ReductoJobStatusResponse failedJobStatus(String reason) {
-        return ReductoJobStatusResponse.builder()
-                .status("Failed")
-                .reason(reason)
+    private static ExtractTaskResult failedTaskResult(String error) {
+        return ExtractTaskResult.builder()
+                .found(true)
+                .error(error)
                 .build()
     }
 

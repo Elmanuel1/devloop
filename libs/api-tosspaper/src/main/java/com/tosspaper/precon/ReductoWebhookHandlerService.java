@@ -1,25 +1,23 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.aiengine.client.reducto.ReductoClient;
-import com.tosspaper.aiengine.client.reducto.dto.ReductoJobStatusResponse;
+import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult;
+import com.tosspaper.aiengine.service.ProcessingService;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-
-/** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ReductoClient} and updates extraction state. */
+/** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ProcessingService} and updates extraction state. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReductoWebhookHandlerService {
 
     private final PreconExtractionRepository preconExtractionRepository;
-    private final ReductoClient reductoClient;
+    private final ProcessingService processingService;
 
-    public void handle(ReductoWebhookPayload payload) throws IOException {
+    public void handle(ReductoWebhookPayload payload) {
         String jobId = payload.jobId();
         log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
                 jobId, payload.status());
@@ -48,8 +46,8 @@ public class ReductoWebhookHandlerService {
 
     // ── Private handlers ──────────────────────────────────────────────────────
 
-    private void handleCompleted(String jobId, String extractionId) throws IOException {
-        ReductoJobStatusResponse jobResult = reductoClient.getJobStatus(jobId);
+    private void handleCompleted(String jobId, String extractionId) {
+        ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
 
         // TODO [TOS-38]: wire jobResult.getRawResponse() into PipelineExtractionResult.
         PipelineExtractionResult result = new PipelineExtractionResult(extractionId, null);
@@ -58,10 +56,10 @@ public class ReductoWebhookHandlerService {
                 extractionId, jobResult.getRawResponse() != null ? jobResult.getRawResponse().length() : 0);
     }
 
-    private void handleFailed(String jobId, String extractionId) throws IOException {
-        ReductoJobStatusResponse jobResult = reductoClient.getJobStatus(jobId);
+    private void handleFailed(String jobId, String extractionId) {
+        ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
 
-        String reason = jobResult.getReason() != null ? jobResult.getReason() : "Reducto reported job as failed";
+        String reason = jobResult.getError() != null ? jobResult.getError() : "Reducto reported job as failed";
         preconExtractionRepository.markAsFailed(extractionId, reason);
         log.info("[ReductoWebhook] Marked extraction_id={} as failed — reason='{}'", extractionId, reason);
     }
