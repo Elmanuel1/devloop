@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-/** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ProcessingService} and updates extraction state. */
+/** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ProcessingService} and stores per-document fields. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -25,7 +25,8 @@ public class ReductoWebhookHandlerService {
         log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
                 jobId, payload.status());
 
-        ExtractionWithDocs extraction = preconExtractionRepository
+        // Validate the job belongs to a known extraction — throws NotFoundException if not.
+        preconExtractionRepository
                 .findByExternalTaskId(jobId)
                 .orElseThrow(() -> {
                     log.warn("[ReductoWebhook] No extraction found for job_id={}", jobId);
@@ -34,34 +35,32 @@ public class ReductoWebhookHandlerService {
                             ApiErrorMessages.WEBHOOK_TASK_NOT_FOUND);
                 });
 
-        String extractionId = extraction.getId();
-        log.debug("[ReductoWebhook] Matched job_id={} to extraction_id={}", jobId, extractionId);
-
+        // Each webhook fires per-document. Do not finalise the extraction here —
+        // that is the responsibility of ExtractionWorker (TOS-38) once all
+        // documents in the batch have reported in.
         switch (payload.status().toLowerCase()) {
-            case "completed" -> handleCompleted(jobId, extractionId);
-            case "failed"    -> handleFailed(jobId, extractionId);
-            default          -> log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — no action taken",
+            case "completed" -> handleCompleted(jobId);
+            case "failed"    -> handleFailed(jobId);
+            default          -> log.info("[ReductoWebhook] job_id={} reported status='{}' — no action taken",
                                         jobId, payload.status());
         }
     }
 
     // ── Private handlers ──────────────────────────────────────────────────────
 
-    private void handleCompleted(String jobId, String extractionId) {
+    private void handleCompleted(String jobId) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
-
         JsonNode fields = parseRawResponse(jobResult.getRawResponse());
-        PipelineExtractionResult result = new PipelineExtractionResult(extractionId, fields);
-        preconExtractionRepository.markAsCompleted(extractionId, result);
-        log.info("[ReductoWebhook] Marked extraction_id={} as completed", extractionId);
+        // TODO [TOS-38]: persist fields to extraction_fields table via ExtractionFieldRepository.
+        log.info("[ReductoWebhook] job_id={} completed — fields ready for TOS-38 persistence (size={})",
+                jobId, fields.size());
     }
 
-    private void handleFailed(String jobId, String extractionId) {
+    private void handleFailed(String jobId) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
-
         String reason = jobResult.getError() != null ? jobResult.getError() : "Reducto reported job as failed";
-        preconExtractionRepository.markAsFailed(extractionId, reason);
-        log.info("[ReductoWebhook] Marked extraction_id={} as failed — reason='{}'", extractionId, reason);
+        // TODO [TOS-38]: record per-document failure via ExtractionFieldRepository or document status table.
+        log.warn("[ReductoWebhook] job_id={} failed — reason='{}'", jobId, reason);
     }
 
     private JsonNode parseRawResponse(String rawResponse) {

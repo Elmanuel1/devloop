@@ -38,80 +38,61 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — Completed status ====================
 
-    def "TC-WHS-02: on Completed — fetches job result, parses raw response into fields, marks completed"() {
-        given: "extraction is found and Reducto returns a JSON raw response"
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-
-            PipelineExtractionResult captured = null
-            preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> { String id, PipelineExtractionResult r ->
-                captured = r
-                return 1
-            }
+    def "TC-WHS-02: on Completed — validates job belongs to an extraction and fetches document result"() {
+        given: "extraction is found"
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"]))
 
         when: "handler receives a Completed webhook"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "job result fetched, fields parsed, extraction marked completed"
+        then: "job result is fetched — extraction-level completion is NOT triggered"
             1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult('{"invoice_number":"INV-001"}')
-            captured != null
-            captured.fields() != null
-            captured.fields().get("invoice_number").asText() == "INV-001"
+            0 * preconExtractionRepository.markAsCompleted(_, _)
+            0 * preconExtractionRepository.markAsFailed(_, _)
     }
 
-    def "TC-WHS-03: on Completed with null rawResponse — fields is JSON null node"() {
+    def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also fetches document result"() {
         given:
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-
-            PipelineExtractionResult captured = null
-            preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> { String id, PipelineExtractionResult r ->
-                captured = r
-                return 1
-            }
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"]))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
-        then: "case-insensitive match, fields is null node when rawResponse is null"
+        then:
             1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult(null)
-            captured != null
-            captured.fields() != null
-            captured.fields().isNull()
+            0 * preconExtractionRepository.markAsCompleted(_, _)
     }
 
     // ==================== handle — Failed status ====================
 
-    def "TC-WHS-04: on Failed — fetches job result for error and marks extraction failed"() {
+    def "TC-WHS-04: on Failed — validates job and fetches error reason — does NOT fail the extraction"() {
         given:
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"]))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
-        then: "job result fetched and extraction marked failed with error"
+        then: "error reason fetched — extraction-level markAsFailed is NOT called"
             1 * processingService.getExtractTask(JOB_ID) >> failedTaskResult("OCR timeout after 900s")
-            1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, "OCR timeout after 900s") >> 1
+            0 * preconExtractionRepository.markAsCompleted(_, _)
+            0 * preconExtractionRepository.markAsFailed(_, _)
     }
 
-    def "TC-WHS-05: on Failed with null error — uses fallback reason string"() {
+    def "TC-WHS-05: on Failed with null error — uses fallback reason string — does NOT fail the extraction"() {
         given:
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"]))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
-        then: "fallback reason is used when ProcessingService provides no error"
+        then:
             1 * processingService.getExtractTask(JOB_ID) >> failedTaskResult(null)
-            1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, _ as String) >> 1
+            0 * preconExtractionRepository.markAsFailed(_, _)
     }
 
-    def "TC-WHS-06: does NOT call ProcessingService or mark extraction for unknown/intermediate status"() {
+    def "TC-WHS-06: does NOT call ProcessingService for unknown/intermediate status"() {
         given:
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"]))
 
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
