@@ -1,10 +1,14 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.aiengine.client.reducto.ReductoClient;
+import com.tosspaper.aiengine.client.reducto.dto.ReductoJobStatusResponse;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
 
 /**
  * Business logic for inbound Reducto webhook callbacks.
@@ -12,24 +16,16 @@ import org.springframework.stereotype.Service;
  * <h3>Responsibilities</h3>
  * <ol>
  *   <li>Look up the in-progress extraction by {@code job_id} (stored as {@code external_task_id}).</li>
- *   <li>Enqueue the verified payload onto the {@link PreconExtractionRepository}
- *       pipeline so it can be processed asynchronously by the ExtractionWorker
- *       (TOS-38). For this PR the payload is accepted and the extraction is
- *       located, providing the wiring point for TOS-38.</li>
- *   <li>If all documents for the extraction are terminal, trigger
- *       {@link ConflictDetector#detectAndMarkConflicts(String)}.</li>
+ *   <li>On {@code Completed}: call Reducto's {@code GET /job/{job_id}} endpoint to fetch the
+ *       extraction result, mark the extraction as completed, then run conflict detection.</li>
+ *   <li>On {@code Failed}: call {@code GET /job/{job_id}} to obtain the failure reason, then
+ *       mark the extraction as failed with that reason.</li>
  * </ol>
  *
  * <h3>Idempotency</h3>
- * <p>Duplicate Svix deliveries for the same {@code job_id} are safe — if the
- * extraction is already in a terminal state the handler logs and returns normally
- * without re-processing.
- *
- * <h3>TOS-38 integration point</h3>
- * <p>{@code ConflictDetector} is a standalone injectable component. When
- * ExtractionWorker (TOS-38) is merged it will call
- * {@link ConflictDetector#detectAndMarkConflicts(String)} after batch completion
- * using the same bean wired here.
+ * <p>Duplicate Svix deliveries for the same {@code job_id} are safe — the underlying
+ * {@code markAsCompleted} / {@code markAsFailed} repository methods guard on the
+ * {@code PROCESSING} from-state, so a second call is a no-op.
  */
 @Slf4j
 @Service
@@ -38,15 +34,20 @@ public class ReductoWebhookHandlerService {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ConflictDetector conflictDetector;
+    private final ReductoClient reductoClient;
 
     /**
      * Handles a verified, deserialised webhook payload from Reducto.
      *
-     * <p>Looks up the extraction by {@code job_id} and, when all documents
-     * for the extraction have reached a terminal state, runs conflict detection.
+     * <p>On {@code Completed}: fetches the full job result from Reducto, marks the
+     * extraction as completed, then triggers conflict detection.
+     *
+     * <p>On {@code Failed}: fetches the job status (for the failure reason), then marks
+     * the extraction as failed.
      *
      * @param payload the verified webhook payload
      * @throws NotFoundException if no extraction matches the given {@code job_id}
+     * @throws IllegalStateException if the Reducto jobs API call fails
      */
     public void handle(ReductoWebhookPayload payload) {
         String jobId = payload.jobId();
@@ -65,23 +66,50 @@ public class ReductoWebhookHandlerService {
         String extractionId = extraction.getId();
         log.debug("[ReductoWebhook] Matched job_id={} to extraction_id={}", jobId, extractionId);
 
-        // ── Batch completion and conflict detection ──────────────────────────
-        // TODO [TOS-38]: Once ExtractionWorker is wired, the field-write and
-        //  markDocumentTerminal steps will precede this call. For this PR the
-        //  ConflictDetector is exposed as a self-contained injectable component
-        //  ready for TOS-38 to invoke after it writes all fields.
-        //
-        // ConflictDetector is called here whenever the payload status indicates
-        // the task completed, allowing TOS-38 to hook in by delegating here.
-        // Reducto uses title-case "Completed" — equalsIgnoreCase handles both forms.
         if ("completed".equalsIgnoreCase(payload.status())) {
-            log.debug("[ReductoWebhook] Running conflict detection for extraction_id={}", extractionId);
-            int conflictedRows = conflictDetector.detectAndMarkConflicts(extractionId);
-            log.info("[ReductoWebhook] Conflict detection complete for extraction_id={} — {} row(s) flagged",
-                    extractionId, conflictedRows);
+            handleCompleted(jobId, extractionId);
+        } else if ("failed".equalsIgnoreCase(payload.status())) {
+            handleFailed(jobId, extractionId);
         } else {
-            log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — skipping conflict detection",
+            log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — no action taken",
                     jobId, payload.status());
+        }
+    }
+
+    // ── Private handlers ──────────────────────────────────────────────────────
+
+    private void handleCompleted(String jobId, String extractionId) {
+        log.debug("[ReductoWebhook] Fetching completed job result for job_id={}", jobId);
+        ReductoJobStatusResponse jobResult = fetchJobStatus(jobId);
+
+        // TODO [TOS-38]: Pass jobResult.getRawResponse() (or parsed fields) into
+        //  PipelineExtractionResult so markAsCompleted can persist extraction_fields.
+        //  For now fields=null matches the existing TOS-38 stub in markAsCompleted.
+        PipelineExtractionResult result = new PipelineExtractionResult(extractionId, null);
+        preconExtractionRepository.markAsCompleted(extractionId, result);
+        log.info("[ReductoWebhook] Marked extraction_id={} as completed (raw_response length={})",
+                extractionId, jobResult.getRawResponse() != null ? jobResult.getRawResponse().length() : 0);
+
+        int conflictedRows = conflictDetector.detectAndMarkConflicts(extractionId);
+        log.info("[ReductoWebhook] Conflict detection complete for extraction_id={} — {} row(s) flagged",
+                extractionId, conflictedRows);
+    }
+
+    private void handleFailed(String jobId, String extractionId) {
+        log.debug("[ReductoWebhook] Fetching failure reason for job_id={}", jobId);
+        ReductoJobStatusResponse jobResult = fetchJobStatus(jobId);
+
+        String reason = jobResult.getReason() != null ? jobResult.getReason() : "Reducto reported job as failed";
+        preconExtractionRepository.markAsFailed(extractionId, reason);
+        log.info("[ReductoWebhook] Marked extraction_id={} as failed — reason='{}'", extractionId, reason);
+    }
+
+    private ReductoJobStatusResponse fetchJobStatus(String jobId) {
+        try {
+            return reductoClient.getJobStatus(jobId);
+        } catch (IOException e) {
+            throw new IllegalStateException(
+                    "Failed to fetch job result from Reducto for job_id=%s: %s".formatted(jobId, e.getMessage()), e);
         }
     }
 }

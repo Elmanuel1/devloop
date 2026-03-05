@@ -1,5 +1,7 @@
 package com.tosspaper.precon
 
+import com.tosspaper.aiengine.client.reducto.ReductoClient
+import com.tosspaper.aiengine.client.reducto.dto.ReductoJobStatusResponse
 import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
@@ -9,12 +11,13 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     PreconExtractionRepository preconExtractionRepository = Mock()
     ConflictDetector conflictDetector = Mock()
+    ReductoClient reductoClient = Mock()
 
     @Subject
     ReductoWebhookHandlerService handlerService =
-            new ReductoWebhookHandlerService(preconExtractionRepository, conflictDetector)
+            new ReductoWebhookHandlerService(preconExtractionRepository, conflictDetector, reductoClient)
 
-    static final String JOB_ID        = "reducto-task-abc123"
+    static final String JOB_ID        = "reducto-job-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
 
     // ==================== handle — job not found ====================
@@ -26,111 +29,119 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
         when: "handler is called for an unknown job"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "NotFoundException is thrown — ConflictDetector never runs"
+        then: "NotFoundException is thrown — Reducto API and ConflictDetector never called"
             def ex = thrown(NotFoundException)
             ex.message != null
+            0 * reductoClient.getJobStatus(_)
             0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
-    // ==================== handle — completed status ====================
+    // ==================== handle — Completed status ====================
 
-    def "TC-WHS-02: runs conflict detection when payload status is 'Completed'"() {
+    def "TC-WHS-02: on Completed — fetches job result, marks completed, runs conflict detection"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-            conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 3
 
         when: "handler receives a Completed webhook"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "conflict detection runs once for the extraction"
-            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID)
+        then: "job result fetched, extraction marked completed, conflict detection runs"
+            1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus("some-raw-response")
+            1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> 1
+            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 3
     }
 
-    def "TC-WHS-03: runs conflict detection with case-insensitive 'COMPLETED' status"() {
-        given: "extraction is found"
+    def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also triggers fetch and conflict detection"() {
+        given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-            conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
 
-        when: "handler receives a webhook with status in uppercase"
+        when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
-        then: "conflict detection still runs"
-            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID)
+        then:
+            1 * reductoClient.getJobStatus(JOB_ID) >> completedJobStatus(null)
+            1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _) >> 1
+            1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
     }
 
-    // ==================== handle — failed status ====================
+    // ==================== handle — Failed status ====================
 
-    def "TC-WHS-04: does NOT run conflict detection when payload status is 'Failed'"() {
-        given: "extraction is found"
+    def "TC-WHS-04: on Failed — fetches job status for reason and marks extraction failed"() {
+        given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
 
-        when: "handler receives a Failed webhook"
+        when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
-        then: "conflict detection is NOT called for failures"
+        then: "job status fetched and extraction marked failed with reason"
+            1 * reductoClient.getJobStatus(JOB_ID) >> failedJobStatus("OCR timeout after 900s")
+            1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, "OCR timeout after 900s") >> 1
             0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
-    def "TC-WHS-05: does NOT run conflict detection for unknown/null status"() {
-        given: "extraction is found"
+    def "TC-WHS-05: on Failed with null reason — uses fallback reason string"() {
+        given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
 
-        when: "handler receives a webhook with an unknown status"
+        when:
+            handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
+
+        then: "fallback reason is used when Reducto provides no reason"
+            1 * reductoClient.getJobStatus(JOB_ID) >> failedJobStatus(null)
+            1 * preconExtractionRepository.markAsFailed(EXTRACTION_ID, _ as String) >> 1
+    }
+
+    def "TC-WHS-06: does NOT call Reducto API or mark extraction for unknown/intermediate status"() {
+        given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
+
+        when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
 
-        then: "conflict detection is NOT called"
+        then: "no Reducto API call, no state change, no conflict detection"
+            0 * reductoClient.getJobStatus(_)
+            0 * preconExtractionRepository.markAsCompleted(_, _)
+            0 * preconExtractionRepository.markAsFailed(_, _)
             0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
-    // ==================== handle — conflict detector result ====================
+    // ==================== handle — Reducto API failure ====================
 
-    def "TC-WHS-06: handles zero conflicted rows from ConflictDetector without error"() {
-        given: "extraction found, no conflicts detected"
+    def "TC-WHS-07: wraps IOException from getJobStatus as IllegalStateException"() {
+        given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-            conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
+            reductoClient.getJobStatus(JOB_ID) >> { throw new IOException("connection refused") }
 
-        when: "handler is called"
+        when:
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "completes without exception"
-            noExceptionThrown()
-    }
-
-    def "TC-WHS-07: handles multiple conflicted rows from ConflictDetector without error"() {
-        given: "extraction found, 5 conflicts detected"
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2", "doc-3"])
-            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
-            conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 5
-
-        when: "handler is called"
-            handlerService.handle(completedPayload(JOB_ID))
-
-        then: "completes without exception"
-            noExceptionThrown()
+        then:
+            thrown(IllegalStateException)
+            0 * conflictDetector.detectAndMarkConflicts(_)
     }
 
     // ==================== handle — lookup uses correct job_id ====================
 
     def "TC-WHS-08: passes job_id from payload to repository lookup"() {
-        given: "capture the job_id passed to findByExternalTaskId"
+        given:
             String capturedJobId = null
             preconExtractionRepository.findByExternalTaskId(_ as String) >> { String id ->
                 capturedJobId = id
                 return Optional.empty()
             }
 
-        when: "handler is called — NotFoundException expected"
-            def payload = new ReductoWebhookPayload("specific-job-id-99", "Completed")
+        when:
             try {
-                handlerService.handle(payload)
+                handlerService.handle(new ReductoWebhookPayload("specific-job-id-99", "Completed"))
             } catch (NotFoundException ignored) {}
 
-        then: "repository was queried with the exact job_id from the payload"
+        then:
             capturedJobId == "specific-job-id-99"
     }
 
@@ -138,6 +149,20 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     private static ReductoWebhookPayload completedPayload(String jobId) {
         return new ReductoWebhookPayload(jobId, "Completed")
+    }
+
+    private static ReductoJobStatusResponse completedJobStatus(String rawResponse) {
+        return ReductoJobStatusResponse.builder()
+                .status("Completed")
+                .rawResponse(rawResponse)
+                .build()
+    }
+
+    private static ReductoJobStatusResponse failedJobStatus(String reason) {
+        return ReductoJobStatusResponse.builder()
+                .status("Failed")
+                .reason(reason)
+                .build()
     }
 
     private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {

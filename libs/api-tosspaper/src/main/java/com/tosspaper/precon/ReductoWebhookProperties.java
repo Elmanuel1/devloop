@@ -1,6 +1,8 @@
 package com.tosspaper.precon;
 
 import jakarta.validation.constraints.NotBlank;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -17,6 +19,8 @@ import org.springframework.validation.annotation.Validated;
  *     svix-secret: "${REDUCTO_WEBHOOK_SVIX_SECRET}"
  * </pre>
  */
+@Getter
+@Setter
 @ConfigurationProperties(prefix = "reducto.webhook")
 @Validated
 public class ReductoWebhookProperties {
@@ -29,12 +33,4 @@ public class ReductoWebhookProperties {
      */
     @NotBlank
     private String svixSecret;
-
-    public String getSvixSecret() {
-        return svixSecret;
-    }
-
-    public void setSvixSecret(String svixSecret) {
-        this.svixSecret = svixSecret;
-    }
 }
