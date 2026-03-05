@@ -30,6 +30,7 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 @RequiredArgsConstructor
 public class PreconExtractionRepositoryImpl implements PreconExtractionRepository {
 
+    // Bridge until flyway-jooq-classes is republished with V3.8 columns
     private static final org.jooq.Field<String> EXTERNAL_TASK_ID =
             DSL.field("external_task_id", String.class);
 
@@ -77,15 +78,15 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     public int reapStaleExtractions(int staleMinutes) {
         log.debug("[ExtractionPoll] Reaping stale PROCESSING extractions older than {} minutes", staleMinutes);
 
-        OffsetDateTime staleThreshold = OffsetDateTime.now().minusMinutes(staleMinutes);
-
         return dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.STATUS, ExtractionStatus.PENDING.getValue())
                 .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(EXTRACTIONS.STATUS.eq(ExtractionStatus.PROCESSING.getValue()))
                 .and(EXTRACTIONS.DELETED_AT.isNull())
-                .and(EXTRACTIONS.UPDATED_AT.lt(staleThreshold))
+                .and(EXTRACTIONS.UPDATED_AT.lt(
+                        DSL.field("CURRENT_TIMESTAMP - ({0} * interval '1 minute')",
+                                OffsetDateTime.class, DSL.val(staleMinutes))))
                 .execute();
     }
 
