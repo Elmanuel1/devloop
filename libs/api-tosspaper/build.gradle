@@ -68,6 +68,9 @@ dependencies {
 	implementation libs.aws.s3
 	implementation libs.aws.sqs
 	
+	// Apache PDFBox (document text extraction for classification)
+	implementation libs.pdfbox
+
 	// Mailgun SDK
 	implementation libs.mailgun
 

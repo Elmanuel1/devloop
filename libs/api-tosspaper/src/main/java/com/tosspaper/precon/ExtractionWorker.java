@@ -12,7 +12,9 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,9 +24,10 @@ import java.util.List;
  *
  * <h3>Per-document steps</h3>
  * <ol>
- *   <li><b>Classify</b> — download first {@value #CLASSIFY_BYTE_COUNT} bytes from S3
- *       and call {@link DocumentClassifier#isSupported}. Unsupported types are
- *       skipped silently.</li>
+ *   <li><b>Classify</b> — stream the full document from S3 and pass to
+ *       {@link DocumentClassifier#isSupported}. The default implementation
+ *       ({@link PdfBoxDocumentClassifier}) extracts PDF text via Apache PDFBox
+ *       and applies keyword matching. Unsupported types are skipped.</li>
  *   <li><b>Submit</b> — call {@link ReductoClient#submit} with the document's S3 key
  *       and the configured webhook URL. One call per document; Reducto has no
  *       batch endpoint.</li>
@@ -32,8 +35,6 @@ import java.util.List;
  *
  * <h3>Hard cap</h3>
  * <p>At most {@value #MAX_DOCUMENTS_PER_BATCH} documents are processed per extraction.
- * The cap is enforced at creation time by {@link TenderExtractionAdapter}; this class
- * applies a defensive guard for belt-and-suspenders safety.
  *
  * <h3>Idempotency</h3>
  * <p>The worker is safe to call multiple times for the same extraction. Step 1 (classify)
@@ -49,9 +50,6 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ExtractionWorker {
-
-    /** Number of bytes downloaded from S3 to classify a document type. */
-    static final int CLASSIFY_BYTE_COUNT = 4096;
 
     /** Hard cap on documents processed per extraction batch. */
     static final int MAX_DOCUMENTS_PER_BATCH = 20;
@@ -138,12 +136,12 @@ public class ExtractionWorker {
             return false;
         }
 
-        // Step 1: classify via magic-byte header download
-        byte[] header = downloadHeader(extractionId, documentId, document.getS3Key());
-        if (header == null) {
+        // Step 1: classify — download full document content from S3 and pass to classifier
+        InputStream contentStream = openContentStream(extractionId, documentId, document.getS3Key());
+        if (contentStream == null) {
             return false;
         }
-        if (!documentClassifier.isSupported(documentId, header)) {
+        if (!documentClassifier.isSupported(documentId, contentStream)) {
             log.info("[ExtractionWorker] Extraction '{}' document '{}' — unsupported type, skipping",
                     extractionId, documentId);
             return true; // skip is not a failure
@@ -166,25 +164,27 @@ public class ExtractionWorker {
     }
 
     /**
-     * Downloads the first {@value #CLASSIFY_BYTE_COUNT} bytes of a document from S3.
+     * Opens a full-content {@link InputStream} for a document stored in S3.
      *
      * <p>Package-private to allow spy-based unit test overrides without mocking
-     * the non-mockable {@link ResponseInputStream} class.
+     * the non-mockable {@link ResponseInputStream} class from the AWS SDK.
      *
-     * @return the header bytes, or {@code null} on any S3 or I/O failure
+     * @return an {@link InputStream} over the document bytes, or {@code null} on any failure
      */
-    byte[] downloadHeader(String extractionId, String documentId, String s3Key) {
+    InputStream openContentStream(String extractionId, String documentId, String s3Key) {
         try {
             GetObjectRequest request = GetObjectRequest.builder()
                     .bucket(fileProperties.getUploadBucket())
                     .key(s3Key)
-                    .range("bytes=0-%d".formatted(CLASSIFY_BYTE_COUNT - 1))
                     .build();
+            // Read all bytes eagerly so the HTTP connection can be released before classification.
+            // PDFBox may need to seek back in the stream; wrapping in ByteArrayInputStream is safe.
             try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(request)) {
-                return stream.readAllBytes();
+                byte[] bytes = stream.readAllBytes();
+                return new ByteArrayInputStream(bytes);
             }
         } catch (IOException | SdkException e) {
-            log.error("[ExtractionWorker] Extraction '{}' document '{}' — S3 header download failed: {}",
+            log.error("[ExtractionWorker] Extraction '{}' document '{}' — S3 content download failed: {}",
                     extractionId, documentId, e.getMessage(), e);
             return null;
         }

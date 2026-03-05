@@ -9,12 +9,15 @@ import software.amazon.awssdk.services.s3.S3Client
 import spock.lang.Specification
 import spock.lang.Subject
 
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+
 /**
  * Unit tests for {@link ExtractionWorker}.
  *
  * <p>AWS SDK's {@link software.amazon.awssdk.core.ResponseInputStream} is a final class
  * that Spock cannot mock. The fix is to spy on {@link ExtractionWorker} and stub the
- * package-private {@code downloadHeader()} method, which isolates the S3 I/O layer
+ * package-private {@code openContentStream()} method, which isolates the S3 I/O layer
  * without requiring a mockable stream type.
  */
 class ExtractionWorkerSpec extends Specification {
@@ -29,8 +32,8 @@ class ExtractionWorkerSpec extends Specification {
 
     ObjectMapper mapper = new ObjectMapper()
 
-    // PDF magic bytes — accepted by MagicByteDocumentClassifier
-    static final byte[] PDF_HEADER = [0x25, 0x50, 0x44, 0x46] as byte[]
+    /** A minimal PDF-like stream — content doesn't matter because documentClassifier is mocked. */
+    static final InputStream DUMMY_STREAM = new ByteArrayInputStream("dummy".bytes)
 
     static final String EXTRACTION_ID = "ext-001"
     static final String DOCUMENT_ID = "doc-001"
@@ -51,17 +54,14 @@ class ExtractionWorkerSpec extends Specification {
     }
 
     /**
-     * Creates a worker Spy with {@code downloadHeader} pre-stubbed to return {@code PDF_HEADER}.
+     * Creates a worker Spy with {@code openContentStream} pre-stubbed to return a dummy stream.
      * Individual tests override this default stub when they need different behaviour.
      */
-    private ExtractionWorker spyWorker(byte[] defaultHeader = PDF_HEADER) {
-        def base = new ExtractionWorker(
-                documentClassifier, reductoClient, fieldValidator,
-                documentRepository, reductoProperties, s3Client, fileProperties)
+    private ExtractionWorker spyWorker(InputStream defaultStream = new ByteArrayInputStream("dummy".bytes)) {
         def spy = Spy(ExtractionWorker, constructorArgs: [
                 documentClassifier, reductoClient, fieldValidator,
                 documentRepository, reductoProperties, s3Client, fileProperties])
-        spy.downloadHeader(_, _, _) >> defaultHeader
+        spy.openContentStream(_, _, _) >> defaultStream
         return spy
     }
 
@@ -122,17 +122,12 @@ class ExtractionWorkerSpec extends Specification {
             ExtractionWorker.MAX_DOCUMENTS_PER_BATCH == 20
     }
 
-    def "TC-EW-05: CLASSIFY_BYTE_COUNT constant is 4096"() {
-        expect:
-            ExtractionWorker.CLASSIFY_BYTE_COUNT == 4096
-    }
-
     // ── Unsupported document type ─────────────────────────────────────────────
 
-    def "TC-EW-06: unsupported document type is skipped — Reducto is NOT called"() {
-        given: "classifier rejects the document type"
+    def "TC-EW-05: unsupported document type is skipped — Reducto is NOT called"() {
+        given: "classifier rejects the document"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
-            def worker = spyWorker([0x89, 0x50, 0x4E, 0x47] as byte[]) // PNG bytes
+            def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.isSupported(DOCUMENT_ID, _) >> false
 
@@ -146,7 +141,7 @@ class ExtractionWorkerSpec extends Specification {
             result != null
     }
 
-    def "TC-EW-07: processDocument returns true for unsupported type (not a failure)"() {
+    def "TC-EW-06: processDocument returns true for unsupported type (not a failure)"() {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -162,8 +157,8 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── S3 failure ────────────────────────────────────────────────────────────
 
-    def "TC-EW-08: S3 download failure causes processDocument to return false"() {
-        given: "downloadHeader returns null — simulates S3 failure"
+    def "TC-EW-07: S3 download failure causes processDocument to return false"() {
+        given: "openContentStream returns null — simulates S3 failure"
             def worker = spyWorker(null) // null means download failed
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
 
@@ -177,7 +172,7 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Document lookup failure ───────────────────────────────────────────────
 
-    def "TC-EW-09: document lookup failure causes processDocument to return false"() {
+    def "TC-EW-08: document lookup failure causes processDocument to return false"() {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> {
@@ -189,12 +184,12 @@ class ExtractionWorkerSpec extends Specification {
 
         then:
             !result
-            0 * worker.downloadHeader(_, _, _)
+            0 * worker.openContentStream(_, _, _)
     }
 
     // ── Reducto submission failure ────────────────────────────────────────────
 
-    def "TC-EW-10: Reducto client exception causes processDocument to return false"() {
+    def "TC-EW-09: Reducto client exception causes processDocument to return false"() {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -212,7 +207,7 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Reducto submit request fields ─────────────────────────────────────────
 
-    def "TC-EW-11: submit request contains the correct extraction ID, document ID, S3 key, and webhook URL"() {
+    def "TC-EW-10: submit request contains the correct extraction ID, document ID, S3 key, and webhook URL"() {
         given:
             def capturedRequests = []
             def worker = spyWorker()
@@ -238,7 +233,7 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── One failure does not abort other documents ────────────────────────────
 
-    def "TC-EW-12: failure in one document does not prevent remaining documents from being processed"() {
+    def "TC-EW-11: failure in one document does not prevent remaining documents from being processed"() {
         given: "three documents — first fails lookup, rest succeed"
             def docIds = ["fail-doc", "ok-doc-1", "ok-doc-2"]
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
@@ -263,7 +258,7 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── validateAndWriteFields ────────────────────────────────────────────────
 
-    def "TC-EW-13: validateAndWriteFields returns true when fieldValidator accepts payload"() {
+    def "TC-EW-12: validateAndWriteFields returns true when fieldValidator accepts payload"() {
         given:
             def payload = mapper.readTree('{"tender_title": "Bridge Contract"}')
             def worker = spyWorker()
@@ -276,7 +271,7 @@ class ExtractionWorkerSpec extends Specification {
             result
     }
 
-    def "TC-EW-14: validateAndWriteFields returns false when fieldValidator rejects payload"() {
+    def "TC-EW-13: validateAndWriteFields returns false when fieldValidator rejects payload"() {
         given:
             def worker = spyWorker()
             fieldValidator.isValid(DOCUMENT_ID, NullNode.instance) >> false
@@ -288,7 +283,7 @@ class ExtractionWorkerSpec extends Specification {
             !result
     }
 
-    def "TC-EW-15: validateAndWriteFields delegates to fieldValidator — no direct validation logic in worker"() {
+    def "TC-EW-14: validateAndWriteFields delegates to fieldValidator — no direct validation logic in worker"() {
         given:
             def payload = mapper.readTree('{}')
             def worker = spyWorker()
@@ -300,20 +295,17 @@ class ExtractionWorkerSpec extends Specification {
             1 * fieldValidator.isValid(DOCUMENT_ID, payload) >> false
     }
 
-    // ── downloadHeader is called with the correct S3 key ─────────────────────
+    // ── openContentStream is called with the correct S3 key ──────────────────
 
-    def "TC-EW-16: processDocument calls downloadHeader with the document s3Key from the DB record"() {
+    def "TC-EW-15: processDocument calls openContentStream with the document s3Key from the DB record"() {
         given:
             def capturedKeys = []
-            def base = new ExtractionWorker(
-                    documentClassifier, reductoClient, fieldValidator,
-                    documentRepository, reductoProperties, s3Client, fileProperties)
             def worker = Spy(ExtractionWorker, constructorArgs: [
                     documentClassifier, reductoClient, fieldValidator,
                     documentRepository, reductoProperties, s3Client, fileProperties])
-            worker.downloadHeader(_, _, _) >> { String extId, String docId, String key ->
+            worker.openContentStream(_, _, _) >> { String extId, String docId, String key ->
                 capturedKeys << key
-                return PDF_HEADER
+                return new ByteArrayInputStream("dummy".bytes)
             }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.isSupported(_, _) >> true
