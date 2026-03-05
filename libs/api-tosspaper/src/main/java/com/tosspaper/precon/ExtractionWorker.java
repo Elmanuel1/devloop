@@ -14,9 +14,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -139,11 +137,11 @@ public class ExtractionWorker {
         }
 
         // Step 1: classify — download full document content from S3 and pass to classifier
-        InputStream contentStream = openContentStream(extractionId, documentId, document.getS3Key());
-        if (contentStream == null) {
+        byte[] contentBytes = readContentBytes(extractionId, documentId, document.getS3Key());
+        if (contentBytes == null) {
             return false;
         }
-        ConstructionDocumentType documentType = documentClassifier.classify(documentId, contentStream);
+        ConstructionDocumentType documentType = documentClassifier.classify(documentId, contentBytes);
         if (documentType == ConstructionDocumentType.UNKNOWN) {
             log.warn("[ExtractionWorker] Extraction '{}' document '{}' — classified as UNKNOWN, skipping",
                     extractionId, documentId);
@@ -167,24 +165,21 @@ public class ExtractionWorker {
     }
 
     /**
-     * Opens a full-content {@link InputStream} for a document stored in S3.
+     * Reads all bytes for a document stored in S3.
      *
      * <p>Package-private to allow spy-based unit test overrides without mocking
      * the non-mockable {@link ResponseInputStream} class from the AWS SDK.
      *
-     * @return an {@link InputStream} over the document bytes, or {@code null} on any failure
+     * @return the document bytes, or {@code null} on any failure
      */
-    InputStream openContentStream(String extractionId, String documentId, String s3Key) {
+    byte[] readContentBytes(String extractionId, String documentId, String s3Key) {
         try {
             GetObjectRequest request = GetObjectRequest.builder()
                     .bucket(fileProperties.getUploadBucket())
                     .key(s3Key)
                     .build();
-            // Read all bytes eagerly so the HTTP connection can be released before classification.
-            // PDFBox may need to seek back in the stream; wrapping in ByteArrayInputStream is safe.
             try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(request)) {
-                byte[] bytes = stream.readAllBytes();
-                return new ByteArrayInputStream(bytes);
+                return stream.readAllBytes();
             }
         } catch (IOException | SdkException e) {
             log.error("[ExtractionWorker] Extraction '{}' document '{}' — S3 content download failed: {}",

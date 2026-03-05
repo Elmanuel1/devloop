@@ -51,13 +51,13 @@ public class ExtractionPipelineRunner {
     // ── Per-extraction pipeline chain ─────────────────────────────────────────
 
     /**
-     * Builds the async pipeline chain for a single extraction: delegates to
-     * {@link ExtractionWorker#process}, marks completed on success, marks
-     * failed on error.
+     * Builds the async pipeline chain for a single extraction: calls
+     * {@link ExtractionWorker#process} directly, marks completed on success,
+     * marks failed on error.
      */
     private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
         return CompletableFuture
-                .supplyAsync(() -> callReducto(extraction), extractionProcessingExecutor)
+                .supplyAsync(() -> extractionWorker.process(extraction), extractionProcessingExecutor)
                 .thenAccept(result -> preconExtractionRepository.markAsCompleted(extraction.getId(), result))
                 .exceptionally(ex -> handleProcessingFailure(extraction, ex));
     }
@@ -68,20 +68,5 @@ public class ExtractionPipelineRunner {
                 extraction.getId(), cause.getMessage(), cause);
         preconExtractionRepository.markAsFailed(extraction.getId(), cause.getMessage());
         return null;
-    }
-
-    // ── Per-extraction call ───────────────────────────────────────────────────
-
-    /**
-     * Calls the ExtractionWorker for the given extraction.
-     * Runs on a virtual thread from the bounded {@code extractionProcessingExecutor}.
-     *
-     * @param extraction the full extraction context (entity type, entity ID, document list)
-     * @return the pipeline result produced by the worker
-     */
-    PipelineExtractionResult callReducto(ExtractionWithDocs extraction) {
-        log.debug("[ExtractionPipeline] Processing extraction '{}' via ExtractionWorker",
-                extraction.getId());
-        return extractionWorker.process(extraction);
     }
 }

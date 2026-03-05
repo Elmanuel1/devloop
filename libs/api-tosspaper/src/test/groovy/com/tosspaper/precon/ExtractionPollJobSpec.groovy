@@ -8,21 +8,17 @@ class ExtractionPollJobSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
     ExtractionPipelineRunner pipelineRunner = Mock()
-    ReductoProperties reductoProperties = new ReductoProperties()
+    ExtractionProcessingProperties processingProperties = new ExtractionProcessingProperties()
 
     @Subject
     ExtractionPollJob job
 
     def setup() {
-        reductoProperties.setBaseUrl("https://api.reducto.ai")
-        reductoProperties.setApiKey("test-key")
-        reductoProperties.setWebhookBaseUrl("https://app.example.com")
-        reductoProperties.setWebhookPath("/internal/reducto/webhook")
-        reductoProperties.setBatchSize(20)
-        reductoProperties.setStaleMinutes(15)
-        reductoProperties.setTimeoutSeconds(30)
+        processingProperties.setBatchSize(20)
+        processingProperties.setStaleMinutes(15)
+        processingProperties.setThreadPoolSize(5)
 
-        job = new ExtractionPollJob(repository, pipelineRunner, reductoProperties)
+        job = new ExtractionPollJob(repository, pipelineRunner, processingProperties)
     }
 
     // ── poll — no pending records ─────────────────────────────────────────────
@@ -53,7 +49,7 @@ class ExtractionPollJobSpec extends Specification {
             1 * pipelineRunner.run([e1, e2])
     }
 
-    def "TC-PJ-03: poll claims exactly reductoProperties.batchSize rows from repository"() {
+    def "TC-PJ-03: poll claims exactly processingProperties.batchSize rows from repository"() {
         when:
             job.poll()
 
@@ -63,7 +59,7 @@ class ExtractionPollJobSpec extends Specification {
 
     def "TC-PJ-04: poll uses configured batch size — not a hardcoded constant"() {
         given: "batch size changed to 10"
-            reductoProperties.setBatchSize(10)
+            processingProperties.setBatchSize(10)
 
         when:
             job.poll()
@@ -108,7 +104,7 @@ class ExtractionPollJobSpec extends Specification {
 
     def "TC-PJ-08: reap uses configured staleMinutes — not a hardcoded constant"() {
         given: "stale threshold changed to 30 minutes"
-            reductoProperties.setStaleMinutes(30)
+            processingProperties.setStaleMinutes(30)
 
         when:
             job.reap()
@@ -140,16 +136,16 @@ class ExtractionPollJobSpec extends Specification {
             noExceptionThrown()
     }
 
-    // ── ReductoProperties defaults ────────────────────────────────────────────
+    // ── ExtractionProcessingProperties defaults ───────────────────────────────
 
     def "TC-PJ-11: default batch size is 20"() {
         expect:
-            new ReductoProperties().getBatchSize() == 20
+            new ExtractionProcessingProperties().getBatchSize() == 20
     }
 
     def "TC-PJ-12: default stale minutes is 15"() {
         expect:
-            new ReductoProperties().getStaleMinutes() == 15
+            new ExtractionProcessingProperties().getStaleMinutes() == 15
     }
 
     // ── Helper methods ────────────────────────────────────────────────────────

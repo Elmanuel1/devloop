@@ -11,15 +11,12 @@ import software.amazon.awssdk.services.s3.S3Client
 import spock.lang.Specification
 import spock.lang.Subject
 
-import java.io.ByteArrayInputStream
-import java.io.InputStream
-
 /**
  * Unit tests for {@link ExtractionWorker}.
  *
  * <p>AWS SDK's {@link software.amazon.awssdk.core.ResponseInputStream} is a final class
  * that Spock cannot mock. The fix is to spy on {@link ExtractionWorker} and stub the
- * package-private {@code openContentStream()} method, which isolates the S3 I/O layer
+ * package-private {@code readContentBytes()} method, which isolates the S3 I/O layer
  * without requiring a mockable stream type.
  */
 class ExtractionWorkerSpec extends Specification {
@@ -34,8 +31,8 @@ class ExtractionWorkerSpec extends Specification {
 
     ObjectMapper mapper = new ObjectMapper()
 
-    /** A minimal PDF-like stream — content doesn't matter because documentClassifier is mocked. */
-    static final InputStream DUMMY_STREAM = new ByteArrayInputStream("dummy".bytes)
+    /** Dummy bytes — content doesn't matter because documentClassifier is mocked. */
+    static final byte[] DUMMY_BYTES = "dummy".bytes
 
     static final String EXTRACTION_ID = "ext-001"
     static final String DOCUMENT_ID = "doc-001"
@@ -58,14 +55,14 @@ class ExtractionWorkerSpec extends Specification {
     }
 
     /**
-     * Creates a worker Spy with {@code openContentStream} pre-stubbed to return a dummy stream.
+     * Creates a worker Spy with {@code readContentBytes} pre-stubbed to return dummy bytes.
      * Individual tests override this default stub when they need different behaviour.
      */
-    private ExtractionWorker spyWorker(InputStream defaultStream = new ByteArrayInputStream("dummy".bytes)) {
+    private ExtractionWorker spyWorker(byte[] defaultBytes = DUMMY_BYTES) {
         def spy = Spy(ExtractionWorker, constructorArgs: [
                 documentClassifier, reductoClient, fieldValidator,
                 documentRepository, reductoProperties, s3Client, fileProperties])
-        spy.openContentStream(_, _, _) >> defaultStream
+        spy.readContentBytes(_, _, _) >> defaultBytes
         return spy
     }
 
@@ -173,7 +170,7 @@ class ExtractionWorkerSpec extends Specification {
     // ── S3 failure ────────────────────────────────────────────────────────────
 
     def "TC-EW-07: S3 download failure causes processDocument to return false"() {
-        given: "openContentStream returns null — simulates S3 failure"
+        given: "readContentBytes returns null — simulates S3 failure"
             def worker = spyWorker(null) // null means download failed
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
 
@@ -199,7 +196,7 @@ class ExtractionWorkerSpec extends Specification {
 
         then:
             !result
-            0 * worker.openContentStream(_, _, _)
+            0 * worker.readContentBytes(_, _, _)
     }
 
     // ── Reducto submission failure ────────────────────────────────────────────
@@ -329,17 +326,17 @@ class ExtractionWorkerSpec extends Specification {
             1 * fieldValidator.isValid(DOCUMENT_ID, payload) >> false
     }
 
-    // ── openContentStream is called with the correct S3 key ──────────────────
+    // ── readContentBytes is called with the correct S3 key ───────────────────
 
-    def "TC-EW-15: processDocument calls openContentStream with the document s3Key from the DB record"() {
+    def "TC-EW-15: processDocument calls readContentBytes with the document s3Key from the DB record"() {
         given:
             def capturedKeys = []
             def worker = Spy(ExtractionWorker, constructorArgs: [
                     documentClassifier, reductoClient, fieldValidator,
                     documentRepository, reductoProperties, s3Client, fileProperties])
-            worker.openContentStream(_, _, _) >> { String extId, String docId, String key ->
+            worker.readContentBytes(_, _, _) >> { String extId, String docId, String key ->
                 capturedKeys << key
-                return new ByteArrayInputStream("dummy".bytes)
+                return DUMMY_BYTES
             }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ

@@ -23,95 +23,81 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     // ==================== run(List) — batch entry point ====================
 
-    def "TC-PR-01: run submits one future per extraction in the batch"() {
+    def "TC-PR-01: run calls extractionWorker.process once per extraction in the batch"() {
         given: "two extractions in the batch"
             def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> emptyResult("ignored")
+            extractionWorker.process(e1) >> emptyResult("ext-id-1")
+            extractionWorker.process(e2) >> emptyResult("ext-id-2")
 
         when: "run is called with the full batch"
-            runnerSpy.run([e1, e2])
+            runner.run([e1, e2])
 
-        then: "callReducto was called once per extraction"
-            1 * runnerSpy.callReducto(e1)
-            1 * runnerSpy.callReducto(e2)
+        then: "extractionWorker.process was called once per extraction"
+            1 * extractionWorker.process(e1) >> emptyResult("ext-id-1")
+            1 * extractionWorker.process(e2) >> emptyResult("ext-id-2")
     }
 
-    def "TC-PR-12: run with empty batch is a no-op — callReducto is never called"() {
-        given: "a spy to detect any callReducto calls"
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-
+    def "TC-PR-12: run with empty batch is a no-op — extractionWorker.process is never called"() {
         when: "run is called with an empty batch"
-            runnerSpy.run([])
+            runner.run([])
 
-        then: "callReducto is never invoked"
-            0 * runnerSpy.callReducto(_)
+        then: "the worker is never invoked"
+            0 * extractionWorker.process(_)
     }
 
-    // ==================== callReducto — delegates to ExtractionWorker ====================
+    // ==================== process delegates to ExtractionWorker ====================
 
-    def "TC-PR-04: callReducto delegates to ExtractionWorker.process"() {
+    def "TC-PR-04: run delegates per-extraction work directly to extractionWorker.process"() {
         given: "an extraction context"
             def extraction = buildExtractionWithDocs("ext-1", ["doc-xyz"])
-            extractionWorker.process(extraction) >> emptyResult("ext-1")
 
-        when: "callReducto is invoked directly"
-            def result = runner.callReducto(extraction)
+        when: "run is invoked"
+            runner.run([extraction])
 
-        then: "extractionWorker.process was called"
+        then: "extractionWorker.process was called with the extraction"
             1 * extractionWorker.process(extraction) >> emptyResult("ext-1")
-            result != null
-            result.extractionId() == "ext-1"
     }
 
-    def "TC-PR-04b: callReducto takes only the extraction context — no separate document ID arg"() {
-        given: "a spy that stubs callReducto"
+    def "TC-PR-04b: run passes the full extraction context to extractionWorker.process — not just an ID"() {
+        given: "an extraction with multiple documents"
             def extraction = buildExtractionWithDocs("ext-ctx", ["doc-1", "doc-2"])
             def capturedContexts = []
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx ->
+            extractionWorker.process(_) >> { ExtractionWithDocs ctx ->
                 capturedContexts << ctx
                 return emptyResult(ctx.getId())
             }
 
         when: "run is called"
-            runnerSpy.run([extraction])
+            runner.run([extraction])
 
-        then: "callReducto received the full extraction context, not just an ID"
+        then: "extractionWorker.process received the full extraction context, not just an ID"
             capturedContexts.size() == 1
             capturedContexts[0].is(extraction)
     }
 
     // ==================== Success path ====================
 
-    def "TC-PR-05: successful callReducto result is passed to markAsCompleted"() {
-        given: "a spy with a successful callReducto"
+    def "TC-PR-05: successful process result is passed to markAsCompleted"() {
+        given:
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
             def expectedResult = emptyResult(extraction.getId())
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(extraction) >> expectedResult
+            extractionWorker.process(extraction) >> expectedResult
 
         when: "run is called"
-            runnerSpy.run([extraction])
+            runner.run([extraction])
 
         then: "markAsCompleted is called with the extraction ID and the result"
             1 * repository.markAsCompleted("ext-ok", expectedResult) >> 1
     }
 
     def "TC-PR-13: run completes normally when all extractions succeed"() {
-        given: "a spy with successful callReducto"
+        given:
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> emptyResult(extraction.getId())
+            extractionWorker.process(_) >> emptyResult(extraction.getId())
 
         when: "run is called"
-            runnerSpy.run([extraction])
+            runner.run([extraction])
 
         then: "no exception thrown"
             noExceptionThrown()
@@ -119,15 +105,13 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     // ==================== Error handling ====================
 
-    def "TC-PR-07: failure in callReducto marks extraction as FAILED with error reason"() {
-        given: "a spy that throws on callReducto"
+    def "TC-PR-07: failure in extractionWorker.process marks extraction as FAILED with error reason"() {
+        given:
             def extraction = buildExtractionWithDocs("ext-fail", ["doc-1"])
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> { throw new RuntimeException("network error — prepare failed") }
+            extractionWorker.process(_) >> { throw new RuntimeException("network error — prepare failed") }
 
         when: "run is called (synchronous via same-thread executor)"
-            runnerSpy.run([extraction])
+            runner.run([extraction])
 
         then: "extraction IS marked FAILED with the error message stored"
             1 * repository.markAsFailed("ext-fail", "network error — prepare failed") >> 1
@@ -137,13 +121,11 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "a batch of two extractions — one fails, one succeeds"
             def failing  = buildExtractionWithDocs("ext-fail", ["doc-bad"])
             def succeeds = buildExtractionWithDocs("ext-ok",   ["doc-good"])
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
-            runnerSpy.callReducto(failing)  >> { throw new RuntimeException("boom") }
-            runnerSpy.callReducto(succeeds) >> emptyResult(succeeds.getId())
+            extractionWorker.process(failing)  >> { throw new RuntimeException("boom") }
+            extractionWorker.process(succeeds) >> emptyResult(succeeds.getId())
 
         when: "run is called with the full batch"
-            runnerSpy.run([failing, succeeds])
+            runner.run([failing, succeeds])
 
         then: "the failing extraction is marked FAILED with its error reason"
             1 * repository.markAsFailed("ext-fail", "boom") >> 1
@@ -153,18 +135,17 @@ class ExtractionPipelineRunnerSpec extends Specification {
     }
 
     def "TC-PR-11: executor is used for all extraction submissions — bounded concurrency is exercised"() {
-        given: "a spy executor that records each submitted task"
+        given: "a tracking executor that records each submitted task"
             def submittedTasks = []
             Executor trackingExecutor = { Runnable r -> submittedTasks << r; r.run() }
             def e1 = buildExtractionWithDocs("ext-1", ["doc-X"])
             def e2 = buildExtractionWithDocs("ext-2", ["doc-Y"])
             def e3 = buildExtractionWithDocs("ext-3", ["doc-Z"])
-            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, extractionWorker, trackingExecutor])
-            runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx -> emptyResult(ctx.getId()) }
+            def trackingRunner = new ExtractionPipelineRunner(repository, extractionWorker, trackingExecutor)
+            extractionWorker.process(_) >> { ExtractionWithDocs ctx -> emptyResult(ctx.getId()) }
 
         when: "run is called with three extractions"
-            runnerSpy.run([e1, e2, e3])
+            trackingRunner.run([e1, e2, e3])
 
         then: "the executor received one task submission per extraction"
             submittedTasks.size() == 3

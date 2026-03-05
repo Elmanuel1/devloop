@@ -9,9 +9,7 @@ import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
 
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.InputStream
 
 /**
  * Unit tests for {@link PdfBoxDocumentClassifier}.
@@ -26,25 +24,25 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     // ── Null / invalid input → UNKNOWN ───────────────────────────────────────
 
-    def "TC-CL-01: null stream returns UNKNOWN"() {
+    def "TC-CL-01: null byte array returns UNKNOWN"() {
         when:
-            def result = classifier.classify("doc-1", null)
+            def result = classifier.classify("doc-1", (byte[]) null)
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
 
-    def "TC-CL-02: empty stream (non-PDF bytes) returns UNKNOWN"() {
+    def "TC-CL-02: empty byte array returns UNKNOWN"() {
         when:
-            def result = classifier.classify("doc-empty", new ByteArrayInputStream(new byte[0]))
+            def result = classifier.classify("doc-empty", new byte[0])
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
 
-    def "TC-CL-03: stream containing non-PDF bytes returns UNKNOWN"() {
+    def "TC-CL-03: non-PDF bytes returns UNKNOWN"() {
         given: "random bytes that are not a valid PDF"
             byte[] garbage = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] as byte[] // GIF header
         when:
-            def result = classifier.classify("doc-gif", new ByteArrayInputStream(garbage))
+            def result = classifier.classify("doc-gif", garbage)
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
@@ -53,9 +51,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     def "TC-CL-04: PDF with no extractable text returns UNKNOWN (likely scanned image)"() {
         given: "a valid PDF with a blank page — no text layer"
-            InputStream stream = buildPdf("")
+            byte[] bytes = buildPdf("")
         when:
-            def result = classifier.classify("doc-scanned", stream)
+            def result = classifier.classify("doc-scanned", bytes)
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
@@ -64,9 +62,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     def "TC-CL-05: PDF with no construction tender keywords returns UNKNOWN"() {
         given: "a PDF about something completely unrelated"
-            InputStream stream = buildPdf("This is a birthday greeting card. Happy birthday to you from the team.")
+            byte[] bytes = buildPdf("This is a birthday greeting card. Happy birthday to you from the team.")
         when:
-            def result = classifier.classify("doc-unrelated", stream)
+            def result = classifier.classify("doc-unrelated", bytes)
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
@@ -76,9 +74,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-06: PDF containing BOQ keyword '#keyword' is classified as BILL_OF_QUANTITIES"() {
         given:
-            InputStream stream = buildPdf("Project: Road Construction Phase 1 - Tender Documents. ${keyword}.")
+            byte[] bytes = buildPdf("Project: Road Construction Phase 1 - Tender Documents. ${keyword}.")
         when:
-            def result = classifier.classify("doc-boq", stream)
+            def result = classifier.classify("doc-boq", bytes)
         then:
             result == ConstructionDocumentType.BILL_OF_QUANTITIES
         where:
@@ -91,9 +89,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-07: PDF containing drawings keyword '#keyword' is classified as DRAWINGS"() {
         given:
-            InputStream stream = buildPdf("${keyword} for the proposed school building construction project.")
+            byte[] bytes = buildPdf("${keyword} for the proposed school building construction project.")
         when:
-            def result = classifier.classify("doc-drawings", stream)
+            def result = classifier.classify("doc-drawings", bytes)
         then:
             result == ConstructionDocumentType.DRAWINGS
         where:
@@ -106,9 +104,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-08: PDF containing specifications keyword '#keyword' is classified as SPECIFICATIONS"() {
         given:
-            InputStream stream = buildPdf("${keyword} for the construction of a new water treatment plant.")
+            byte[] bytes = buildPdf("${keyword} for the construction of a new water treatment plant.")
         when:
-            def result = classifier.classify("doc-spec", stream)
+            def result = classifier.classify("doc-spec", bytes)
         then:
             result == ConstructionDocumentType.SPECIFICATIONS
         where:
@@ -121,9 +119,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-09: PDF containing contract keyword '#keyword' is classified as CONDITIONS_OF_CONTRACT"() {
         given:
-            InputStream stream = buildPdf("${keyword} applicable to this civil engineering construction contract.")
+            byte[] bytes = buildPdf("${keyword} applicable to this civil engineering construction contract.")
         when:
-            def result = classifier.classify("doc-contract", stream)
+            def result = classifier.classify("doc-contract", bytes)
         then:
             result == ConstructionDocumentType.CONDITIONS_OF_CONTRACT
         where:
@@ -136,9 +134,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-10: PDF containing tender notice keyword '#keyword' is classified as TENDER_NOTICE"() {
         given:
-            InputStream stream = buildPdf("${keyword} for the supply of construction materials and labour.")
+            byte[] bytes = buildPdf("${keyword} for the supply of construction materials and labour.")
         when:
-            def result = classifier.classify("doc-notice", stream)
+            def result = classifier.classify("doc-notice", bytes)
         then:
             result == ConstructionDocumentType.TENDER_NOTICE
         where:
@@ -151,9 +149,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     @Unroll
     def "TC-CL-11: PDF containing preliminaries keyword '#keyword' is classified as PRELIMINARIES"() {
         given:
-            InputStream stream = buildPdf("${keyword} section applicable to the building construction contract.")
+            byte[] bytes = buildPdf("${keyword} section applicable to the building construction contract.")
         when:
-            def result = classifier.classify("doc-prelims", stream)
+            def result = classifier.classify("doc-prelims", bytes)
         then:
             result == ConstructionDocumentType.PRELIMINARIES
         where:
@@ -165,10 +163,10 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     def "TC-CL-12: document with more BOQ keywords than drawings keywords is classified as BILL_OF_QUANTITIES"() {
         given: "text has 3 BOQ keywords and 1 drawings keyword"
-            InputStream stream = buildPdf(
+            byte[] bytes = buildPdf(
                 "bill of quantities schedule of rates preambles daywork. drawing list provided separately.")
         when:
-            def result = classifier.classify("doc-mixed", stream)
+            def result = classifier.classify("doc-mixed", bytes)
         then:
             result == ConstructionDocumentType.BILL_OF_QUANTITIES
     }
@@ -177,9 +175,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     def "TC-CL-13: keyword matching is case-insensitive"() {
         given:
-            InputStream stream = buildPdf("BILL OF QUANTITIES FOR THE PROPOSED ROAD WORKS PROJECT")
+            byte[] bytes = buildPdf("BILL OF QUANTITIES FOR THE PROPOSED ROAD WORKS PROJECT")
         when:
-            def result = classifier.classify("doc-upper", stream)
+            def result = classifier.classify("doc-upper", bytes)
         then:
             result == ConstructionDocumentType.BILL_OF_QUANTITIES
     }
@@ -189,10 +187,10 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     def "TC-CL-14: different document IDs with the same content return the same classification"() {
         given:
             def text = "bill of quantities for the construction of a new school building."
-            InputStream streamA = buildPdf(text)
-            InputStream streamB = buildPdf(text)
+            byte[] bytesA = buildPdf(text)
+            byte[] bytesB = buildPdf(text)
         expect:
-            classifier.classify("doc-A", streamA) == classifier.classify("doc-B", streamB)
+            classifier.classify("doc-A", bytesA) == classifier.classify("doc-B", bytesB)
     }
 
     // ── Constants ─────────────────────────────────────────────────────────────
@@ -222,9 +220,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     /**
      * Builds an in-memory PDF whose single page contains the supplied text.
-     * Returns an {@link InputStream} over the serialised PDF bytes.
+     * Returns the serialised PDF as a {@code byte[]}.
      */
-    private static InputStream buildPdf(String text) {
+    private static byte[] buildPdf(String text) {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream()
         PDDocument doc = new PDDocument()
         PDPage page = new PDPage()
@@ -242,6 +240,6 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         }
         doc.save(buffer)
         doc.close()
-        return new ByteArrayInputStream(buffer.toByteArray())
+        return buffer.toByteArray()
     }
 }

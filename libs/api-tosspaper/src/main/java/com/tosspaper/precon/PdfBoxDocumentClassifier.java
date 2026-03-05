@@ -6,6 +6,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.EnumMap;
@@ -146,14 +147,14 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
     }
 
     @Override
-    public ConstructionDocumentType classify(String documentId, InputStream contentStream) {
-        if (contentStream == null) {
-            log.warn("[DocumentClassifier] Document '{}' — content stream is null, returning UNKNOWN",
+    public ConstructionDocumentType classify(String documentId, byte[] contentBytes) {
+        if (contentBytes == null || contentBytes.length == 0) {
+            log.warn("[DocumentClassifier] Document '{}' — content bytes are null or empty, returning UNKNOWN",
                     documentId);
             return ConstructionDocumentType.UNKNOWN;
         }
 
-        String text = extractText(documentId, contentStream);
+        String text = extractText(documentId, new ByteArrayInputStream(contentBytes));
         if (text == null) {
             return ConstructionDocumentType.UNKNOWN;
         }
