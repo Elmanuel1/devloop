@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.precon.ConstructionDocumentType;
 import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -16,18 +17,18 @@ import java.util.Map;
 /**
  * Default {@link DocumentClassifier} that uses Apache PDFBox to extract text from a
  * PDF document and then applies per-type exclusive keyword matching to classify it as
- * a specific {@link TenderDocumentType}.
+ * a specific {@link ConstructionDocumentType}.
  *
  * <h3>Classification strategy</h3>
- * <p>Each {@link TenderDocumentType} owns a distinct, non-overlapping keyword set.
+ * <p>Each {@link ConstructionDocumentType} owns a distinct, non-overlapping keyword set.
  * For each type, the classifier counts how many of that type's keywords appear in the
  * extracted text. The type with the highest hit count wins. Ties are broken by the
- * natural declaration order of {@link TenderDocumentType}. If no type scores at least
- * one hit, {@link TenderDocumentType#UNKNOWN} is returned.
+ * natural declaration order of {@link ConstructionDocumentType}. If no type scores at
+ * least one hit, {@link ConstructionDocumentType#UNKNOWN} is returned.
  *
  * <h3>Non-PDF documents</h3>
  * <p>If PDFBox cannot load the stream (e.g. the document is a DOCX, a scanned image
- * with no text layer, or an encrypted PDF), {@link TenderDocumentType#UNKNOWN} is
+ * with no text layer, or an encrypted PDF), {@link ConstructionDocumentType#UNKNOWN} is
  * returned and a warning is logged.
  */
 @Slf4j
@@ -41,16 +42,16 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
     static final int MIN_TEXT_LENGTH = 50;
 
     /**
-     * Exclusive keyword sets keyed by {@link TenderDocumentType}.
+     * Exclusive keyword sets keyed by {@link ConstructionDocumentType}.
      * No keyword appears in more than one type's list — they are mutually exclusive.
      */
-    static final Map<TenderDocumentType, List<String>> TYPE_KEYWORDS;
+    static final Map<ConstructionDocumentType, List<String>> TYPE_KEYWORDS;
 
     static {
-        Map<TenderDocumentType, List<String>> map = new EnumMap<>(TenderDocumentType.class);
+        Map<ConstructionDocumentType, List<String>> map = new EnumMap<>(ConstructionDocumentType.class);
 
         // BILL_OF_QUANTITIES — pricing and measurement documents
-        map.put(TenderDocumentType.BILL_OF_QUANTITIES, List.of(
+        map.put(ConstructionDocumentType.BILL_OF_QUANTITIES, List.of(
                 "bill of quantities",
                 "schedule of rates",
                 "preambles",
@@ -65,7 +66,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         ));
 
         // DRAWINGS — graphical / plan documents
-        map.put(TenderDocumentType.DRAWINGS, List.of(
+        map.put(ConstructionDocumentType.DRAWINGS, List.of(
                 "drawing list",
                 "drawing no",
                 "drawing number",
@@ -82,7 +83,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         ));
 
         // SPECIFICATIONS — technical description of works
-        map.put(TenderDocumentType.SPECIFICATIONS, List.of(
+        map.put(ConstructionDocumentType.SPECIFICATIONS, List.of(
                 "technical specification",
                 "workmanship",
                 "materials and workmanship",
@@ -97,7 +98,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         ));
 
         // CONDITIONS_OF_CONTRACT — legal / contractual framework
-        map.put(TenderDocumentType.CONDITIONS_OF_CONTRACT, List.of(
+        map.put(ConstructionDocumentType.CONDITIONS_OF_CONTRACT, List.of(
                 "conditions of contract",
                 "general conditions",
                 "special conditions",
@@ -113,7 +114,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         ));
 
         // TENDER_NOTICE — cover / invitation documents
-        map.put(TenderDocumentType.TENDER_NOTICE, List.of(
+        map.put(ConstructionDocumentType.TENDER_NOTICE, List.of(
                 "invitation to tender",
                 "tender notice",
                 "request for proposal",
@@ -128,7 +129,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         ));
 
         // PRELIMINARIES — general site establishment items
-        map.put(TenderDocumentType.PRELIMINARIES, List.of(
+        map.put(ConstructionDocumentType.PRELIMINARIES, List.of(
                 "preliminaries",
                 "prelims",
                 "site establishment",
@@ -150,27 +151,27 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
         if (contentStream == null) {
             log.warn("[DocumentClassifier] Document '{}' — content stream is null, returning UNKNOWN",
                     documentId);
-            return TenderDocumentType.UNKNOWN;
+            return ConstructionDocumentType.UNKNOWN;
         }
 
         String text = extractText(documentId, contentStream);
         if (text == null) {
-            return TenderDocumentType.UNKNOWN;
+            return ConstructionDocumentType.UNKNOWN;
         }
 
         if (text.length() < MIN_TEXT_LENGTH) {
             log.info("[DocumentClassifier] Document '{}' — extracted text too short ({} chars), "
                     + "likely a scanned image with no text layer, returning UNKNOWN",
                     documentId, text.length());
-            return TenderDocumentType.UNKNOWN;
+            return ConstructionDocumentType.UNKNOWN;
         }
 
         String lowerText = text.toLowerCase(Locale.ROOT);
-        TenderDocumentType best = TenderDocumentType.UNKNOWN;
+        ConstructionDocumentType best = ConstructionDocumentType.UNKNOWN;
         int bestScore = 0;
 
-        for (TenderDocumentType type : TenderDocumentType.values()) {
-            if (type == TenderDocumentType.UNKNOWN) {
+        for (ConstructionDocumentType type : ConstructionDocumentType.values()) {
+            if (type == ConstructionDocumentType.UNKNOWN) {
                 continue;
             }
             List<String> keywords = TYPE_KEYWORDS.getOrDefault(type, List.of());
@@ -181,7 +182,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
             }
         }
 
-        if (best == TenderDocumentType.UNKNOWN) {
+        if (best == ConstructionDocumentType.UNKNOWN) {
             log.info("[DocumentClassifier] Document '{}' — no type keywords matched, returning UNKNOWN",
                     documentId);
         } else {

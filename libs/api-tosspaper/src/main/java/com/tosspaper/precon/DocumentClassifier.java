@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.precon.ConstructionDocumentType;
 import com.tosspaper.models.precon.TenderDocumentType;
 
 import java.io.InputStream;
@@ -12,7 +13,7 @@ import java.io.InputStream;
  * document category. The type is forwarded to Reducto so it can apply the
  * correct extraction schema for that document category.
  *
- * <p>{@link TenderDocumentType#UNKNOWN} is returned when the document cannot
+ * <p>{@link ConstructionDocumentType#UNKNOWN} is returned when the document cannot
  * be parsed or when no keyword set produces a confident match. The caller
  * ({@link ExtractionWorker}) skips documents classified as {@code UNKNOWN}.
  *
@@ -31,7 +32,7 @@ public interface DocumentClassifier {
      * @param documentId    the document ID (used for logging only)
      * @param contentStream an {@link InputStream} over the full document content
      * @return the classified {@link TenderDocumentType}; never {@code null}.
-     *         Returns {@link TenderDocumentType#UNKNOWN} for unrecognised documents.
+     *         Returns {@link ConstructionDocumentType#UNKNOWN} for unrecognised documents.
      */
     TenderDocumentType classify(String documentId, InputStream contentStream);
 }

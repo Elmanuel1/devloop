@@ -9,8 +9,9 @@ import com.tosspaper.models.precon.TenderDocumentType;
  * @param documentId     the document being submitted
  * @param s3Key          the S3 object key for the document
  * @param webhookUrl     the URL Reducto should call when extraction is complete
- * @param documentType   the classified {@link TenderDocumentType}; drives which
- *                       Reducto extraction schema is applied to this document
+ * @param documentType   the classified {@link TenderDocumentType} (typically a
+ *                       {@link com.tosspaper.models.precon.ConstructionDocumentType});
+ *                       drives which Reducto extraction schema is applied to this document
  */
 public record ReductoSubmitRequest(
         String extractionId,

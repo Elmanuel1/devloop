@@ -1,73 +1,28 @@
 package com.tosspaper.models.precon;
 
 /**
- * Mutually exclusive classification types for construction tender documents.
+ * Base type for all tender document type classifications. Implementations must be enums.
  *
- * <p>Each document in a tender package belongs to exactly one type. The classifier
- * assigns the type with the most keyword hits from that type's exclusive keyword set.
- * When no type's keywords are found, or when the document cannot be parsed,
- * {@link #UNKNOWN} is returned.
+ * <p>This interface acts as the abstraction layer for document classification so that
+ * callers (e.g. {@code DocumentClassifier}, {@code ExtractionWorker}) depend on the
+ * interface rather than any specific classification scheme. A concrete implementation
+ * (e.g. {@link ConstructionDocumentType}) provides the actual enum constants.
  *
- * <p>The type is forwarded to Reducto with each extraction submission so that
- * Reducto can apply the correct extraction schema for that document category.
+ * <p>Because Java enums can implement interfaces, any procurement domain can supply
+ * its own enum that implements this interface without modifying the classifier
+ * contract.
  *
- * <h3>Type descriptions</h3>
- * <ul>
- *   <li>{@link #BILL_OF_QUANTITIES} — the priced list of work items (BOQ / schedule of
- *       rates / preambles). The primary costing document in a construction tender.</li>
- *   <li>{@link #DRAWINGS} — architectural and engineering drawings, plans, and
- *       graphical specifications. Identified by drawing-list headers and sheet
- *       reference blocks.</li>
- *   <li>{@link #SPECIFICATIONS} — technical specifications describing materials,
- *       workmanship standards, and scope of work. Also covers method statements
- *       and technical requirements.</li>
- *   <li>{@link #CONDITIONS_OF_CONTRACT} — the legal/contractual framework:
- *       general conditions, special conditions, contract data, and employer's
- *       requirements.</li>
- *   <li>{@link #TENDER_NOTICE} — the invitation to tender, tender notice, or
- *       cover/index page that introduces the tender package.</li>
- *   <li>{@link #PRELIMINARIES} — the preliminaries / prelims section covering
- *       site establishment, contractor's general obligations, and fixed
- *       on-cost items not allocated to individual work sections.</li>
- *   <li>{@link #UNKNOWN} — fallback when classification yields no confident match.</li>
- * </ul>
+ * @see ConstructionDocumentType
  */
-public enum TenderDocumentType {
+public interface TenderDocumentType {
 
     /**
-     * Bill of Quantities — priced list of work items.
-     * Also covers schedule of rates and preambles.
+     * Returns a stable, human-readable code for this document type.
+     *
+     * <p>For enums, the default implementation delegates to {@link Enum#name()},
+     * so no override is required in concrete enums.
+     *
+     * @return the enum constant name, e.g. {@code "BILL_OF_QUANTITIES"}
      */
-    BILL_OF_QUANTITIES,
-
-    /**
-     * Architectural / engineering drawings and plans.
-     */
-    DRAWINGS,
-
-    /**
-     * Technical specifications and scope of work.
-     */
-    SPECIFICATIONS,
-
-    /**
-     * Contract conditions — general, special, and employer's requirements.
-     */
-    CONDITIONS_OF_CONTRACT,
-
-    /**
-     * Invitation to tender / tender notice / cover page.
-     */
-    TENDER_NOTICE,
-
-    /**
-     * Preliminaries — site establishment, general obligations, fixed on-costs.
-     */
-    PRELIMINARIES,
-
-    /**
-     * Fallback — no confident classification was possible.
-     * Documents with this type are skipped and not submitted to Reducto.
-     */
-    UNKNOWN
+    String name();
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.exception.ReductoClientException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
+import com.tosspaper.models.precon.ConstructionDocumentType;
 import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -144,7 +145,7 @@ public class ExtractionWorker {
             return false;
         }
         TenderDocumentType documentType = documentClassifier.classify(documentId, contentStream);
-        if (documentType == TenderDocumentType.UNKNOWN) {
+        if (documentType == ConstructionDocumentType.UNKNOWN) {
             log.warn("[ExtractionWorker] Extraction '{}' document '{}' — classified as UNKNOWN, skipping",
                     extractionId, documentId);
             return true; // skip is not a failure

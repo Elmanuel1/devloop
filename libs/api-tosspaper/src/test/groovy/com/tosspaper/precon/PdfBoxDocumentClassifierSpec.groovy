@@ -1,6 +1,6 @@
 package com.tosspaper.precon
 
-import com.tosspaper.models.precon.TenderDocumentType
+import com.tosspaper.models.precon.ConstructionDocumentType
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
@@ -30,14 +30,14 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-1", null)
         then:
-            result == TenderDocumentType.UNKNOWN
+            result == ConstructionDocumentType.UNKNOWN
     }
 
     def "TC-CL-02: empty stream (non-PDF bytes) returns UNKNOWN"() {
         when:
             def result = classifier.classify("doc-empty", new ByteArrayInputStream(new byte[0]))
         then:
-            result == TenderDocumentType.UNKNOWN
+            result == ConstructionDocumentType.UNKNOWN
     }
 
     def "TC-CL-03: stream containing non-PDF bytes returns UNKNOWN"() {
@@ -46,7 +46,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-gif", new ByteArrayInputStream(garbage))
         then:
-            result == TenderDocumentType.UNKNOWN
+            result == ConstructionDocumentType.UNKNOWN
     }
 
     // ── Scanned image PDF (no text layer) → UNKNOWN ──────────────────────────
@@ -57,7 +57,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-scanned", stream)
         then:
-            result == TenderDocumentType.UNKNOWN
+            result == ConstructionDocumentType.UNKNOWN
     }
 
     // ── Unrecognised content → UNKNOWN ────────────────────────────────────────
@@ -68,7 +68,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-unrelated", stream)
         then:
-            result == TenderDocumentType.UNKNOWN
+            result == ConstructionDocumentType.UNKNOWN
     }
 
     // ── BILL_OF_QUANTITIES ────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-boq", stream)
         then:
-            result == TenderDocumentType.BILL_OF_QUANTITIES
+            result == ConstructionDocumentType.BILL_OF_QUANTITIES
         where:
             keyword << ["bill of quantities", "schedule of rates", "preambles",
                         "provisional sum", "daywork", "boq", "quantity surveyor"]
@@ -95,7 +95,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-drawings", stream)
         then:
-            result == TenderDocumentType.DRAWINGS
+            result == ConstructionDocumentType.DRAWINGS
         where:
             keyword << ["drawing list", "drawing no", "architectural drawing",
                         "structural drawing", "site plan", "floor plan", "as built"]
@@ -110,7 +110,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-spec", stream)
         then:
-            result == TenderDocumentType.SPECIFICATIONS
+            result == ConstructionDocumentType.SPECIFICATIONS
         where:
             keyword << ["technical specification", "workmanship", "scope of work",
                         "method statement", "technical requirements", "quality assurance"]
@@ -125,7 +125,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-contract", stream)
         then:
-            result == TenderDocumentType.CONDITIONS_OF_CONTRACT
+            result == ConstructionDocumentType.CONDITIONS_OF_CONTRACT
         where:
             keyword << ["conditions of contract", "general conditions", "special conditions",
                         "liquidated damages", "retention", "defects liability", "force majeure"]
@@ -140,7 +140,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-notice", stream)
         then:
-            result == TenderDocumentType.TENDER_NOTICE
+            result == ConstructionDocumentType.TENDER_NOTICE
         where:
             keyword << ["invitation to tender", "tender notice", "request for proposal",
                         "instructions to tenderers", "closing date", "tender reference"]
@@ -155,7 +155,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-prelims", stream)
         then:
-            result == TenderDocumentType.PRELIMINARIES
+            result == ConstructionDocumentType.PRELIMINARIES
         where:
             keyword << ["preliminaries", "prelims", "site establishment",
                         "temporary works", "scaffolding", "mobilisation"]
@@ -170,7 +170,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-mixed", stream)
         then:
-            result == TenderDocumentType.BILL_OF_QUANTITIES
+            result == ConstructionDocumentType.BILL_OF_QUANTITIES
     }
 
     // ── Case insensitivity ────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
         when:
             def result = classifier.classify("doc-upper", stream)
         then:
-            result == TenderDocumentType.BILL_OF_QUANTITIES
+            result == ConstructionDocumentType.BILL_OF_QUANTITIES
     }
 
     // ── Document ID is only used for logging ─────────────────────────────────
@@ -202,10 +202,10 @@ class PdfBoxDocumentClassifierSpec extends Specification {
             PdfBoxDocumentClassifier.MIN_TEXT_LENGTH == 50
     }
 
-    def "TC-CL-16: TYPE_KEYWORDS map covers all non-UNKNOWN TenderDocumentTypes"() {
+    def "TC-CL-16: TYPE_KEYWORDS map covers all non-UNKNOWN ConstructionDocumentTypes"() {
         given:
-            def nonUnknownTypes = TenderDocumentType.values().findAll {
-                it != TenderDocumentType.UNKNOWN
+            def nonUnknownTypes = ConstructionDocumentType.values().findAll {
+                it != ConstructionDocumentType.UNKNOWN
             }
         expect:
             nonUnknownTypes.every { PdfBoxDocumentClassifier.TYPE_KEYWORDS.containsKey(it) }

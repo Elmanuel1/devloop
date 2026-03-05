@@ -6,7 +6,7 @@ import com.tosspaper.common.NotFoundException
 import com.tosspaper.models.exception.ReductoClientException
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
-import com.tosspaper.models.precon.TenderDocumentType
+import com.tosspaper.models.precon.ConstructionDocumentType
 import software.amazon.awssdk.services.s3.S3Client
 import spock.lang.Specification
 import spock.lang.Subject
@@ -43,7 +43,7 @@ class ExtractionWorkerSpec extends Specification {
     static final String BUCKET = "tosspaper-docs"
     static final String TASK_ID = "reducto-task-123"
     static final String WEBHOOK_URL = "https://my-service.example.com/internal/reducto/webhook"
-    static final TenderDocumentType BOQ = TenderDocumentType.BILL_OF_QUANTITIES
+    static final ConstructionDocumentType BOQ = ConstructionDocumentType.BILL_OF_QUANTITIES
 
     def setup() {
         reductoProperties.setBaseUrl("https://api.reducto.ai")
@@ -144,7 +144,7 @@ class ExtractionWorkerSpec extends Specification {
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.classify(DOCUMENT_ID, _) >> TenderDocumentType.UNKNOWN
+            documentClassifier.classify(DOCUMENT_ID, _) >> ConstructionDocumentType.UNKNOWN
 
         when:
             def result = worker.process(extraction)
@@ -160,7 +160,7 @@ class ExtractionWorkerSpec extends Specification {
         given:
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.classify(_, _) >> TenderDocumentType.UNKNOWN
+            documentClassifier.classify(_, _) >> ConstructionDocumentType.UNKNOWN
 
         when:
             def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
@@ -227,7 +227,7 @@ class ExtractionWorkerSpec extends Specification {
             def capturedRequests = []
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.classify(_, _) >> TenderDocumentType.DRAWINGS
+            documentClassifier.classify(_, _) >> ConstructionDocumentType.DRAWINGS
             reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
                 capturedRequests << req
                 return new ReductoSubmitResponse(TASK_ID)
@@ -243,7 +243,7 @@ class ExtractionWorkerSpec extends Specification {
                 documentId() == DOCUMENT_ID
                 s3Key() == S3_KEY
                 webhookUrl() == WEBHOOK_URL
-                documentType() == TenderDocumentType.DRAWINGS
+                documentType() == ConstructionDocumentType.DRAWINGS
             }
     }
 
@@ -252,7 +252,7 @@ class ExtractionWorkerSpec extends Specification {
             def capturedTypes = []
             def worker = spyWorker()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.classify(_, _) >> TenderDocumentType.SPECIFICATIONS
+            documentClassifier.classify(_, _) >> ConstructionDocumentType.SPECIFICATIONS
             reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
                 capturedTypes << req.documentType()
                 return new ReductoSubmitResponse(TASK_ID)
@@ -262,7 +262,7 @@ class ExtractionWorkerSpec extends Specification {
             worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
 
         then:
-            capturedTypes == [TenderDocumentType.SPECIFICATIONS]
+            capturedTypes == [ConstructionDocumentType.SPECIFICATIONS]
     }
 
     // ── One failure does not abort other documents ────────────────────────────
