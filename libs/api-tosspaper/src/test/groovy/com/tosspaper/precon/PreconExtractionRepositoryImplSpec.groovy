@@ -319,6 +319,128 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
                 .status == "pending"
     }
 
+    // ==================== putDocumentExternalId ====================
+
+    def "TC-PR-PDEI01: stores ExternalId entry for a document in the JSONB map"() {
+        given: "a pending extraction and an ExternalId to record"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
+            def externalId = new ExternalId("task-abc", "file-xyz")
+
+        when: "storing the external ID for doc-1"
+            def rowsUpdated = preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-1", externalId)
+
+        then: "one row updated"
+            rowsUpdated == 1
+
+        and: "the JSONB map contains the expected entry"
+            def raw = dsl.fetch(
+                "SELECT document_external_ids->>'doc-1' AS entry FROM extractions WHERE id = ?",
+                extraction.id)
+            def entry = raw[0].getValue("entry") as String
+            entry.contains("task-abc")
+            entry.contains("file-xyz")
+    }
+
+    def "TC-PR-PDEI02: adding a second document does not overwrite the first"() {
+        given: "a processing extraction with one document already recorded"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1","doc-2"]')
+            preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-1", new ExternalId("task-first", "file-first"))
+
+        when: "storing an ExternalId for a second document"
+            preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-2", new ExternalId("task-second", "file-second"))
+
+        then: "both entries are present in the map"
+            def raw = dsl.fetch(
+                "SELECT document_external_ids FROM extractions WHERE id = ?",
+                extraction.id)
+            def mapJson = raw[0].getValue("document_external_ids") as String
+            mapJson.contains("task-first")
+            mapJson.contains("task-second")
+    }
+
+    def "TC-PR-PDEI03: returns 0 for a non-existent extraction"() {
+        when:
+            def rowsUpdated = preconExtractionRepository.putDocumentExternalId(
+                    "nonexistent-id", "doc-1", new ExternalId("task-x", "file-x"))
+
+        then:
+            rowsUpdated == 0
+    }
+
+    def "TC-PR-PDEI04: returns 0 for a soft-deleted extraction"() {
+        given: "a soft-deleted extraction"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
+            dsl.update(Tables.EXTRACTIONS)
+                .set(Tables.EXTRACTIONS.DELETED_AT, OffsetDateTime.now())
+                .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
+                .execute()
+
+        when:
+            def rowsUpdated = preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-1", new ExternalId("task-x", "file-x"))
+
+        then:
+            rowsUpdated == 0
+    }
+
+    // ==================== findByDocumentExternalTaskId ====================
+
+    def "TC-PR-FBDET01: returns extraction when the task ID is in the document_external_ids map"() {
+        given: "an extraction with an ExternalId recorded for doc-1"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1","doc-2"]')
+            preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-1", new ExternalId("task-find-me", "file-xyz"))
+
+        when: "looking up by task ID"
+            def result = preconExtractionRepository.findByDocumentExternalTaskId("task-find-me")
+
+        then: "the extraction is found"
+            result.isPresent()
+            result.get().id == extraction.id
+    }
+
+    def "TC-PR-FBDET02: returns empty Optional when no extraction owns the task ID"() {
+        when:
+            def result = preconExtractionRepository.findByDocumentExternalTaskId("unknown-task-xyz")
+
+        then:
+            result.isEmpty()
+    }
+
+    def "TC-PR-FBDET03: returns empty Optional for a soft-deleted extraction"() {
+        given: "a soft-deleted extraction with an ExternalId recorded"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
+            preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-1", new ExternalId("task-deleted", "file-deleted"))
+            dsl.update(Tables.EXTRACTIONS)
+                .set(Tables.EXTRACTIONS.DELETED_AT, OffsetDateTime.now())
+                .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
+                .execute()
+
+        when:
+            def result = preconExtractionRepository.findByDocumentExternalTaskId("task-deleted")
+
+        then: "soft-deleted extraction is excluded"
+            result.isEmpty()
+    }
+
+    def "TC-PR-FBDET04: returned ExtractionWithDocs contains parsed document IDs"() {
+        given: "an extraction with known document IDs"
+            def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-A","doc-B"]')
+            preconExtractionRepository.putDocumentExternalId(
+                    extraction.id, "doc-A", new ExternalId("task-doc-a", "file-doc-a"))
+
+        when:
+            def result = preconExtractionRepository.findByDocumentExternalTaskId("task-doc-a")
+
+        then: "document IDs are correctly parsed"
+            result.isPresent()
+            result.get().documentIds == ["doc-A", "doc-B"]
+    }
+
     // ==================== Helper Methods ====================
 
     private ExtractionsRecord insertExtraction(String companyId, String entityId,
