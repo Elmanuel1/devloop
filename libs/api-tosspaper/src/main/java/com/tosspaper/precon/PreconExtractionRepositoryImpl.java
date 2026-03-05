@@ -100,9 +100,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
 
     @Override
     public Optional<ExtractionWithDocs> findByExternalTaskId(String externalTaskId) {
-        // EXTERNAL_TASK_ID was added in V3.8 migration but is not yet in the generated
-        // jOOQ classes jar (v0.1.6). Use DSL.field() with the column name directly until
-        // the jar is regenerated with the new column.
+        // Raw bridge until jOOQ classes jar is regenerated with the EXTERNAL_TASK_ID column.
         return dsl.selectFrom(EXTRACTIONS)
                 .where(DSL.field("external_task_id", String.class).eq(externalTaskId))
                 .and(EXTRACTIONS.DELETED_AT.isNull())

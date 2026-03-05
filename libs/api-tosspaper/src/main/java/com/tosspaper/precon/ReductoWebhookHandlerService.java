@@ -10,23 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 
-/**
- * Business logic for inbound Reducto webhook callbacks.
- *
- * <h3>Responsibilities</h3>
- * <ol>
- *   <li>Look up the in-progress extraction by {@code job_id} (stored as {@code external_task_id}).</li>
- *   <li>On {@code Completed}: call Reducto's {@code GET /job/{job_id}} endpoint to fetch the
- *       extraction result, mark the extraction as completed, then run conflict detection.</li>
- *   <li>On {@code Failed}: call {@code GET /job/{job_id}} to obtain the failure reason, then
- *       mark the extraction as failed with that reason.</li>
- * </ol>
- *
- * <h3>Idempotency</h3>
- * <p>Duplicate Svix deliveries for the same {@code job_id} are safe — the underlying
- * {@code markAsCompleted} / {@code markAsFailed} repository methods guard on the
- * {@code PROCESSING} from-state, so a second call is a no-op.
- */
+/** Business logic for inbound Reducto webhook callbacks. Fetches job result via {@link ReductoClient} and updates extraction state. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -36,19 +20,6 @@ public class ReductoWebhookHandlerService {
     private final ConflictDetector conflictDetector;
     private final ReductoClient reductoClient;
 
-    /**
-     * Handles a verified, deserialised webhook payload from Reducto.
-     *
-     * <p>On {@code Completed}: fetches the full job result from Reducto, marks the
-     * extraction as completed, then triggers conflict detection.
-     *
-     * <p>On {@code Failed}: fetches the job status (for the failure reason), then marks
-     * the extraction as failed.
-     *
-     * @param payload the verified webhook payload
-     * @throws NotFoundException if no extraction matches the given {@code job_id}
-     * @throws IllegalStateException if the Reducto jobs API call fails
-     */
     public void handle(ReductoWebhookPayload payload) {
         String jobId = payload.jobId();
         log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
@@ -82,9 +53,7 @@ public class ReductoWebhookHandlerService {
         log.debug("[ReductoWebhook] Fetching completed job result for job_id={}", jobId);
         ReductoJobStatusResponse jobResult = fetchJobStatus(jobId);
 
-        // TODO [TOS-38]: Pass jobResult.getRawResponse() (or parsed fields) into
-        //  PipelineExtractionResult so markAsCompleted can persist extraction_fields.
-        //  For now fields=null matches the existing TOS-38 stub in markAsCompleted.
+        // TODO [TOS-38]: wire jobResult.getRawResponse() into PipelineExtractionResult.
         PipelineExtractionResult result = new PipelineExtractionResult(extractionId, null);
         preconExtractionRepository.markAsCompleted(extractionId, result);
         log.info("[ReductoWebhook] Marked extraction_id={} as completed (raw_response length={})",
