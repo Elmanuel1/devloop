@@ -54,13 +54,15 @@ public class ExtractionPipelineRunner {
         return CompletableFuture
                 .supplyAsync(() -> callReducto(extraction), extractionProcessingExecutor)
                 .thenAccept(result -> preconExtractionRepository.markAsCompleted(extraction.getId(), result))
-                .exceptionally(ex -> {
-                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                    log.error("[ExtractionPipeline] Failed for extraction {}: {}",
-                            extraction.getId(), cause.getMessage(), cause);
-                    preconExtractionRepository.markAsFailed(extraction.getId(), cause.getMessage());
-                    return null;
-                });
+                .exceptionally(ex -> handleProcessingFailure(extraction, ex));
+    }
+
+    private Void handleProcessingFailure(ExtractionWithDocs extraction, Throwable ex) {
+        Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+        log.error("[ExtractionPipeline] Failed for extraction {}: {}",
+                extraction.getId(), cause.getMessage(), cause);
+        preconExtractionRepository.markAsFailed(extraction.getId(), cause.getMessage());
+        return null;
     }
 
     // ── Per-extraction call ───────────────────────────────────────────────────

@@ -284,6 +284,41 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
             rowsUpdated == 0
     }
 
+    def "TC-PR-MAC03: markAsCompleted on a non-processing extraction returns 0 — FROM-state guard"() {
+        given: "a pending extraction (not yet claimed)"
+            def extraction = insertExtraction(companyIdStr, tenderId, "pending", '["doc-1"]')
+            def result = new PipelineExtractionResult(extraction.id, NullNode.getInstance())
+
+        when: "attempting to mark it completed without first claiming it"
+            def rowsUpdated = preconExtractionRepository.markAsCompleted(extraction.id, result)
+
+        then: "the FROM-state guard rejects the update — row must be PROCESSING first"
+            rowsUpdated == 0
+
+        and: "status is unchanged"
+            dsl.selectFrom(Tables.EXTRACTIONS)
+                .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
+                .fetchSingle()
+                .status == "pending"
+    }
+
+    def "TC-PR-MAF03: markAsFailed on a non-processing extraction returns 0 — FROM-state guard"() {
+        given: "a pending extraction (not yet claimed)"
+            def extraction = insertExtraction(companyIdStr, tenderId, "pending", '["doc-1"]')
+
+        when: "attempting to mark it failed without first claiming it"
+            def rowsUpdated = preconExtractionRepository.markAsFailed(extraction.id, "some error")
+
+        then: "the FROM-state guard rejects the update — row must be PROCESSING first"
+            rowsUpdated == 0
+
+        and: "status is unchanged"
+            dsl.selectFrom(Tables.EXTRACTIONS)
+                .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
+                .fetchSingle()
+                .status == "pending"
+    }
+
     // ==================== Helper Methods ====================
 
     private ExtractionsRecord insertExtraction(String companyId, String entityId,
