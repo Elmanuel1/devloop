@@ -112,7 +112,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — Reducto API failure ====================
 
-    def "TC-WHS-07: wraps IOException from getJobStatus as IllegalStateException"() {
+    def "TC-WHS-07: propagates IOException from getJobStatus directly"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
@@ -122,7 +122,7 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
             handlerService.handle(completedPayload(JOB_ID))
 
         then:
-            thrown(IllegalStateException)
+            thrown(IOException)
             0 * conflictDetector.detectAndMarkConflicts(_)
     }
 

@@ -20,7 +20,7 @@ public class ReductoWebhookHandlerService {
     private final ConflictDetector conflictDetector;
     private final ReductoClient reductoClient;
 
-    public void handle(ReductoWebhookPayload payload) {
+    public void handle(ReductoWebhookPayload payload) throws IOException {
         String jobId = payload.jobId();
         log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
                 jobId, payload.status());
@@ -49,9 +49,8 @@ public class ReductoWebhookHandlerService {
 
     // ── Private handlers ──────────────────────────────────────────────────────
 
-    private void handleCompleted(String jobId, String extractionId) {
-        log.debug("[ReductoWebhook] Fetching completed job result for job_id={}", jobId);
-        ReductoJobStatusResponse jobResult = fetchJobStatus(jobId);
+    private void handleCompleted(String jobId, String extractionId) throws IOException {
+        ReductoJobStatusResponse jobResult = reductoClient.getJobStatus(jobId);
 
         // TODO [TOS-38]: wire jobResult.getRawResponse() into PipelineExtractionResult.
         PipelineExtractionResult result = new PipelineExtractionResult(extractionId, null);
@@ -64,21 +63,11 @@ public class ReductoWebhookHandlerService {
                 extractionId, conflictedRows);
     }
 
-    private void handleFailed(String jobId, String extractionId) {
-        log.debug("[ReductoWebhook] Fetching failure reason for job_id={}", jobId);
-        ReductoJobStatusResponse jobResult = fetchJobStatus(jobId);
+    private void handleFailed(String jobId, String extractionId) throws IOException {
+        ReductoJobStatusResponse jobResult = reductoClient.getJobStatus(jobId);
 
         String reason = jobResult.getReason() != null ? jobResult.getReason() : "Reducto reported job as failed";
         preconExtractionRepository.markAsFailed(extractionId, reason);
         log.info("[ReductoWebhook] Marked extraction_id={} as failed — reason='{}'", extractionId, reason);
-    }
-
-    private ReductoJobStatusResponse fetchJobStatus(String jobId) {
-        try {
-            return reductoClient.getJobStatus(jobId);
-        } catch (IOException e) {
-            throw new IllegalStateException(
-                    "Failed to fetch job result from Reducto for job_id=%s: %s".formatted(jobId, e.getMessage()), e);
-        }
     }
 }
