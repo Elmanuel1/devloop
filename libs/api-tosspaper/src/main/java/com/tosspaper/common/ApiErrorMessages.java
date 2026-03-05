@@ -128,6 +128,7 @@ public final class ApiErrorMessages {
     // ── Not Implemented ──
     public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";
     public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
+    public static final String CALL_REDUCTO_NOT_IMPLEMENTED = "callReducto is not implemented yet — wire in TOS-38";
 
     // ── Application ──
     public static final String EXTRACTION_NOT_APPLICABLE_CODE        = "api.extraction.notApplicable";

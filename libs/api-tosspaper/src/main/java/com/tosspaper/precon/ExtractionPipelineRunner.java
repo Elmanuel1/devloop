@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.ApiErrorMessages;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -79,6 +80,6 @@ public class ExtractionPipelineRunner {
         log.debug("[ExtractionPipeline] callReducto invoked for extraction {} — not yet implemented (TOS-38)",
                 extraction.getId());
         throw new UnsupportedOperationException(
-                "callReducto is not implemented yet (TOS-38). Extraction: %s".formatted(extraction.getId()));
+                ApiErrorMessages.CALL_REDUCTO_NOT_IMPLEMENTED + " (extraction: " + extraction.getId() + ")");
     }
 }
