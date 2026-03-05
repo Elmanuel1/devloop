@@ -1,5 +1,7 @@
 -- V3.12__add_document_external_ids_to_extractions.sql
--- Add document_external_ids JSONB column to extractions.
+-- Replace the per-extraction external_task_id column (V3.8) with a per-document
+-- JSONB map that tracks both Reducto submission identifiers for every document
+-- in the extraction.
 --
 -- Each extraction processes one or more documents. When the ExtractionWorker
 -- (TOS-38) submits a document to Reducto it records two identifiers:
@@ -13,6 +15,11 @@
 --
 -- An empty object '{}' is the default; rows that have not yet been submitted
 -- to Reducto carry no entries.
+
+DROP INDEX IF EXISTS extractions_external_task_id_uq;
+
+ALTER TABLE extractions
+    DROP COLUMN IF EXISTS external_task_id;
 
 ALTER TABLE extractions
     ADD COLUMN IF NOT EXISTS document_external_ids JSONB NOT NULL DEFAULT '{}';
