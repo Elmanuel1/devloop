@@ -137,4 +137,15 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .execute();
     }
 
+    @Override
+    public int updateExternalFileId(String documentId, String externalFileId) {
+        log.info("Updating external_file_id for document - id: {}", documentId);
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(DSL.field("external_file_id", String.class), externalFileId)
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(documentId))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
 }

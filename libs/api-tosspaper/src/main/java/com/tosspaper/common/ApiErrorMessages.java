@@ -129,6 +129,12 @@ public final class ApiErrorMessages {
     public static final String NOT_IMPLEMENTED_CODE = "api.notImplemented";
     public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
 
+    // ── Webhook ──
+    public static final String WEBHOOK_INVALID_SIGNATURE_CODE = "api.webhook.invalidSignature";
+    public static final String WEBHOOK_INVALID_SIGNATURE      = "Webhook signature verification failed.";
+    public static final String WEBHOOK_TASK_NOT_FOUND_CODE    = "api.webhook.taskNotFound";
+    public static final String WEBHOOK_TASK_NOT_FOUND         = "No extraction found for the supplied task ID.";
+
     // ── Application ──
     public static final String EXTRACTION_NOT_APPLICABLE_CODE        = "api.extraction.notApplicable";
     public static final String EXTRACTION_NOT_APPLICABLE             = "Cannot apply extraction in '%s' status — extraction must be completed first.";

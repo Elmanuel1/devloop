@@ -292,6 +292,63 @@ class TenderDocumentRepositorySpec extends BaseIntegrationTest {
             rowsUpdated == 0
     }
 
+    // ==================== updateExternalFileId ====================
+
+    def "TC-TDR-UEFI01: stores the external_file_id for an existing document"() {
+        given: "an existing document"
+            def inserted = tenderDocumentRepository.insert(buildDocumentRecord(tenderId, companyIdStr, "upload.pdf"))
+
+        when: "updating the external file ID"
+            def rows = tenderDocumentRepository.updateExternalFileId(inserted.id, "reducto-file-abc")
+
+        then: "one row updated"
+            rows == 1
+
+        and: "external_file_id is persisted in the database"
+            def value = dsl.fetchValue(
+                "SELECT external_file_id FROM tender_documents WHERE id = ?",
+                inserted.id)
+            value == "reducto-file-abc"
+    }
+
+    def "TC-TDR-UEFI02: returns 0 for a nonexistent document"() {
+        when: "updating external_file_id for an ID that does not exist"
+            def rows = tenderDocumentRepository.updateExternalFileId("nonexistent-id", "some-file")
+
+        then: "no rows updated"
+            rows == 0
+    }
+
+    def "TC-TDR-UEFI03: returns 0 for a soft-deleted document"() {
+        given: "a soft-deleted document"
+            def inserted = tenderDocumentRepository.insert(buildDocumentRecord(tenderId, companyIdStr, "gone.pdf"))
+            tenderDocumentRepository.softDelete(inserted.id)
+
+        when: "updating external_file_id"
+            def rows = tenderDocumentRepository.updateExternalFileId(inserted.id, "reducto-file-xyz")
+
+        then: "no rows updated — soft-deleted rows are excluded"
+            rows == 0
+    }
+
+    def "TC-TDR-UEFI04: overwrites a previously set external_file_id"() {
+        given: "a document with an existing external_file_id"
+            def inserted = tenderDocumentRepository.insert(buildDocumentRecord(tenderId, companyIdStr, "replace.pdf"))
+            tenderDocumentRepository.updateExternalFileId(inserted.id, "old-file-id")
+
+        when: "updating with a new value"
+            def rows = tenderDocumentRepository.updateExternalFileId(inserted.id, "new-file-id")
+
+        then: "one row updated"
+            rows == 1
+
+        and: "the new value is stored"
+            def value = dsl.fetchValue(
+                "SELECT external_file_id FROM tender_documents WHERE id = ?",
+                inserted.id)
+            value == "new-file-id"
+    }
+
     // ==================== Helper Methods ====================
 
     private TenderDocumentsRecord buildDocumentRecord(String tenderId, String companyId, String fileName) {

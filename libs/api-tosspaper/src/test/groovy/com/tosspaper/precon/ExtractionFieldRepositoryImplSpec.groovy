@@ -348,6 +348,116 @@ class ExtractionFieldRepositoryImplSpec extends BaseIntegrationTest {
             remaining.isEmpty()
     }
 
+    // ==================== findAllByExtractionId ====================
+
+    def "TC-RF-FAEI01: returns all fields for an extraction ordered by created_at asc"() {
+        given: "three fields for the extraction"
+            insertFieldRecord(extractionId, "closing_date", "date")
+            insertFieldRecord(extractionId, "contract_value", "number")
+            insertFieldRecord(extractionId, "title", "text")
+
+        when: "finding all fields for the extraction"
+            def results = extractionFieldRepository.findAllByExtractionId(extractionId)
+
+        then: "all three fields are returned"
+            results.size() == 3
+            results.every { it.extractionId == extractionId }
+    }
+
+    def "TC-RF-FAEI02: returns empty list when no fields exist for the extraction"() {
+        when: "finding all fields for an extraction with no fields"
+            def results = extractionFieldRepository.findAllByExtractionId(extractionId)
+
+        then: "empty list is returned"
+            results.isEmpty()
+    }
+
+    def "TC-RF-FAEI03: does not return fields from other extractions"() {
+        given: "a second extraction with its own fields"
+            def otherExtractionId = UUID.randomUUID().toString()
+            insertExtractionRow(otherExtractionId, companyIdStr, tenderId)
+            insertFieldRecord(extractionId, "title", "text")
+            insertFieldRecord(otherExtractionId, "title", "text")
+
+        when: "finding all fields for the first extraction"
+            def results = extractionFieldRepository.findAllByExtractionId(extractionId)
+
+        then: "only the first extraction's fields are returned"
+            results.size() == 1
+            results[0].extractionId == extractionId
+    }
+
+    // ==================== markConflict ====================
+
+    def "TC-RF-MC01: marks all rows with given field_name as conflicted"() {
+        given: "two rows with the same field_name for the extraction"
+            def f1 = insertFieldRecord(extractionId, "closing_date", "date")
+            def f2 = insertFieldRecord(extractionId, "closing_date", "date")
+            insertFieldRecord(extractionId, "contract_value", "number")  // different field — should not be marked
+
+            def competingValues = JSONB.valueOf('[{"field_id":"f1","value":"2025-01-15","confidence":0.95}]')
+
+        when: "marking conflicts for 'closing_date'"
+            def rowsUpdated = extractionFieldRepository.markConflict(extractionId, "closing_date", competingValues)
+
+        then: "two rows are updated"
+            rowsUpdated == 2
+
+        and: "both closing_date rows have has_conflict = true"
+            def closingDateRows = dsl.selectFrom(Tables.EXTRACTION_FIELDS)
+                .where(Tables.EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
+                .and(Tables.EXTRACTION_FIELDS.FIELD_NAME.eq("closing_date"))
+                .fetch()
+            closingDateRows.every { it.hasConflict == true }
+            closingDateRows.every { it.competingValues != null }
+
+        and: "the contract_value row is unaffected"
+            dsl.selectFrom(Tables.EXTRACTION_FIELDS)
+                .where(Tables.EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
+                .and(Tables.EXTRACTION_FIELDS.FIELD_NAME.eq("contract_value"))
+                .fetchSingle()
+                .hasConflict == false
+    }
+
+    def "TC-RF-MC02: returns 0 when no rows match the field_name"() {
+        given: "fields for the extraction, but not the target field_name"
+            insertFieldRecord(extractionId, "title", "text")
+            def competingValues = JSONB.valueOf('[]')
+
+        when: "marking conflicts for a field that doesn't exist"
+            def rowsUpdated = extractionFieldRepository.markConflict(extractionId, "nonexistent_field", competingValues)
+
+        then: "no rows updated"
+            rowsUpdated == 0
+    }
+
+    def "TC-RF-MC03: only marks rows belonging to the given extraction"() {
+        given: "two extractions, each with a 'title' field"
+            def otherExtractionId = UUID.randomUUID().toString()
+            insertExtractionRow(otherExtractionId, companyIdStr, tenderId)
+            insertFieldRecord(extractionId, "title", "text")
+            insertFieldRecord(otherExtractionId, "title", "text")
+
+            def competingValues = JSONB.valueOf('[{"field_id":"x","value":"A","confidence":0.9}]')
+
+        when: "marking conflicts for the first extraction's 'title'"
+            extractionFieldRepository.markConflict(extractionId, "title", competingValues)
+
+        then: "only the first extraction's field is marked"
+            dsl.selectFrom(Tables.EXTRACTION_FIELDS)
+                .where(Tables.EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
+                .and(Tables.EXTRACTION_FIELDS.FIELD_NAME.eq("title"))
+                .fetchSingle()
+                .hasConflict == true
+
+        and: "the other extraction's field is NOT marked"
+            dsl.selectFrom(Tables.EXTRACTION_FIELDS)
+                .where(Tables.EXTRACTION_FIELDS.EXTRACTION_ID.eq(otherExtractionId))
+                .and(Tables.EXTRACTION_FIELDS.FIELD_NAME.eq("title"))
+                .fetchSingle()
+                .hasConflict == false
+    }
+
     // ==================== Helper Methods ====================
 
     private ExtractionFieldsRecord insertFieldRecord(String extractionId, String fieldName, String fieldType) {

@@ -18,6 +18,7 @@ import java.util.Map;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTION_FIELDS;
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
+import static org.jooq.impl.DSL.currentOffsetDateTime;
 
 @Slf4j
 @Repository
@@ -127,6 +128,25 @@ public class ExtractionFieldRepositoryImpl implements ExtractionFieldRepository 
 
             return new BulkUpdateResult(updatedRecords, rowsUpdated);
         });
+    }
+
+    @Override
+    public List<ExtractionFieldsRecord> findAllByExtractionId(String extractionId) {
+        return dsl.selectFrom(EXTRACTION_FIELDS)
+                .where(EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
+                .orderBy(EXTRACTION_FIELDS.CREATED_AT.asc(), EXTRACTION_FIELDS.ID.asc())
+                .fetch();
+    }
+
+    @Override
+    public int markConflict(String extractionId, String fieldName, JSONB competingValues) {
+        return dsl.update(EXTRACTION_FIELDS)
+                .set(EXTRACTION_FIELDS.HAS_CONFLICT, true)
+                .set(EXTRACTION_FIELDS.COMPETING_VALUES, competingValues)
+                .set(EXTRACTION_FIELDS.UPDATED_AT, currentOffsetDateTime())
+                .where(EXTRACTION_FIELDS.EXTRACTION_ID.eq(extractionId))
+                .and(EXTRACTION_FIELDS.FIELD_NAME.eq(fieldName))
+                .execute();
     }
 
     private String serializeCitationFilter(String documentId) {

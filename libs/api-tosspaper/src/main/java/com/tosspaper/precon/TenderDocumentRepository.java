@@ -23,4 +23,6 @@ public interface TenderDocumentRepository {
 
     int updateStatusToFailed(String id, String errorReason);
 
+    int updateExternalFileId(String documentId, String externalFileId);
+
 }

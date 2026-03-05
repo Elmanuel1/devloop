@@ -119,3 +119,7 @@ http:
       enabled: true
     cors:
       allowed-origins: "*"
+
+reducto:
+  webhook:
+    svix-secret: "whsec_c3ZpeC10ZXN0LXBsYWNlaG9sZGVyLXNlY3JldC14eA=="
