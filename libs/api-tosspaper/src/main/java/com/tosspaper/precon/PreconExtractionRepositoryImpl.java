@@ -12,7 +12,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 
@@ -96,16 +95,6 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                 .and(EXTRACTIONS.STATUS.eq(ExtractionStatus.PROCESSING.getValue()))
                 .and(EXTRACTIONS.DELETED_AT.isNull())
                 .execute();
-    }
-
-    @Override
-    public Optional<ExtractionWithDocs> findByExternalTaskId(String externalTaskId) {
-        // Raw bridge until jOOQ classes jar is regenerated with the EXTERNAL_TASK_ID column.
-        return dsl.selectFrom(EXTRACTIONS)
-                .where(DSL.field("external_task_id", String.class).eq(externalTaskId))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .fetchOptional()
-                .map(record -> new ExtractionWithDocs(record, parseDocumentIds(record)));
     }
 
     // ── private helpers ───────────────────────────────────────────────────────

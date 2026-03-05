@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.TENDER_DOCUMENTS;
 
@@ -135,6 +136,15 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
                 .where(TENDER_DOCUMENTS.ID.eq(id))
                 .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
                 .execute();
+    }
+
+    @Override
+    public Optional<TenderDocumentsRecord> findByExternalTaskId(String externalTaskId) {
+        // Raw field bridge until jOOQ classes jar is regenerated with the EXTERNAL_TASK_ID column.
+        return dsl.selectFrom(TENDER_DOCUMENTS)
+                .where(DSL.field("external_task_id", String.class).eq(externalTaskId))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .fetchOptional();
     }
 
 }
