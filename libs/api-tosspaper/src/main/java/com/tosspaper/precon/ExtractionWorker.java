@@ -5,7 +5,6 @@ import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.exception.ReductoClientException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import com.tosspaper.models.precon.ConstructionDocumentType;
-import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -30,7 +29,7 @@ import java.util.List;
  *   <li><b>Classify</b> — stream the full document from S3 and pass to
  *       {@link DocumentClassifier#classify}. The default implementation
  *       ({@link PdfBoxDocumentClassifier}) extracts PDF text via Apache PDFBox
- *       and returns a {@link com.tosspaper.models.precon.TenderDocumentType}.
+ *       and returns a {@link com.tosspaper.models.precon.ConstructionDocumentType}.
  *       Documents classified as {@code UNKNOWN} are skipped.</li>
  *   <li><b>Submit</b> — call {@link ReductoClient#submit} with the document's S3 key
  *       and the configured webhook URL. One call per document; Reducto has no
@@ -144,7 +143,7 @@ public class ExtractionWorker {
         if (contentStream == null) {
             return false;
         }
-        TenderDocumentType documentType = documentClassifier.classify(documentId, contentStream);
+        ConstructionDocumentType documentType = documentClassifier.classify(documentId, contentStream);
         if (documentType == ConstructionDocumentType.UNKNOWN) {
             log.warn("[ExtractionWorker] Extraction '{}' document '{}' — classified as UNKNOWN, skipping",
                     extractionId, documentId);
@@ -195,7 +194,7 @@ public class ExtractionWorker {
     }
 
     private boolean submitToReducto(String extractionId, String documentId, String s3Key,
-                                    TenderDocumentType documentType) {
+                                    ConstructionDocumentType documentType) {
         try {
             ReductoSubmitRequest request = new ReductoSubmitRequest(
                     extractionId,

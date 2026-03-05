@@ -1,7 +1,6 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.models.precon.ConstructionDocumentType;
-import com.tosspaper.models.precon.TenderDocumentType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -147,7 +146,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
     }
 
     @Override
-    public TenderDocumentType classify(String documentId, InputStream contentStream) {
+    public ConstructionDocumentType classify(String documentId, InputStream contentStream) {
         if (contentStream == null) {
             log.warn("[DocumentClassifier] Document '{}' — content stream is null, returning UNKNOWN",
                     documentId);
