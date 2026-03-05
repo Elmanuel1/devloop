@@ -9,6 +9,7 @@ import com.tosspaper.precon.generated.model.ExtractionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
 
@@ -27,10 +28,11 @@ import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
  * Replace with {@code EXTRACTIONS.EXTERNAL_TASK_ID} once the artifact is
  * republished and the version in {@code libs.versions.toml} is bumped.
  *
- * <p>{@link #findPendingExtractions(int)} reads the {@code document_ids} JSONB
- * column from each row and parses it into a {@code List<String>} inline,
- * returning {@link ExtractionWithDocs} so that callers need no second DB
- * round-trip.
+ * <p>{@link #claimNextBatch(int)} uses a single CTE with
+ * {@code FOR UPDATE SKIP LOCKED} to atomically claim rows, eliminating the
+ * need for any application-level distributed lock. Both the select and the
+ * update happen in one round-trip so concurrent poll threads in different JVM
+ * instances never claim the same row.
  */
 @Slf4j
 @Repository
@@ -55,32 +57,59 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     }
 
     @Override
-    public List<ExtractionWithDocs> findPendingExtractions(int limit) {
-        List<ExtractionsRecord> records = dsl.selectFrom(EXTRACTIONS)
-                .where(EXTRACTIONS.STATUS.eq(ExtractionStatus.PENDING.getValue()))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .orderBy(EXTRACTIONS.CREATED_AT.asc())
-                .limit(limit)
-                .fetch();
+    public List<ExtractionWithDocs> claimNextBatch(int limit) {
+        // Single-statement claim: select PENDING rows with SKIP LOCKED, then
+        // immediately update them to PROCESSING — all inside one CTE so no
+        // concurrent caller can claim the same row.
+        String sql = """
+                WITH claimed AS (
+                    SELECT id FROM extractions
+                    WHERE status = ?
+                    AND deleted_at IS NULL
+                    ORDER BY created_at ASC
+                    LIMIT ?
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE extractions e
+                SET status     = ?,
+                    version    = e.version + 1,
+                    updated_at = now()
+                FROM claimed
+                WHERE e.id = claimed.id
+                RETURNING e.*
+                """;
 
-        return records.stream()
-                .map(record -> new ExtractionWithDocs(record, parseDocumentIds(record)))
+        List<Record> rows = dsl.fetch(sql,
+                ExtractionStatus.PENDING.getValue(),
+                limit,
+                ExtractionStatus.PROCESSING.getValue());
+
+        return rows.stream()
+                .map(row -> {
+                    ExtractionsRecord record = row.into(ExtractionsRecord.class);
+                    return new ExtractionWithDocs(record, parseDocumentIds(record));
+                })
                 .toList();
     }
 
     @Override
-    public int markAsProcessing(String id) {
-        log.debug("[ExtractionPoll] Marking extraction {} as processing", id);
-        // Guard: only transition from PENDING so a re-delivered poll message
-        // on the same row is a safe no-op (idempotent).
-        return dsl.update(EXTRACTIONS)
-                .set(EXTRACTIONS.STATUS, ExtractionStatus.PROCESSING.getValue())
-                .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
-                .set(EXTRACTIONS.UPDATED_AT, DSL.currentOffsetDateTime())
-                .where(EXTRACTIONS.ID.eq(id))
-                .and(EXTRACTIONS.STATUS.eq(ExtractionStatus.PENDING.getValue()))
-                .and(EXTRACTIONS.DELETED_AT.isNull())
-                .execute();
+    public int reapStaleExtractions(int staleMinutes) {
+        log.debug("[ExtractionPoll] Reaping stale PROCESSING extractions older than {} minutes", staleMinutes);
+        // Use a parameterised interval expression to avoid SQL injection.
+        // The cast to ::integer is safe because staleMinutes is a typed int parameter, not a string.
+        String sql = """
+                UPDATE extractions
+                SET status     = ?,
+                    version    = version + 1,
+                    updated_at = now()
+                WHERE status     = ?
+                AND   deleted_at IS NULL
+                AND   updated_at < now() - (? * interval '1 minute')
+                """;
+        return dsl.execute(sql,
+                ExtractionStatus.PENDING.getValue(),
+                ExtractionStatus.PROCESSING.getValue(),
+                staleMinutes);
     }
 
     @Override
@@ -100,11 +129,6 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     /**
      * Transitions an extraction to {@code status}, but only when the current
      * database status is {@code PROCESSING}.
-     *
-     * <p>This FROM-state guard mirrors the guard in {@link #markAsProcessing},
-     * which only acts when status is {@code PENDING}. Without it,
-     * {@code markAsCompleted} / {@code markAsFailed} would silently overwrite
-     * any status — including {@code PENDING} — corrupting the audit trail.
      *
      * <p>A return value of {@code 0} means the row was either already in a
      * terminal state, deleted, or not found — the caller can treat that as an

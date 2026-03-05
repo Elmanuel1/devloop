@@ -13,15 +13,14 @@ import java.util.List;
  * <p>Key methods:
  * <ul>
  *   <li>{@link #findByExternalTaskId(String)} — look up an extraction by the
- *       opaque task ID returned by the external extraction service. The name is
- *       intentionally generic (not tied to any specific provider).</li>
- *   <li>{@link #findPendingExtractions(int)} — returns up to {@code limit}
- *       pending rows <em>together with</em> their parsed document-ID lists,
- *       so the poll job never needs a second DB round-trip.</li>
- *   <li>{@link #markAsProcessing(String)} — atomically transitions a single
- *       extraction from {@code pending} to {@code processing} within the
- *       poll cycle, before handing the record off to the processing thread
- *       pool.</li>
+ *       opaque task ID returned by the external extraction service.</li>
+ *   <li>{@link #claimNextBatch(int)} — atomically claims up to {@code limit}
+ *       {@code PENDING} rows by transitioning them to {@code PROCESSING} using
+ *       {@code FOR UPDATE SKIP LOCKED}, so concurrent poll threads never claim
+ *       the same row.</li>
+ *   <li>{@link #reapStaleExtractions(int)} — resets {@code PROCESSING} rows
+ *       that have been stuck beyond the stale threshold back to {@code PENDING},
+ *       allowing the next poll cycle to retry them.</li>
  *   <li>{@link #markAsCompleted(String)} — transitions an extraction to
  *       {@code completed} once all documents have been processed.</li>
  *   <li>{@link #markAsFailed(String)} — transitions an extraction to
@@ -44,42 +43,40 @@ public interface PreconExtractionRepository {
     ExtractionsRecord findByExternalTaskId(String externalTaskId);
 
     /**
-     * Returns up to {@code limit} non-deleted extractions currently in
-     * {@code pending} status, each paired with their parsed document IDs.
+     * Atomically claims up to {@code limit} {@code PENDING} extractions by
+     * transitioning them to {@code PROCESSING} in a single statement using
+     * {@code FOR UPDATE SKIP LOCKED}.
      *
-     * <p>The documents are read from the {@code document_ids} JSONB column
-     * and parsed inline so that the poll job requires no additional DB
-     * round-trip to discover which documents belong to each extraction.
+     * <p>Because the claim and status update happen inside one CTE, concurrent
+     * poll threads in different JVM instances never claim the same row — no
+     * application-level distributed lock is required.
      *
      * <p>Results are ordered by {@code created_at} ascending so that older
      * work is prioritised.
      *
-     * @param limit maximum number of rows to return (must be &gt; 0)
-     * @return list of pending extractions with their document IDs
+     * @param limit maximum number of rows to claim (must be &gt; 0)
+     * @return list of claimed extractions with their parsed document IDs
      *         (may be empty, never null)
      */
-    List<ExtractionWithDocs> findPendingExtractions(int limit);
+    List<ExtractionWithDocs> claimNextBatch(int limit);
 
     /**
-     * Atomically transitions the given extraction to {@code processing} status
-     * and increments its version.
+     * Resets stuck {@code PROCESSING} rows back to {@code PENDING}.
      *
-     * <p>Must be called immediately after acquiring the per-extraction Redisson
-     * lock, before dispatching documents to the thread pool, so that a
-     * subsequent poll cycle does not re-fetch the same record as
-     * {@code pending}.
+     * <p>Any extraction whose {@code updated_at} is older than
+     * {@code staleMinutes} is assumed to have been abandoned (e.g. the
+     * processing node crashed) and is returned to the queue so the next
+     * poll cycle can retry it.
      *
-     * @param id the extraction ID to mark
-     * @return number of rows updated (0 if not found or already deleted)
+     * @param staleMinutes age threshold in minutes; rows older than this are
+     *                     considered stale
+     * @return number of rows reset
      */
-    int markAsProcessing(String id);
+    int reapStaleExtractions(int staleMinutes);
 
     /**
      * Atomically transitions the given extraction to {@code completed} status
      * and increments its version.
-     *
-     * <p>Called by {@link ExtractionPollJob} after all documents for an
-     * extraction have been successfully processed and the results saved.
      *
      * @param id the extraction ID to mark
      * @return number of rows updated (0 if not found or already deleted)
@@ -89,9 +86,6 @@ public interface PreconExtractionRepository {
     /**
      * Atomically transitions the given extraction to {@code failed} status
      * and increments its version.
-     *
-     * <p>Called by {@link ExtractionPollJob} when an extraction's scatter-gather
-     * pipeline encounters an unrecoverable error.
      *
      * @param id the extraction ID to mark
      * @return number of rows updated (0 if not found or already deleted)

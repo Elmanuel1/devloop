@@ -2,114 +2,96 @@ package com.tosspaper.precon;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Lifecycle-managed scheduler that polls for {@code PENDING} extractions and
- * hands each one to {@link ExtractionPipelineRunner} for processing.
+ * Scheduled job that polls for {@code PENDING} extractions and hands each one
+ * to {@link ExtractionPipelineRunner} for processing.
  *
  * <h3>Single responsibility</h3>
  * <p>This class owns exactly one concern: <em>when</em> to poll.
- * The <em>how</em> (acquire lock, mark as processing, scatter-gather)
- * lives in {@link ExtractionPipelineRunner}.
+ * The <em>how</em> (claim the row, scatter-gather documents) lives in
+ * {@link ExtractionPipelineRunner}.
  *
- * <h3>Design</h3>
- * <ul>
- *   <li><strong>ScheduledExecutorService.</strong> A single-threaded
- *       {@link ScheduledExecutorService} drives the poll cycle using
- *       {@code scheduleWithFixedDelay} so consecutive runs never overlap
- *       and the next cycle starts only after the previous one finishes.</li>
- *   <li><strong>SmartLifecycle.</strong> Keeps lifecycle management explicit
- *       and testable — no {@code @PostConstruct} or Spring
- *       {@code @Scheduled}.</li>
- *   <li><strong>No global lock.</strong> Every JVM instance polls at the
- *       same cadence. Duplicate processing is prevented by the per-extraction
- *       lock inside {@link ExtractionPipelineRunner}.</li>
- *   <li><strong>Fixed batch size.</strong> At most {@link #POLL_BATCH_SIZE}
- *       rows are fetched per cycle, keeping DB load predictable regardless
- *       of queue depth.</li>
- * </ul>
+ * <h3>Concurrency</h3>
+ * <p>{@link #poll()} calls {@link PreconExtractionRepository#claimNextBatch(int)}
+ * which atomically transitions {@code PENDING} rows to {@code PROCESSING} via
+ * {@code FOR UPDATE SKIP LOCKED} in a single SQL statement. Concurrent JVM
+ * instances therefore never claim the same row — no application-level
+ * distributed lock is needed.
+ *
+ * <h3>Stale row recovery</h3>
+ * <p>{@link #reap()} runs on a longer cadence and resets any row that has been
+ * stuck in {@code PROCESSING} beyond the stale threshold (e.g. the processing
+ * node crashed mid-flight). Those rows are returned to {@code PENDING} so the
+ * next poll cycle can claim and retry them.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class ExtractionPollJob implements SmartLifecycle {
+public class ExtractionPollJob {
 
-    /** Maximum number of PENDING rows fetched in a single poll cycle. */
+    /** Maximum number of PENDING rows claimed in a single poll cycle. */
     static final int POLL_BATCH_SIZE = 50;
+
+    /**
+     * Age threshold for the reaper: extractions stuck in {@code PROCESSING}
+     * for longer than this are considered abandoned.
+     */
+    static final int STALE_MINUTES = 10;
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ExtractionPipelineRunner pipelineRunner;
-    private final ExtractionPollProperties pollProperties;
 
-    private final ScheduledExecutorService scheduler =
-            Executors.newSingleThreadScheduledExecutor(r -> new Thread(r, "extraction-poll"));
-
-    private volatile boolean running = false;
-
-    // ── SmartLifecycle ────────────────────────────────────────────────────────
-
-    @Override
-    public void start() {
-        running = true;
-        scheduler.scheduleWithFixedDelay(this::poll, 0, pollProperties.getDelayMs(), TimeUnit.MILLISECONDS);
-        log.info("[ExtractionPoll] Scheduler started (fixed delay {} ms)", pollProperties.getDelayMs());
-    }
-
-    @Override
-    public void stop() {
-        running = false;
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                log.warn("[ExtractionPoll] Scheduler did not terminate within 10 s; forcing shutdown");
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            scheduler.shutdownNow();
-        }
-        log.info("[ExtractionPoll] Scheduler stopped");
-    }
-
-    @Override
-    public boolean isRunning() {
-        return running;
-    }
-
-    @Override
-    public boolean isAutoStartup() {
-        return true;
-    }
-
-    // ── Poll logic ────────────────────────────────────────────────────────────
+    // ── Poll ──────────────────────────────────────────────────────────────────
 
     /**
-     * Polls for pending extractions and dispatches each one to
-     * {@link ExtractionPipelineRunner#execute(ExtractionWithDocs)}.
+     * Claims up to {@link #POLL_BATCH_SIZE} pending extractions and fans them
+     * out to the pipeline runner in parallel.
      *
-     * <p>No global lock — every instance polls freely. Per-extraction locks
-     * inside {@link ExtractionPipelineRunner} prevent duplicate work.
+     * <p>Uses {@code fixedDelay} so the next cycle starts only after all
+     * claimed rows have been dispatched (fire-and-forget via
+     * {@link CompletableFuture}). The actual document processing happens on
+     * the virtual-thread ForkJoinPool — this thread is free immediately after
+     * {@link ExtractionPipelineRunner#run(ExtractionWithDocs)} returns.
      */
+    @Scheduled(fixedDelay = 500)
     void poll() {
-        List<ExtractionWithDocs> pending =
-                preconExtractionRepository.findPendingExtractions(POLL_BATCH_SIZE);
+        List<ExtractionWithDocs> claimed =
+                preconExtractionRepository.claimNextBatch(POLL_BATCH_SIZE);
 
-        if (pending.isEmpty()) {
+        if (claimed.isEmpty()) {
             log.debug("[ExtractionPoll] No pending extractions found");
             return;
         }
 
-        log.info("[ExtractionPoll] Found {} pending extraction(s) to process", pending.size());
+        log.info("[ExtractionPoll] Claimed {} extraction(s) for processing", claimed.size());
 
-        for (ExtractionWithDocs extraction : pending) {
-            pipelineRunner.execute(extraction);
+        for (ExtractionWithDocs extraction : claimed) {
+            pipelineRunner.run(extraction);
+        }
+    }
+
+    // ── Reaper ────────────────────────────────────────────────────────────────
+
+    /**
+     * Resets stale {@code PROCESSING} rows back to {@code PENDING}.
+     *
+     * <p>Runs every 60 seconds. Any extraction that has been stuck in
+     * {@code PROCESSING} for more than {@link #STALE_MINUTES} minutes is
+     * assumed abandoned and returned to the queue.
+     */
+    @Scheduled(fixedRate = 60_000)
+    void reap() {
+        int reset = preconExtractionRepository.reapStaleExtractions(STALE_MINUTES);
+        if (reset > 0) {
+            log.warn("[ExtractionPoll] Reaped {} stale PROCESSING extraction(s) back to PENDING", reset);
+        } else {
+            log.debug("[ExtractionPoll] Reaper found no stale extractions");
         }
     }
 }
