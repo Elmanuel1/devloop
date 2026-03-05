@@ -102,11 +102,10 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     @Override
     public int putDocumentExternalId(String extractionId, String documentId, ExternalId externalId) {
         String serialized = serializeExternalId(externalId);
-        String pathLiteral = "'{%s}'".formatted(documentId);
         return dsl.execute(
-                "UPDATE extractions SET document_external_ids = jsonb_set(document_external_ids, " +
-                        pathLiteral + ", ?::jsonb, true), updated_at = NOW() WHERE id = ? AND deleted_at IS NULL",
-                serialized, extractionId);
+                "UPDATE extractions SET document_external_ids = document_external_ids || jsonb_build_object(?::text, ?::jsonb)," +
+                        " updated_at = NOW() WHERE id = ? AND deleted_at IS NULL",
+                documentId, serialized, extractionId);
     }
 
     @Override
