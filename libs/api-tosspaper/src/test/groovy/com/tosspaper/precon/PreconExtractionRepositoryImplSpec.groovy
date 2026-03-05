@@ -224,12 +224,13 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
 
     // ==================== markAsCompleted ====================
 
-    def "TC-PR-MAC01: should transition processing extraction to completed and increment version"() {
+    def "TC-PR-MAC01: should transition processing extraction to completed with a result"() {
         given: "an extraction in processing state"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
+            def result = PipelineExtractionResult.empty(extraction.id)
 
         when: "marking as completed"
-            def rowsUpdated = preconExtractionRepository.markAsCompleted(extraction.id)
+            def rowsUpdated = preconExtractionRepository.markAsCompleted(extraction.id, result)
 
         then: "one row updated"
             rowsUpdated == 1
@@ -243,8 +244,11 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     }
 
     def "TC-PR-MAC02: should return 0 when marking non-existent extraction as completed"() {
+        given: "an empty result"
+            def result = PipelineExtractionResult.empty("nonexistent-id")
+
         when:
-            def rowsUpdated = preconExtractionRepository.markAsCompleted("nonexistent-id")
+            def rowsUpdated = preconExtractionRepository.markAsCompleted("nonexistent-id", result)
 
         then:
             rowsUpdated == 0
@@ -252,27 +256,28 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
 
     // ==================== markAsFailed ====================
 
-    def "TC-PR-MAF01: should transition processing extraction to failed and increment version"() {
+    def "TC-PR-MAF01: should transition processing extraction to failed and store error reason"() {
         given: "an extraction in processing state"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
 
-        when: "marking as failed"
-            def rowsUpdated = preconExtractionRepository.markAsFailed(extraction.id)
+        when: "marking as failed with an error reason"
+            def rowsUpdated = preconExtractionRepository.markAsFailed(extraction.id, "network timeout")
 
         then: "one row updated"
             rowsUpdated == 1
 
-        and: "status is failed with incremented version"
+        and: "status is failed with incremented version and error reason stored"
             def updated = dsl.selectFrom(Tables.EXTRACTIONS)
                 .where(Tables.EXTRACTIONS.ID.eq(extraction.id))
                 .fetchSingle()
             updated.status == "failed"
             updated.version == 1
+            updated.errorReason == "network timeout"
     }
 
     def "TC-PR-MAF02: should return 0 when marking non-existent extraction as failed"() {
         when:
-            def rowsUpdated = preconExtractionRepository.markAsFailed("nonexistent-id")
+            def rowsUpdated = preconExtractionRepository.markAsFailed("nonexistent-id", "some error")
 
         then:
             rowsUpdated == 0
