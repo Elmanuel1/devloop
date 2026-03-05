@@ -138,4 +138,20 @@ public final class ApiErrorMessages {
     public static final String APPLICATION_ENTITY_STALE      = "Cannot apply extraction — the target entity was modified after this extraction was created. Please review the current state and start a new extraction if needed.";
     public static final String APPLICATION_NO_FIELDS_CODE    = "api.application.noFields";
     public static final String APPLICATION_NO_FIELDS         = "No extraction fields found targeting entity '%s'.";
+
+    // ── Reducto client ──
+    public static final String REDUCTO_SUBMIT_FAILED_CODE    = "api.extraction.reductoSubmitFailed";
+    public static final String REDUCTO_SUBMIT_FAILED         = "Failed to submit document '%s' to Reducto for extraction '%s'.";
+
+    // ── Document classifier ──
+    public static final String DOCUMENT_TYPE_UNSUPPORTED_CODE = "api.extraction.documentTypeUnsupported";
+    public static final String DOCUMENT_TYPE_UNSUPPORTED      = "Document '%s' has an unsupported type and will be skipped.";
+
+    // ── Field validator ──
+    public static final String EXTRACTION_FIELD_INVALID_PAYLOAD_CODE = "api.extraction.invalidFieldPayload";
+    public static final String EXTRACTION_FIELD_INVALID_PAYLOAD      = "Reducto response for document '%s' failed schema validation and was rejected.";
+
+    // ── Job seeder ──
+    public static final String EXTRACTION_REAP_FAILED_CODE   = "api.extraction.reapFailed";
+    public static final String EXTRACTION_REAP_FAILED        = "Failed to reap stuck extractions.";
 } 

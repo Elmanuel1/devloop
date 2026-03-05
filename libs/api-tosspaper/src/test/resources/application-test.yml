@@ -119,3 +119,15 @@ http:
       enabled: true
     cors:
       allowed-origins: "*"
+
+reducto:
+  base-url: "https://dummy-reducto.example.com"
+  api-key: "dummy-reducto-api-key"
+  webhook-base-url: "https://dummy-app.example.com"
+  webhook-path: "/internal/reducto/webhook"
+  batch-size: 20
+  stale-minutes: 15
+
+extraction:
+  processing:
+    thread-pool-size: 2

@@ -3,14 +3,21 @@ package com.tosspaper.precon;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
  * Spring configuration for the extraction processing pipeline.
  *
- * <p>Exposes a single bean: a bounded virtual-thread executor used by
- * {@link ExtractionPipelineRunner} to fan out per-document Reducto calls.
+ * <p>Exposes two beans:
+ * <ol>
+ *   <li>A bounded virtual-thread executor used by {@link ExtractionPipelineRunner} to
+ *       fan out per-document Reducto calls.</li>
+ *   <li>A {@link HttpClient} used by {@link HttpReductoClient} to submit documents
+ *       to the Reducto REST API.</li>
+ * </ol>
  *
  * <h3>Why bounded?</h3>
  * <p>Unbounded {@code supplyAsync} (no executor) would allow an unlimited number
@@ -19,9 +26,9 @@ import java.util.concurrent.Executors;
  * service degrades gracefully under volume spikes.
  *
  * <h3>Why virtual threads?</h3>
- * <p>Each slot is a virtual thread, so blocking I/O inside
- * {@link ExtractionPipelineRunner#callReducto(String)} does not pin an OS
- * carrier thread. The bound controls Reducto concurrency, not OS-thread usage.
+ * <p>Each slot is a virtual thread, so blocking I/O (Reducto HTTP calls)
+ * does not pin an OS carrier thread. The bound controls Reducto concurrency,
+ * not OS-thread usage.
  */
 @Configuration
 public class ExtractionPipelineConfig {
@@ -42,5 +49,20 @@ public class ExtractionPipelineConfig {
                 props.getThreadPoolSize(),
                 Thread.ofVirtual().factory()
         );
+    }
+
+    /**
+     * Returns a shared {@link HttpClient} for use by {@link HttpReductoClient}.
+     *
+     * <p>The client is shared across all Reducto calls to reuse the underlying
+     * connection pool and avoid the cost of creating a new client per request.
+     *
+     * @return configured HttpClient
+     */
+    @Bean
+    public HttpClient reductoHttpClient() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
     }
 }

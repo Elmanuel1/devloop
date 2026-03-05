@@ -1,6 +1,5 @@
 package com.tosspaper.precon;
 
-import com.tosspaper.common.ApiErrorMessages;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -13,6 +12,10 @@ import java.util.concurrent.Executor;
 /**
  * Processes a batch of claimed extractions by submitting each one to the
  * bounded virtual-thread executor and gathering results.
+ *
+ * <p>This class owns concurrency (fan-out via {@code CompletableFuture}, allOf join)
+ * while {@link ExtractionWorker} owns per-extraction business logic
+ * (classify → submit → validate).
  */
 @Slf4j
 @Component
@@ -20,6 +23,7 @@ import java.util.concurrent.Executor;
 public class ExtractionPipelineRunner {
 
     private final PreconExtractionRepository preconExtractionRepository;
+    private final ExtractionWorker extractionWorker;
 
     @Qualifier("extractionProcessingExecutor")
     private final Executor extractionProcessingExecutor;
@@ -47,8 +51,9 @@ public class ExtractionPipelineRunner {
     // ── Per-extraction pipeline chain ─────────────────────────────────────────
 
     /**
-     * Builds the async pipeline chain for a single extraction: calls Reducto,
-     * marks completed on success, marks failed on error.
+     * Builds the async pipeline chain for a single extraction: delegates to
+     * {@link ExtractionWorker#process}, marks completed on success, marks
+     * failed on error.
      */
     private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
         return CompletableFuture
@@ -68,20 +73,15 @@ public class ExtractionPipelineRunner {
     // ── Per-extraction call ───────────────────────────────────────────────────
 
     /**
-     * Calls the Reducto client for the given extraction.
+     * Calls the ExtractionWorker for the given extraction.
      * Runs on a virtual thread from the bounded {@code extractionProcessingExecutor}.
      *
-     * <p>TODO [TOS-38] Wire to the real Reducto extraction flow once the
-     * document-to-extraction pipeline is finalised.
-     *
-     * @param extraction the full extraction context (entity type, entity ID, etc.)
-     * @return the extraction result
-     * @throws UnsupportedOperationException always, until TOS-38 is implemented
+     * @param extraction the full extraction context (entity type, entity ID, document list)
+     * @return the pipeline result produced by the worker
      */
     PipelineExtractionResult callReducto(ExtractionWithDocs extraction) {
-        log.debug("[ExtractionPipeline] callReducto invoked for extraction {} — not yet implemented (TOS-38)",
+        log.debug("[ExtractionPipeline] Processing extraction '{}' via ExtractionWorker",
                 extraction.getId());
-        throw new UnsupportedOperationException(
-                ApiErrorMessages.NOT_IMPLEMENTED + " callReducto (TOS-38) — extraction: " + extraction.getId());
+        return extractionWorker.process(extraction);
     }
 }

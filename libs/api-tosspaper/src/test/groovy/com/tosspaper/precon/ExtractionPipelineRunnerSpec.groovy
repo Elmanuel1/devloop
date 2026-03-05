@@ -10,6 +10,7 @@ import java.util.concurrent.Executor
 class ExtractionPipelineRunnerSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
+    ExtractionWorker extractionWorker = Mock()
 
     /**
      * Same-thread executor: runs tasks inline on the calling thread.
@@ -18,7 +19,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
     Executor sameThreadExecutor = { Runnable r -> r.run() }
 
     @Subject
-    ExtractionPipelineRunner runner = new ExtractionPipelineRunner(repository, sameThreadExecutor)
+    ExtractionPipelineRunner runner = new ExtractionPipelineRunner(repository, extractionWorker, sameThreadExecutor)
 
     // ==================== run(List) — batch entry point ====================
 
@@ -27,7 +28,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(_) >> emptyResult("ignored")
 
         when: "run is called with the full batch"
@@ -41,7 +42,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
     def "TC-PR-12: run with empty batch is a no-op — callReducto is never called"() {
         given: "a spy to detect any callReducto calls"
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
 
         when: "run is called with an empty batch"
             runnerSpy.run([])
@@ -50,18 +51,20 @@ class ExtractionPipelineRunnerSpec extends Specification {
             0 * runnerSpy.callReducto(_)
     }
 
-    // ==================== callReducto — stub behavior ====================
+    // ==================== callReducto — delegates to ExtractionWorker ====================
 
-    def "TC-PR-04: callReducto throws UnsupportedOperationException (TOS-38 not yet wired)"() {
+    def "TC-PR-04: callReducto delegates to ExtractionWorker.process"() {
         given: "an extraction context"
             def extraction = buildExtractionWithDocs("ext-1", ["doc-xyz"])
+            extractionWorker.process(extraction) >> emptyResult("ext-1")
 
         when: "callReducto is invoked directly"
-            runner.callReducto(extraction)
+            def result = runner.callReducto(extraction)
 
-        then: "UnsupportedOperationException propagates — stub not yet implemented"
-            def ex = thrown(UnsupportedOperationException)
-            ex.message.contains("TOS-38")
+        then: "extractionWorker.process was called"
+            1 * extractionWorker.process(extraction) >> emptyResult("ext-1")
+            result != null
+            result.extractionId() == "ext-1"
     }
 
     def "TC-PR-04b: callReducto takes only the extraction context — no separate document ID arg"() {
@@ -69,7 +72,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def extraction = buildExtractionWithDocs("ext-ctx", ["doc-1", "doc-2"])
             def capturedContexts = []
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx ->
                 capturedContexts << ctx
                 return emptyResult(ctx.getId())
@@ -90,7 +93,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
             def expectedResult = emptyResult(extraction.getId())
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(extraction) >> expectedResult
 
         when: "run is called"
@@ -104,7 +107,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "a spy with successful callReducto"
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(_) >> emptyResult(extraction.getId())
 
         when: "run is called"
@@ -120,7 +123,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "a spy that throws on callReducto"
             def extraction = buildExtractionWithDocs("ext-fail", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(_) >> { throw new RuntimeException("network error — prepare failed") }
 
         when: "run is called (synchronous via same-thread executor)"
@@ -135,7 +138,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def failing  = buildExtractionWithDocs("ext-fail", ["doc-bad"])
             def succeeds = buildExtractionWithDocs("ext-ok",   ["doc-good"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, sameThreadExecutor])
+                    constructorArgs: [repository, extractionWorker, sameThreadExecutor])
             runnerSpy.callReducto(failing)  >> { throw new RuntimeException("boom") }
             runnerSpy.callReducto(succeeds) >> emptyResult(succeeds.getId())
 
@@ -157,7 +160,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def e2 = buildExtractionWithDocs("ext-2", ["doc-Y"])
             def e3 = buildExtractionWithDocs("ext-3", ["doc-Z"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository, trackingExecutor])
+                    constructorArgs: [repository, extractionWorker, trackingExecutor])
             runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx -> emptyResult(ctx.getId()) }
 
         when: "run is called with three extractions"
