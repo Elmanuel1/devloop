@@ -67,12 +67,7 @@ public class ConflictDetector {
     public int detectAndMarkConflicts(String extractionId) {
         log.debug("[ConflictDetector] Starting conflict detection for extraction {}", extractionId);
 
-        ExtractionFieldQuery query = ExtractionFieldQuery.builder()
-                .extractionId(extractionId)
-                .limit(Integer.MAX_VALUE)
-                .build();
-
-        List<ExtractionFieldsRecord> allFields = extractionFieldRepository.findByExtractionId(query);
+        List<ExtractionFieldsRecord> allFields = extractionFieldRepository.findAllByExtractionId(extractionId);
 
         if (allFields.isEmpty()) {
             log.debug("[ConflictDetector] No fields found for extraction {} — skipping", extractionId);

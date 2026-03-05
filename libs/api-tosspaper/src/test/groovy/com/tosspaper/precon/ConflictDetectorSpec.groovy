@@ -23,7 +23,7 @@ class ConflictDetectorSpec extends Specification {
 
     def "TC-CD-01: returns zero when no fields exist for the extraction"() {
         given: "repository returns empty list"
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> []
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> []
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -39,7 +39,7 @@ class ConflictDetectorSpec extends Specification {
         given: "two fields with different names — one document each"
             def field1 = buildField("f1", EXTRACTION_ID, "closing_date", '"2025-01-15"', 0.95)
             def field2 = buildField("f2", EXTRACTION_ID, "contract_value", '"50000"', 0.90)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [field1, field2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [field1, field2]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -55,7 +55,7 @@ class ConflictDetectorSpec extends Specification {
         given: "two rows for the same field_name with identical values"
             def f1 = buildField("f1", EXTRACTION_ID, "closing_date", '"2025-01-15"', 0.92)
             def f2 = buildField("f2", EXTRACTION_ID, "closing_date", '"2025-01-15"', 0.88)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -71,7 +71,7 @@ class ConflictDetectorSpec extends Specification {
         given: "two rows for 'closing_date' with different proposed values"
             def f1 = buildField("f1", EXTRACTION_ID, "closing_date", '"2025-01-15"', 0.95)
             def f2 = buildField("f2", EXTRACTION_ID, "closing_date", '"2025-02-28"', 0.80)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -87,7 +87,7 @@ class ConflictDetectorSpec extends Specification {
             def f1 = buildField("f1", EXTRACTION_ID, "contract_value", '"100000"', 0.95)
             def f2 = buildField("f2", EXTRACTION_ID, "contract_value", '"120000"', 0.80)
             def f3 = buildField("f3", EXTRACTION_ID, "contract_value", '"115000"', 0.70)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2, f3]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2, f3]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -105,7 +105,7 @@ class ConflictDetectorSpec extends Specification {
             def closingDate2 = buildField("cd2", EXTRACTION_ID, "closing_date", '"2025-03-01"', 0.85)
             def contractValue1 = buildField("cv1", EXTRACTION_ID, "contract_value", '"50000"', 0.90)
             def contractValue2 = buildField("cv2", EXTRACTION_ID, "contract_value", '"50000"', 0.88)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [
                 closingDate1, closingDate2, contractValue1, contractValue2
             ]
 
@@ -124,7 +124,7 @@ class ConflictDetectorSpec extends Specification {
         given: "two conflicting rows"
             def f1 = buildField("field-id-A", EXTRACTION_ID, "title", '"Alpha Contract"', 0.95)
             def f2 = buildField("field-id-B", EXTRACTION_ID, "title", '"Beta Contract"', 0.80)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2]
 
             JSONB capturedJsonb = null
             extractionFieldRepository.markConflict(EXTRACTION_ID, "title", _ as JSONB) >> { String extId, String fn, JSONB jsonb ->
@@ -157,7 +157,7 @@ class ConflictDetectorSpec extends Specification {
         given: "one row has a value, another has null proposed_value"
             def f1 = buildField("f1", EXTRACTION_ID, "closing_date", '"2025-01-15"', 0.95)
             def f2 = buildFieldNullValue("f2", EXTRACTION_ID, "closing_date", 0.50)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -171,7 +171,7 @@ class ConflictDetectorSpec extends Specification {
         given: "two rows both have null proposed_value — same field"
             def f1 = buildFieldNullValue("f1", EXTRACTION_ID, "closing_date", 0.50)
             def f2 = buildFieldNullValue("f2", EXTRACTION_ID, "closing_date", 0.45)
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> [f1, f2]
+            extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> [f1, f2]
 
         when: "detectAndMarkConflicts is called"
             int result = detector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -226,22 +226,14 @@ class ConflictDetectorSpec extends Specification {
             detector.normalise(jsonb) != ""
     }
 
-    // ==================== ExtractionFieldQuery passed to repository ====================
+    // ==================== findAllByExtractionId called with correct ID ====================
 
-    def "TC-CD-15: passes extraction ID in query when calling findByExtractionId"() {
-        given: "capturing the query object passed to the repository"
-            ExtractionFieldQuery capturedQuery = null
-            extractionFieldRepository.findByExtractionId(_ as ExtractionFieldQuery) >> { ExtractionFieldQuery q ->
-                capturedQuery = q
-                return []
-            }
-
+    def "TC-CD-15: calls findAllByExtractionId with the extraction ID"() {
         when: "detectAndMarkConflicts is called"
             detector.detectAndMarkConflicts(EXTRACTION_ID)
 
-        then: "query has the correct extraction ID"
-            capturedQuery != null
-            capturedQuery.getExtractionId() == EXTRACTION_ID
+        then: "repository is called once with the correct extraction ID"
+            1 * extractionFieldRepository.findAllByExtractionId(EXTRACTION_ID) >> []
     }
 
     // ==================== Helper Methods ====================
