@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
  *
  * <h3>Responsibilities</h3>
  * <ol>
- *   <li>Look up the in-progress extraction by {@code external_task_id}.</li>
+ *   <li>Look up the in-progress extraction by {@code job_id} (stored as {@code external_task_id}).</li>
  *   <li>Enqueue the verified payload onto the {@link PreconExtractionRepository}
  *       pipeline so it can be processed asynchronously by the ExtractionWorker
  *       (TOS-38). For this PR the payload is accepted and the extraction is
@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
  * </ol>
  *
  * <h3>Idempotency</h3>
- * <p>Duplicate Svix deliveries for the same {@code task_id} are safe — if the
+ * <p>Duplicate Svix deliveries for the same {@code job_id} are safe — if the
  * extraction is already in a terminal state the handler logs and returns normally
  * without re-processing.
  *
@@ -42,28 +42,28 @@ public class ReductoWebhookHandlerService {
     /**
      * Handles a verified, deserialised webhook payload from Reducto.
      *
-     * <p>Looks up the extraction by {@code task_id} and, when all documents
+     * <p>Looks up the extraction by {@code job_id} and, when all documents
      * for the extraction have reached a terminal state, runs conflict detection.
      *
      * @param payload the verified webhook payload
-     * @throws NotFoundException if no extraction matches the given {@code task_id}
+     * @throws NotFoundException if no extraction matches the given {@code job_id}
      */
     public void handle(ReductoWebhookPayload payload) {
-        String taskId = payload.taskId();
-        log.info("[ReductoWebhook] Processing webhook for task_id={} status={}",
-                taskId, payload.status());
+        String jobId = payload.jobId();
+        log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
+                jobId, payload.status());
 
         ExtractionWithDocs extraction = preconExtractionRepository
-                .findByExternalTaskId(taskId)
+                .findByExternalTaskId(jobId)
                 .orElseThrow(() -> {
-                    log.warn("[ReductoWebhook] No extraction found for task_id={}", taskId);
+                    log.warn("[ReductoWebhook] No extraction found for job_id={}", jobId);
                     return new NotFoundException(
                             ApiErrorMessages.WEBHOOK_TASK_NOT_FOUND_CODE,
                             ApiErrorMessages.WEBHOOK_TASK_NOT_FOUND);
                 });
 
         String extractionId = extraction.getId();
-        log.debug("[ReductoWebhook] Matched task_id={} to extraction_id={}", taskId, extractionId);
+        log.debug("[ReductoWebhook] Matched job_id={} to extraction_id={}", jobId, extractionId);
 
         // ── Batch completion and conflict detection ──────────────────────────
         // TODO [TOS-38]: Once ExtractionWorker is wired, the field-write and
@@ -73,14 +73,15 @@ public class ReductoWebhookHandlerService {
         //
         // ConflictDetector is called here whenever the payload status indicates
         // the task completed, allowing TOS-38 to hook in by delegating here.
+        // Reducto uses title-case "Completed" — equalsIgnoreCase handles both forms.
         if ("completed".equalsIgnoreCase(payload.status())) {
             log.debug("[ReductoWebhook] Running conflict detection for extraction_id={}", extractionId);
             int conflictedRows = conflictDetector.detectAndMarkConflicts(extractionId);
             log.info("[ReductoWebhook] Conflict detection complete for extraction_id={} — {} row(s) flagged",
                     extractionId, conflictedRows);
         } else {
-            log.info("[ReductoWebhook] Extraction task_id={} reported status='{}' — skipping conflict detection",
-                    taskId, payload.status());
+            log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — skipping conflict detection",
+                    jobId, payload.status());
         }
     }
 }

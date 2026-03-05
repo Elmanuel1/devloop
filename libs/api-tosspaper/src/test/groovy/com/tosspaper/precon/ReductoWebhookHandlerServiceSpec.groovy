@@ -14,17 +14,17 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
     ReductoWebhookHandlerService handlerService =
             new ReductoWebhookHandlerService(preconExtractionRepository, conflictDetector)
 
-    static final String TASK_ID       = "reducto-task-abc123"
+    static final String JOB_ID        = "reducto-task-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
 
-    // ==================== handle — task not found ====================
+    // ==================== handle — job not found ====================
 
-    def "TC-WHS-01: throws NotFoundException when no extraction matches the task_id"() {
+    def "TC-WHS-01: throws NotFoundException when no extraction matches the job_id"() {
         given: "repository returns empty Optional"
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.empty()
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.empty()
 
-        when: "handler is called for an unknown task"
-            handlerService.handle(completedPayload(TASK_ID))
+        when: "handler is called for an unknown job"
+            handlerService.handle(completedPayload(JOB_ID))
 
         then: "NotFoundException is thrown — ConflictDetector never runs"
             def ex = thrown(NotFoundException)
@@ -34,14 +34,14 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — completed status ====================
 
-    def "TC-WHS-02: runs conflict detection when payload status is 'completed'"() {
+    def "TC-WHS-02: runs conflict detection when payload status is 'Completed'"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
             conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 3
 
-        when: "handler receives a completed webhook"
-            handlerService.handle(completedPayload(TASK_ID))
+        when: "handler receives a Completed webhook"
+            handlerService.handle(completedPayload(JOB_ID))
 
         then: "conflict detection runs once for the extraction"
             1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -50,11 +50,11 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
     def "TC-WHS-03: runs conflict detection with case-insensitive 'COMPLETED' status"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
             conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
 
         when: "handler receives a webhook with status in uppercase"
-            handlerService.handle(new ReductoWebhookPayload(TASK_ID, "COMPLETED", null, null))
+            handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
         then: "conflict detection still runs"
             1 * conflictDetector.detectAndMarkConflicts(EXTRACTION_ID)
@@ -62,13 +62,13 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — failed status ====================
 
-    def "TC-WHS-04: does NOT run conflict detection when payload status is 'failed'"() {
+    def "TC-WHS-04: does NOT run conflict detection when payload status is 'Failed'"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
 
-        when: "handler receives a failed webhook"
-            handlerService.handle(new ReductoWebhookPayload(TASK_ID, "failed", null, "Extraction error"))
+        when: "handler receives a Failed webhook"
+            handlerService.handle(new ReductoWebhookPayload(JOB_ID, "Failed"))
 
         then: "conflict detection is NOT called for failures"
             0 * conflictDetector.detectAndMarkConflicts(_)
@@ -77,10 +77,10 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
     def "TC-WHS-05: does NOT run conflict detection for unknown/null status"() {
         given: "extraction is found"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
 
         when: "handler receives a webhook with an unknown status"
-            handlerService.handle(new ReductoWebhookPayload(TASK_ID, "processing", null, null))
+            handlerService.handle(new ReductoWebhookPayload(JOB_ID, "InProgress"))
 
         then: "conflict detection is NOT called"
             0 * conflictDetector.detectAndMarkConflicts(_)
@@ -91,11 +91,11 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
     def "TC-WHS-06: handles zero conflicted rows from ConflictDetector without error"() {
         given: "extraction found, no conflicts detected"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
             conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 0
 
         when: "handler is called"
-            handlerService.handle(completedPayload(TASK_ID))
+            handlerService.handle(completedPayload(JOB_ID))
 
         then: "completes without exception"
             noExceptionThrown()
@@ -104,40 +104,40 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
     def "TC-WHS-07: handles multiple conflicted rows from ConflictDetector without error"() {
         given: "extraction found, 5 conflicts detected"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2", "doc-3"])
-            preconExtractionRepository.findByExternalTaskId(TASK_ID) >> Optional.of(extraction)
+            preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
             conflictDetector.detectAndMarkConflicts(EXTRACTION_ID) >> 5
 
         when: "handler is called"
-            handlerService.handle(completedPayload(TASK_ID))
+            handlerService.handle(completedPayload(JOB_ID))
 
         then: "completes without exception"
             noExceptionThrown()
     }
 
-    // ==================== handle — lookup uses correct task_id ====================
+    // ==================== handle — lookup uses correct job_id ====================
 
-    def "TC-WHS-08: passes task_id from payload to repository lookup"() {
-        given: "capture the task_id passed to findByExternalTaskId"
-            String capturedTaskId = null
+    def "TC-WHS-08: passes job_id from payload to repository lookup"() {
+        given: "capture the job_id passed to findByExternalTaskId"
+            String capturedJobId = null
             preconExtractionRepository.findByExternalTaskId(_ as String) >> { String id ->
-                capturedTaskId = id
+                capturedJobId = id
                 return Optional.empty()
             }
 
         when: "handler is called — NotFoundException expected"
-            def payload = new ReductoWebhookPayload("specific-task-id-99", "completed", null, null)
+            def payload = new ReductoWebhookPayload("specific-job-id-99", "Completed")
             try {
                 handlerService.handle(payload)
             } catch (NotFoundException ignored) {}
 
-        then: "repository was queried with the exact task_id from the payload"
-            capturedTaskId == "specific-task-id-99"
+        then: "repository was queried with the exact job_id from the payload"
+            capturedJobId == "specific-job-id-99"
     }
 
     // ==================== Helper Methods ====================
 
-    private static ReductoWebhookPayload completedPayload(String taskId) {
-        return new ReductoWebhookPayload(taskId, "completed", null, null)
+    private static ReductoWebhookPayload completedPayload(String jobId) {
+        return new ReductoWebhookPayload(jobId, "Completed")
     }
 
     private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {

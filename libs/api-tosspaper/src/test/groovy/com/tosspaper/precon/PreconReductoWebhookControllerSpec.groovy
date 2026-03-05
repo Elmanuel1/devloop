@@ -18,7 +18,7 @@ class PreconReductoWebhookControllerSpec extends Specification {
     PreconReductoWebhookController controller = new PreconReductoWebhookController(
             webhookVerifier, handlerService, objectMapper)
 
-    static final String VALID_PAYLOAD = '{"task_id":"task-abc","status":"completed","result":null,"error":null}'
+    static final String VALID_PAYLOAD = '{"job_id":"job-abc","status":"Completed"}'
     static final String SVIX_ID       = "msg-001"
     static final String SVIX_TS       = "1700000000"
     static final String SVIX_SIG      = "v1,dGVzdHNpZw=="
@@ -102,7 +102,7 @@ class PreconReductoWebhookControllerSpec extends Specification {
 
     // ==================== Payload deserialisation ====================
 
-    def "TC-WC-08: deserialises task_id and status from the raw body"() {
+    def "TC-WC-08: deserialises job_id and status from the raw body"() {
         given: "verification passes"
             webhookVerifier.verify(_, _) >> null
 
@@ -111,21 +111,19 @@ class PreconReductoWebhookControllerSpec extends Specification {
                 capturedPayload = p
             }
 
-            def body = '{"task_id":"task-xyz","status":"completed","result":null,"error":null}'
+            def body = '{"job_id":"job-xyz","status":"Completed"}'
 
         when: "webhook is posted"
             controller.receiveWebhook(body, SVIX_ID, SVIX_TS, SVIX_SIG)
 
         then: "handler receives the correctly parsed payload"
             with(capturedPayload) {
-                taskId == "task-xyz"
-                status == "completed"
-                // "result": null in JSON becomes a NullNode instance, not Java null
-                result == null || result.isNull()
+                jobId == "job-xyz"
+                status == "Completed"
             }
     }
 
-    def "TC-WC-09: deserialises failed status payload correctly"() {
+    def "TC-WC-09: deserialises Failed status payload correctly"() {
         given: "verification passes"
             webhookVerifier.verify(_, _) >> null
 
@@ -134,16 +132,15 @@ class PreconReductoWebhookControllerSpec extends Specification {
                 capturedPayload = p
             }
 
-            def body = '{"task_id":"task-fail","status":"failed","result":null,"error":"Extraction timed out"}'
+            def body = '{"job_id":"job-fail","status":"Failed","metadata":{"user_id":"123"}}'
 
         when: "webhook is posted"
             controller.receiveWebhook(body, SVIX_ID, SVIX_TS, SVIX_SIG)
 
         then: "handler receives the failure payload"
             with(capturedPayload) {
-                taskId == "task-fail"
-                status == "failed"
-                error == "Extraction timed out"
+                jobId == "job-fail"
+                status == "Failed"
             }
     }
 
