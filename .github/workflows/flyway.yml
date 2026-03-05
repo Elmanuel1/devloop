@@ -74,7 +74,7 @@ jobs:
   # ===========================================================================
   pr-validate-local:
     if: github.event_name == 'pull_request'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -134,7 +134,7 @@ jobs:
   # ===========================================================================
   ssm:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     concurrency:
       group: flyway-${{ inputs.environment }}

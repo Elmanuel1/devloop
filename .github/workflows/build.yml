@@ -37,7 +37,7 @@ env:
 
 jobs:
   determine-environment:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       environment: ${{ steps.env.outputs.environment }}
     steps:
@@ -56,7 +56,7 @@ jobs:
 
   build:
     needs: determine-environment
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     permissions:
       contents: write

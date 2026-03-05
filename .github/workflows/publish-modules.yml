@@ -38,7 +38,7 @@ env:
 
 jobs:
   detect-changes:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       modules: ${{ steps.build-matrix.outputs.modules }}
     steps:
@@ -70,7 +70,7 @@ jobs:
   publish:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.modules != '[]' }}
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         module: ${{ fromJson(needs.detect-changes.outputs.modules) }}
