@@ -1,6 +1,5 @@
 package com.tosspaper.precon;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
@@ -13,7 +12,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 
@@ -99,41 +97,6 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                 .execute();
     }
 
-    @Override
-    public int putDocumentExternalId(String extractionId, String documentId, ExternalId externalId) {
-        // Raw bridge until jOOQ classes jar is regenerated with DOCUMENT_EXTERNAL_IDS.
-        // jsonb_set second argument must be a text[] literal — it cannot be bound via
-        // a JDBC ? placeholder because the driver sends text, not text[].
-        // The path is built from documentId which is an internal UUID, not user input.
-        String externalIdJson = serializeExternalId(externalId);
-        String path = "'{%s}'".formatted(documentId);
-        return dsl.execute(
-                "UPDATE extractions " +
-                "SET document_external_ids = jsonb_set(document_external_ids, " + path + ", ?::jsonb, true), " +
-                "    updated_at = NOW() " +
-                "WHERE id = ? AND deleted_at IS NULL",
-                externalIdJson,
-                extractionId);
-    }
-
-    @Override
-    public Optional<ExtractionWithDocs> findByDocumentExternalTaskId(String externalTaskId) {
-        // Scan the document_external_ids JSONB map for any value whose
-        // externalTaskId field matches. The subquery unnests the map values via
-        // jsonb_each and filters by the target task ID.
-        // Raw bridge until jOOQ classes jar is regenerated with DOCUMENT_EXTERNAL_IDS.
-        return dsl.selectFrom(EXTRACTIONS)
-                .where(EXTRACTIONS.DELETED_AT.isNull())
-                .and(DSL.condition(
-                        "EXISTS (" +
-                        "  SELECT 1 FROM jsonb_each(document_external_ids) AS e(k, v) " +
-                        "  WHERE v->>'externalTaskId' = {0}" +
-                        ")",
-                        externalTaskId))
-                .fetchOptional()
-                .map(record -> new ExtractionWithDocs(record, parseDocumentIds(record)));
-    }
-
     // ── private helpers ───────────────────────────────────────────────────────
 
     /**
@@ -152,14 +115,6 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
             log.warn("[ExtractionPoll] Failed to parse document_ids for extraction {}: {}",
                     record.getId(), e.getMessage());
             return List.of();
-        }
-    }
-
-    private String serializeExternalId(ExternalId externalId) {
-        try {
-            return objectMapper.writeValueAsString(externalId);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize ExternalId", e);
         }
     }
 }

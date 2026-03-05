@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static com.tosspaper.models.jooq.Tables.TENDER_DOCUMENTS;
 
@@ -131,6 +132,26 @@ public class TenderDocumentRepositoryImpl implements TenderDocumentRepository {
         return dsl.update(TENDER_DOCUMENTS)
                 .set(TENDER_DOCUMENTS.STATUS, TenderDocumentStatus.FAILED.getValue())
                 .set(TENDER_DOCUMENTS.ERROR_REASON, errorReason)
+                .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
+                .where(TENDER_DOCUMENTS.ID.eq(id))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .execute();
+    }
+
+    @Override
+    public Optional<TenderDocumentsRecord> findByExternalTaskId(String externalTaskId) {
+        // Raw field bridge until jOOQ classes jar is regenerated with the EXTERNAL_TASK_ID column.
+        return dsl.selectFrom(TENDER_DOCUMENTS)
+                .where(DSL.field("external_task_id", String.class).eq(externalTaskId))
+                .and(TENDER_DOCUMENTS.DELETED_AT.isNull())
+                .fetchOptional();
+    }
+
+    @Override
+    public int updateExternalFileId(String id, String externalFileId) {
+        // Raw field bridge until jOOQ classes jar is regenerated with the EXTERNAL_FILE_ID column.
+        return dsl.update(TENDER_DOCUMENTS)
+                .set(DSL.field("external_file_id", String.class), externalFileId)
                 .set(TENDER_DOCUMENTS.UPDATED_AT, DSL.currentOffsetDateTime())
                 .where(TENDER_DOCUMENTS.ID.eq(id))
                 .and(TENDER_DOCUMENTS.DELETED_AT.isNull())

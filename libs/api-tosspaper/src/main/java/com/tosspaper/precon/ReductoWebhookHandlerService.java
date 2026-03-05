@@ -6,6 +6,7 @@ import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult;
 import com.tosspaper.aiengine.service.ProcessingService;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.common.NotFoundException;
+import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ReductoWebhookHandlerService {
 
-    private final PreconExtractionRepository preconExtractionRepository;
+    private final TenderDocumentRepository tenderDocumentRepository;
     private final ProcessingService processingService;
     private final ObjectMapper objectMapper;
 
@@ -25,11 +26,11 @@ public class ReductoWebhookHandlerService {
         log.info("[ReductoWebhook] Processing webhook for job_id={} status={}",
                 jobId, payload.status());
 
-        // Find the extraction that owns this Reducto job — throws NotFoundException if not found.
-        ExtractionWithDocs extraction = preconExtractionRepository
-                .findByDocumentExternalTaskId(jobId)
+        // Find the document that owns this Reducto job — throws NotFoundException if not found.
+        TenderDocumentsRecord document = tenderDocumentRepository
+                .findByExternalTaskId(jobId)
                 .orElseThrow(() -> {
-                    log.warn("[ReductoWebhook] No extraction found for job_id={}", jobId);
+                    log.warn("[ReductoWebhook] No document found for job_id={}", jobId);
                     return new NotFoundException(
                             ApiErrorMessages.WEBHOOK_TASK_NOT_FOUND_CODE,
                             ApiErrorMessages.WEBHOOK_TASK_NOT_FOUND);
@@ -39,8 +40,8 @@ public class ReductoWebhookHandlerService {
         // that is the responsibility of ExtractionWorker (TOS-38) once all
         // documents in the batch have reported in.
         switch (payload.status().toLowerCase()) {
-            case "completed" -> handleCompleted(jobId, extraction);
-            case "failed"    -> handleFailed(jobId, extraction);
+            case "completed" -> handleCompleted(jobId, document);
+            case "failed"    -> handleFailed(jobId, document);
             default          -> log.info("[ReductoWebhook] job_id={} reported status='{}' — no action taken",
                                         jobId, payload.status());
         }
@@ -48,19 +49,19 @@ public class ReductoWebhookHandlerService {
 
     // ── Private handlers ──────────────────────────────────────────────────────
 
-    private void handleCompleted(String jobId, ExtractionWithDocs extraction) {
+    private void handleCompleted(String jobId, TenderDocumentsRecord document) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
         JsonNode fields = parseRawResponse(jobResult.getRawResponse());
         // TODO [TOS-38]: persist fields to extraction_fields table via ExtractionFieldRepository.
-        log.info("[ReductoWebhook] job_id={} extraction_id={} completed — fields ready for TOS-38 persistence (size={})",
-                jobId, extraction.getId(), fields.size());
+        log.info("[ReductoWebhook] job_id={} document_id={} completed — fields ready for TOS-38 persistence (size={})",
+                jobId, document.getId(), fields.size());
     }
 
-    private void handleFailed(String jobId, ExtractionWithDocs extraction) {
+    private void handleFailed(String jobId, TenderDocumentsRecord document) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
         String reason = jobResult.getError() != null ? jobResult.getError() : "Reducto reported job as failed";
         // TODO [TOS-38]: record per-document failure via ExtractionFieldRepository or document status table.
-        log.warn("[ReductoWebhook] job_id={} extraction_id={} failed — reason='{}'", jobId, extraction.getId(), reason);
+        log.warn("[ReductoWebhook] job_id={} document_id={} failed — reason='{}'", jobId, document.getId(), reason);
     }
 
     private JsonNode parseRawResponse(String rawResponse) {

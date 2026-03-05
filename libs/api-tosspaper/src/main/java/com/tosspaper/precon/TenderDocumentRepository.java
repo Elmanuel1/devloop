@@ -4,6 +4,7 @@ import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface TenderDocumentRepository {
 
@@ -22,5 +23,9 @@ public interface TenderDocumentRepository {
     int updateStatusToReady(String id);
 
     int updateStatusToFailed(String id, String errorReason);
+
+    Optional<TenderDocumentsRecord> findByExternalTaskId(String externalTaskId);
+
+    int updateExternalFileId(String id, String externalFileId);
 
 }
