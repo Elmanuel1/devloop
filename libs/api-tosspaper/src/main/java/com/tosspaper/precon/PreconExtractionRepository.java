@@ -33,7 +33,7 @@ public interface PreconExtractionRepository {
      * @param result the combined pipeline result containing extracted fields
      * @return number of rows updated
      */
-    int markAsCompleted(String id, PipelineExtractionResult result);
+    int markAsCompleted(String id, PipelineExtractionResult ignoredResult);
 
     /**
      * Transitions the given extraction to {@code failed} and records the error

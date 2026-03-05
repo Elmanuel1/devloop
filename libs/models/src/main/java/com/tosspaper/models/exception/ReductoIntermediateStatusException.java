@@ -1,5 +1,7 @@
 package com.tosspaper.models.exception;
 
+import lombok.Getter;
+
 /**
  * Signals that a Reducto checkback call returned a non-terminal status:
  * {@code PENDING} or {@code PROCESSING}.
@@ -12,6 +14,7 @@ package com.tosspaper.models.exception;
  * <p>Contrast with {@code ReductoTaskException}, which signals a hard error
  * returned by the Reducto API and <em>should</em> mark the extraction FAILED.
  */
+@Getter
 public class ReductoIntermediateStatusException extends RuntimeException {
 
     private final String status;
@@ -23,12 +26,5 @@ public class ReductoIntermediateStatusException extends RuntimeException {
     public ReductoIntermediateStatusException(String status) {
         super(ApiErrorMessages.REDUCTO_INTERMEDIATE_STATUS.formatted(status));
         this.status = status;
-    }
-
-    /**
-     * @return the non-terminal status name that triggered this exception
-     */
-    public String getStatus() {
-        return status;
     }
 }
