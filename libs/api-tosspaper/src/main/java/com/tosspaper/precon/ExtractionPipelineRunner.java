@@ -3,11 +3,13 @@ package com.tosspaper.precon;
 import com.tosspaper.models.exception.ReductoIntermediateStatusException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 import static java.util.concurrent.CompletableFuture.allOf;
 import static java.util.concurrent.CompletableFuture.supplyAsync;
@@ -29,11 +31,13 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
  * lock is required here.
  *
  * <h3>Parallelism</h3>
- * <p>{@link #scatterGather(ExtractionWithDocs)} calls {@link CompletableFuture#supplyAsync}
- * without an explicit executor, which means tasks run on the common
- * {@code ForkJoinPool}. With {@code -Djdk.virtualThreadScheduler.parallelism}
- * already enabled in this application the pool uses virtual threads, so
- * blocking I/O (Reducto HTTP calls) does not consume OS threads.
+ * <p>{@link #scatterGather(ExtractionWithDocs)} submits per-document tasks via
+ * {@link CompletableFuture#supplyAsync} to a <em>bounded</em> virtual-thread
+ * executor ({@code extractionProcessingExecutor}).  The pool size defaults to 5
+ * and is configurable via {@code extraction.processing.thread-pool-size}.
+ * Virtual threads mean blocking I/O (Reducto HTTP calls) does not consume OS
+ * carrier threads, while the bound caps simultaneous in-flight requests to
+ * the external service.
  *
  * <h3>Error handling — prepare vs checkback</h3>
  * <p>Two distinct failure modes are handled differently in
@@ -58,6 +62,9 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 public class ExtractionPipelineRunner {
 
     private final PreconExtractionRepository preconExtractionRepository;
+
+    @Qualifier("extractionProcessingExecutor")
+    private final Executor extractionProcessingExecutor;
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -99,7 +106,7 @@ public class ExtractionPipelineRunner {
         }
 
         List<CompletableFuture<DocResult>> futures = docIds.stream()
-                .map(docId -> supplyAsync(() -> callReducto(docId)))
+                .map(docId -> supplyAsync(() -> callReducto(docId), extractionProcessingExecutor))
                 .toList();
 
         allOf(futures.toArray(new CompletableFuture[0]))
@@ -123,8 +130,8 @@ public class ExtractionPipelineRunner {
 
     /**
      * Calls the Reducto client for a single document.
-     * Runs on a virtual thread from the common ForkJoinPool — never on the
-     * scheduler thread.
+     * Runs on a virtual thread from the bounded {@code extractionProcessingExecutor}
+     * — never on the scheduler thread.
      *
      * <p>TODO [TOS-38] The actual Reducto flow (upload → createAsyncExtractTask
      * → checkback) is deferred. Until TOS-38 is implemented this method throws

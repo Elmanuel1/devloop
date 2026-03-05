@@ -7,13 +7,23 @@ import spock.lang.Specification
 import spock.lang.Subject
 
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executor
 
 class ExtractionPipelineRunnerSpec extends Specification {
 
     PreconExtractionRepository repository = Mock()
 
+    /**
+     * Same-thread executor: runs tasks inline on the calling thread.
+     *
+     * This makes async operations deterministic in unit tests — no Thread.sleep
+     * needed to wait for async completion. The executor contract is satisfied
+     * (Runnable::run is called), but the scheduling policy is synchronous.
+     */
+    Executor sameThreadExecutor = { Runnable r -> r.run() }
+
     @Subject
-    ExtractionPipelineRunner runner = new ExtractionPipelineRunner(repository)
+    ExtractionPipelineRunner runner = new ExtractionPipelineRunner(repository, sameThreadExecutor)
 
     // ==================== run — delegates to scatterGather ====================
 
@@ -21,7 +31,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that stubs scatterGather to avoid real execution"
             def extraction = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository])
+                    constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.scatterGather(_) >> {}
 
         when: "run is called"
@@ -38,7 +48,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def extraction = buildExtractionWithDocs("ext-1", ["doc-A", "doc-B"])
             def calledDocIds = []
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository])
+                    constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(_) >> { String docId ->
                 calledDocIds << docId
                 return new DocResult(docId, "text")
@@ -46,10 +56,8 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
         when: "scatterGather is called"
             runnerSpy.scatterGather(extraction)
-            // Wait for async tasks to complete
-            Thread.sleep(200)
 
-        then: "callReducto was called once per document"
+        then: "callReducto was called once per document (synchronous — no sleep needed)"
             calledDocIds.size() == 2
             calledDocIds.containsAll(["doc-A", "doc-B"])
     }
@@ -104,12 +112,11 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to throw a hard prepare error"
             def extraction = buildExtractionWithDocs("ext-fail", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository])
+                    constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(_) >> { throw new RuntimeException("network error — prepare failed") }
 
-        when: "scatterGather is called and we wait for async completion"
+        when: "scatterGather is called (synchronous via same-thread executor)"
             runnerSpy.scatterGather(extraction)
-            Thread.sleep(200)
 
         then: "extraction IS marked FAILED — hard errors are permanent"
             1 * repository.markAsFailed("ext-fail") >> 1
@@ -119,14 +126,13 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to signal Reducto is still processing"
             def extraction = buildExtractionWithDocs("ext-processing", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository])
+                    constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(_) >> {
                 throw new ReductoIntermediateStatusException(ReductoStatus.PROCESSING.name())
             }
 
-        when: "scatterGather is called and we wait for async completion"
+        when: "scatterGather is called (synchronous via same-thread executor)"
             runnerSpy.scatterGather(extraction)
-            Thread.sleep(200)
 
         then: "extraction is NOT marked FAILED — task is still in-flight; reaper will handle it"
             0 * repository.markAsFailed(_)
@@ -136,14 +142,13 @@ class ExtractionPipelineRunnerSpec extends Specification {
         given: "spy that overrides callReducto to signal Reducto task is queued"
             def extraction = buildExtractionWithDocs("ext-pending", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
-                    constructorArgs: [repository])
+                    constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(_) >> {
                 throw new ReductoIntermediateStatusException(ReductoStatus.PENDING.name())
             }
 
-        when: "scatterGather is called and we wait for async completion"
+        when: "scatterGather is called (synchronous via same-thread executor)"
             runnerSpy.scatterGather(extraction)
-            Thread.sleep(200)
 
         then: "extraction is NOT marked FAILED — PENDING is a transient state"
             0 * repository.markAsFailed(_)
@@ -161,6 +166,22 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
         then: "status name is accessible"
             ex2.getStatus() == "PENDING"
+    }
+
+    def "TC-PR-11: executor is used for all document submissions — bounded concurrency is exercised"() {
+        given: "a spy executor that records each submitted task"
+            def submittedTasks = []
+            Executor trackingExecutor = { Runnable r -> submittedTasks << r; r.run() }
+            def extraction = buildExtractionWithDocs("ext-exec", ["doc-X", "doc-Y", "doc-Z"])
+            ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
+                    constructorArgs: [repository, trackingExecutor])
+            runnerSpy.callReducto(_) >> { String docId -> new DocResult(docId, "text") }
+
+        when: "scatterGather is called"
+            runnerSpy.scatterGather(extraction)
+
+        then: "the executor received one task submission per document"
+            submittedTasks.size() == 3
     }
 
     // ==================== Helper Methods ====================
