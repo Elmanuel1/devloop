@@ -130,6 +130,8 @@ public final class ApiErrorMessages {
     public static final String NOT_IMPLEMENTED = "This feature is not yet implemented.";
 
     // ── Application ──
+    public static final String EXTRACTION_NOT_APPLICABLE_CODE        = "api.extraction.notApplicable";
+    public static final String EXTRACTION_NOT_APPLICABLE             = "Cannot apply extraction in '%s' status — extraction must be completed first.";
     public static final String APPLICATION_UNRESOLVED_CONFLICTS_CODE = "api.application.unresolvedConflicts";
     public static final String APPLICATION_UNRESOLVED_CONFLICTS      = "Cannot apply extraction — %d field(s) have conflicts that must be resolved before applying. Set edited_value on each conflicted field via PATCH /v1/extractions/{id}/fields.";
     public static final String APPLICATION_ENTITY_STALE_CODE = "api.application.entityStale";
