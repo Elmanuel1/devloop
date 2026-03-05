@@ -66,6 +66,9 @@ public class ConflictDetector {
                 JSONB competingJsonb = buildCompetingValuesJsonb(rows);
                 int updated = extractionFieldRepository.markConflict(extractionId, fieldName, competingJsonb);
                 conflictedRows += updated;
+                // TODO (follow-up PR): pass competing_values through a reasoning model to filter out
+                // superficial differences (e.g. "$45.00" vs "$45", "Excavation" vs "excavation")
+                // before surfacing as genuine conflicts to the reviewer.
             }
         }
 
