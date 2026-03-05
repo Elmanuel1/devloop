@@ -1,5 +1,7 @@
 package com.tosspaper.precon;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult;
 import com.tosspaper.aiengine.service.ProcessingService;
 import com.tosspaper.common.ApiErrorMessages;
@@ -16,6 +18,7 @@ public class ReductoWebhookHandlerService {
 
     private final PreconExtractionRepository preconExtractionRepository;
     private final ProcessingService processingService;
+    private final ObjectMapper objectMapper;
 
     public void handle(ReductoWebhookPayload payload) {
         String jobId = payload.jobId();
@@ -34,13 +37,11 @@ public class ReductoWebhookHandlerService {
         String extractionId = extraction.getId();
         log.debug("[ReductoWebhook] Matched job_id={} to extraction_id={}", jobId, extractionId);
 
-        if ("completed".equalsIgnoreCase(payload.status())) {
-            handleCompleted(jobId, extractionId);
-        } else if ("failed".equalsIgnoreCase(payload.status())) {
-            handleFailed(jobId, extractionId);
-        } else {
-            log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — no action taken",
-                    jobId, payload.status());
+        switch (payload.status().toLowerCase()) {
+            case "completed" -> handleCompleted(jobId, extractionId);
+            case "failed"    -> handleFailed(jobId, extractionId);
+            default          -> log.info("[ReductoWebhook] Extraction job_id={} reported status='{}' — no action taken",
+                                        jobId, payload.status());
         }
     }
 
@@ -49,11 +50,10 @@ public class ReductoWebhookHandlerService {
     private void handleCompleted(String jobId, String extractionId) {
         ExtractTaskResult jobResult = processingService.getExtractTask(jobId);
 
-        // TODO [TOS-38]: wire jobResult.getRawResponse() into PipelineExtractionResult.
-        PipelineExtractionResult result = new PipelineExtractionResult(extractionId, null);
+        JsonNode fields = parseRawResponse(jobResult.getRawResponse());
+        PipelineExtractionResult result = new PipelineExtractionResult(extractionId, fields);
         preconExtractionRepository.markAsCompleted(extractionId, result);
-        log.info("[ReductoWebhook] Marked extraction_id={} as completed (raw_response length={})",
-                extractionId, jobResult.getRawResponse() != null ? jobResult.getRawResponse().length() : 0);
+        log.info("[ReductoWebhook] Marked extraction_id={} as completed", extractionId);
     }
 
     private void handleFailed(String jobId, String extractionId) {
@@ -62,5 +62,17 @@ public class ReductoWebhookHandlerService {
         String reason = jobResult.getError() != null ? jobResult.getError() : "Reducto reported job as failed";
         preconExtractionRepository.markAsFailed(extractionId, reason);
         log.info("[ReductoWebhook] Marked extraction_id={} as failed — reason='{}'", extractionId, reason);
+    }
+
+    private JsonNode parseRawResponse(String rawResponse) {
+        if (rawResponse == null) {
+            return objectMapper.nullNode();
+        }
+        try {
+            return objectMapper.readTree(rawResponse);
+        } catch (Exception e) {
+            log.warn("[ReductoWebhook] Could not parse raw_response as JSON — storing as text node");
+            return objectMapper.valueToTree(rawResponse);
+        }
     }
 }

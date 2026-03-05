@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.tosspaper.aiengine.client.common.dto.ExtractTaskResult
 import com.tosspaper.aiengine.service.ProcessingService
 import com.tosspaper.common.NotFoundException
@@ -11,10 +12,11 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     PreconExtractionRepository preconExtractionRepository = Mock()
     ProcessingService processingService = Mock()
+    ObjectMapper objectMapper = new ObjectMapper()
 
     @Subject
     ReductoWebhookHandlerService handlerService =
-            new ReductoWebhookHandlerService(preconExtractionRepository, processingService)
+            new ReductoWebhookHandlerService(preconExtractionRepository, processingService, objectMapper)
 
     static final String JOB_ID        = "reducto-job-abc123"
     static final String EXTRACTION_ID = "extraction-uuid-001"
@@ -36,30 +38,46 @@ class ReductoWebhookHandlerServiceSpec extends Specification {
 
     // ==================== handle — Completed status ====================
 
-    def "TC-WHS-02: on Completed — fetches job result and marks extraction completed"() {
-        given: "extraction is found"
+    def "TC-WHS-02: on Completed — fetches job result, parses raw response into fields, marks completed"() {
+        given: "extraction is found and Reducto returns a JSON raw response"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1", "doc-2"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
+
+            PipelineExtractionResult captured = null
+            preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> { String id, PipelineExtractionResult r ->
+                captured = r
+                return 1
+            }
 
         when: "handler receives a Completed webhook"
             handlerService.handle(completedPayload(JOB_ID))
 
-        then: "job result fetched and extraction marked completed"
-            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult("some-raw-response")
-            1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> 1
+        then: "job result fetched, fields parsed, extraction marked completed"
+            1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult('{"invoice_number":"INV-001"}')
+            captured != null
+            captured.fields() != null
+            captured.fields().get("invoice_number").asText() == "INV-001"
     }
 
-    def "TC-WHS-03: Completed is case-insensitive — 'COMPLETED' also triggers fetch and mark"() {
+    def "TC-WHS-03: on Completed with null rawResponse — fields is JSON null node"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-1"])
             preconExtractionRepository.findByExternalTaskId(JOB_ID) >> Optional.of(extraction)
 
+            PipelineExtractionResult captured = null
+            preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _ as PipelineExtractionResult) >> { String id, PipelineExtractionResult r ->
+                captured = r
+                return 1
+            }
+
         when:
             handlerService.handle(new ReductoWebhookPayload(JOB_ID, "COMPLETED"))
 
-        then:
+        then: "case-insensitive match, fields is null node when rawResponse is null"
             1 * processingService.getExtractTask(JOB_ID) >> completedTaskResult(null)
-            1 * preconExtractionRepository.markAsCompleted(EXTRACTION_ID, _) >> 1
+            captured != null
+            captured.fields() != null
+            captured.fields().isNull()
     }
 
     // ==================== handle — Failed status ====================
