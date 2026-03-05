@@ -1,5 +1,6 @@
 package com.tosspaper.precon
 
+import com.fasterxml.jackson.databind.node.NullNode
 import com.tosspaper.config.BaseIntegrationTest
 import com.tosspaper.config.TestSecurityConfiguration
 import com.tosspaper.models.jooq.Tables
@@ -227,7 +228,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
     def "TC-PR-MAC01: should transition processing extraction to completed with a result"() {
         given: "an extraction in processing state"
             def extraction = insertExtraction(companyIdStr, tenderId, "processing", '["doc-1"]')
-            def result = PipelineExtractionResult.empty(extraction.id)
+            def result = new PipelineExtractionResult(extraction.id, NullNode.getInstance())
 
         when: "marking as completed"
             def rowsUpdated = preconExtractionRepository.markAsCompleted(extraction.id, result)
@@ -245,7 +246,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
 
     def "TC-PR-MAC02: should return 0 when marking non-existent extraction as completed"() {
         given: "an empty result"
-            def result = PipelineExtractionResult.empty("nonexistent-id")
+            def result = new PipelineExtractionResult("nonexistent-id", NullNode.getInstance())
 
         when:
             def rowsUpdated = preconExtractionRepository.markAsCompleted("nonexistent-id", result)

@@ -37,19 +37,29 @@ public class ExtractionPipelineRunner {
         log.debug("[ExtractionPipeline] Starting pipeline for batch of {} extraction(s)", batch.size());
 
         List<CompletableFuture<Void>> futures = batch.stream()
-                .map(extraction -> CompletableFuture
-                        .supplyAsync(() -> callReducto(extraction), extractionProcessingExecutor)
-                        .thenAccept(result -> preconExtractionRepository.markAsCompleted(extraction.getId(), result))
-                        .exceptionally(ex -> {
-                            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-                            log.error("[ExtractionPipeline] Failed for extraction {}: {}",
-                                    extraction.getId(), cause.getMessage(), cause);
-                            preconExtractionRepository.markAsFailed(extraction.getId(), cause.getMessage());
-                            return null;
-                        }))
+                .map(this::processExtraction)
                 .toList();
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+
+    // ── Per-extraction pipeline chain ─────────────────────────────────────────
+
+    /**
+     * Builds the async pipeline chain for a single extraction: calls Reducto,
+     * marks completed on success, marks failed on error.
+     */
+    private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
+        return CompletableFuture
+                .supplyAsync(() -> callReducto(extraction), extractionProcessingExecutor)
+                .thenAccept(result -> preconExtractionRepository.markAsCompleted(extraction.getId(), result))
+                .exceptionally(ex -> {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    log.error("[ExtractionPipeline] Failed for extraction {}: {}",
+                            extraction.getId(), cause.getMessage(), cause);
+                    preconExtractionRepository.markAsFailed(extraction.getId(), cause.getMessage());
+                    return null;
+                });
     }
 
     // ── Per-extraction call ───────────────────────────────────────────────────

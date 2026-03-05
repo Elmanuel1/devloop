@@ -91,7 +91,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     }
 
     @Override
-    public int markAsCompleted(String id, PipelineExtractionResult result) {
+    public int markAsCompleted(String id, PipelineExtractionResult ignoredResult) {
         log.debug("[ExtractionPoll] Marking extraction {} as completed", id);
         // TODO [TOS-38] Persist result.fields() to extraction_fields table once
         //  the Reducto field schema is finalised. For now only the status is updated.

@@ -1,21 +1,15 @@
 package com.tosspaper.precon;
 
-import java.util.Map;
+import com.fasterxml.jackson.databind.JsonNode;
 
 /**
  * Carries the result of processing an extraction through the pipeline.
- * The {@code fields} map is empty until the Reducto engine is wired in TOS-38.
+ * The {@code fields} node is null until the Reducto engine is wired in TOS-38.
  *
  * @param extractionId the extraction this result belongs to
- * @param fields       extracted field name → value pairs
+ * @param fields       extracted fields as a JSON object
  */
 public record PipelineExtractionResult(
         String extractionId,
-        Map<String, Object> fields
-) {
-
-    /** Convenience factory for an empty result (used by the stub implementation). */
-    public static PipelineExtractionResult empty(String extractionId) {
-        return new PipelineExtractionResult(extractionId, Map.of());
-    }
-}
+        JsonNode fields
+) {}

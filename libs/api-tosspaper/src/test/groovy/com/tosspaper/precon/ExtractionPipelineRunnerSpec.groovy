@@ -1,10 +1,10 @@
 package com.tosspaper.precon
 
+import com.fasterxml.jackson.databind.node.NullNode
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
 
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
 class ExtractionPipelineRunnerSpec extends Specification {
@@ -28,7 +28,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> PipelineExtractionResult.empty("ignored")
+            runnerSpy.callReducto(_) >> emptyResult("ignored")
 
         when: "run is called with the full batch"
             runnerSpy.run([e1, e2])
@@ -72,7 +72,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
                     constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx ->
                 capturedContexts << ctx
-                return PipelineExtractionResult.empty(ctx.getId())
+                return emptyResult(ctx.getId())
             }
 
         when: "run is called"
@@ -88,7 +88,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
     def "TC-PR-05: successful callReducto result is passed to markAsCompleted"() {
         given: "a spy with a successful callReducto"
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
-            def expectedResult = PipelineExtractionResult.empty(extraction.getId())
+            def expectedResult = emptyResult(extraction.getId())
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(extraction) >> expectedResult
@@ -105,7 +105,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, sameThreadExecutor])
-            runnerSpy.callReducto(_) >> PipelineExtractionResult.empty(extraction.getId())
+            runnerSpy.callReducto(_) >> emptyResult(extraction.getId())
 
         when: "run is called"
             runnerSpy.run([extraction])
@@ -137,7 +137,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, sameThreadExecutor])
             runnerSpy.callReducto(failing)  >> { throw new RuntimeException("boom") }
-            runnerSpy.callReducto(succeeds) >> PipelineExtractionResult.empty(succeeds.getId())
+            runnerSpy.callReducto(succeeds) >> emptyResult(succeeds.getId())
 
         when: "run is called with the full batch"
             runnerSpy.run([failing, succeeds])
@@ -158,9 +158,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def e3 = buildExtractionWithDocs("ext-3", ["doc-Z"])
             ExtractionPipelineRunner runnerSpy = Spy(ExtractionPipelineRunner,
                     constructorArgs: [repository, trackingExecutor])
-            runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx ->
-                PipelineExtractionResult.empty(ctx.getId())
-            }
+            runnerSpy.callReducto(_) >> { ExtractionWithDocs ctx -> emptyResult(ctx.getId()) }
 
         when: "run is called with three extractions"
             runnerSpy.run([e1, e2, e3])
@@ -170,6 +168,10 @@ class ExtractionPipelineRunnerSpec extends Specification {
     }
 
     // ==================== Helper Methods ====================
+
+    private static PipelineExtractionResult emptyResult(String extractionId) {
+        return new PipelineExtractionResult(extractionId, NullNode.getInstance())
+    }
 
     private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {
         def record = new ExtractionsRecord()
