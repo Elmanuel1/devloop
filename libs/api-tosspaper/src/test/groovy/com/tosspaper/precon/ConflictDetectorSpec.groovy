@@ -226,6 +226,24 @@ class ConflictDetectorSpec extends Specification {
             detector.normalise(jsonb) != ""
     }
 
+    def "TC-CD-16: normalise treats nested objects with same keys in different order as equal"() {
+        given: "two nested JSON objects where inner keys are in different order"
+            def a = JSONB.valueOf('{"dimensions":{"height":10,"width":5}}')
+            def b = JSONB.valueOf('{"dimensions":{"width":5,"height":10}}')
+
+        expect: "recursive key sorting produces the same canonical string"
+            detector.normalise(a) == detector.normalise(b)
+    }
+
+    def "TC-CD-17: normalise treats deeply nested objects with different key order as equal"() {
+        given: "deeply nested JSON where keys differ at every level"
+            def a = JSONB.valueOf('{"outer":{"z":{"b":2,"a":1},"a":{"y":9,"x":8}}}')
+            def b = JSONB.valueOf('{"outer":{"a":{"x":8,"y":9},"z":{"a":1,"b":2}}}')
+
+        expect: "all nesting levels are canonicalised consistently"
+            detector.normalise(a) == detector.normalise(b)
+    }
+
     // ==================== findAllByExtractionId called with correct ID ====================
 
     def "TC-CD-15: calls findAllByExtractionId with the extraction ID"() {

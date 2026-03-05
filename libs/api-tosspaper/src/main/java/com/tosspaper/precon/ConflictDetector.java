@@ -3,6 +3,7 @@ package com.tosspaper.precon;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.tosspaper.common.ApiErrorMessages;
@@ -16,7 +17,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /** Detects and marks conflicting extraction field values across documents in a batch. */
@@ -81,11 +81,12 @@ public class ConflictDetector {
             return "";
         }
         try {
-            // Parse and re-serialise through a TreeMap to get sorted keys
-            JsonNode node = objectMapper.readTree(jsonb.data());
-            // Use canonical form: sorted keys, compact output
-            Map<String, Object> canonical = objectMapper.convertValue(node, TreeMap.class);
-            return objectMapper.writeValueAsString(canonical);
+            // Deserialise to Object so nested maps are LinkedHashMap, then re-serialise
+            // with ORDER_MAP_ENTRIES_BY_KEYS which recursively sorts keys at every depth.
+            Object value = objectMapper.readValue(jsonb.data(), Object.class);
+            return objectMapper.copy()
+                    .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+                    .writeValueAsString(value);
         } catch (Exception e) {
             // If parsing fails, fall back to raw trimmed string comparison
             return jsonb.data().trim();
