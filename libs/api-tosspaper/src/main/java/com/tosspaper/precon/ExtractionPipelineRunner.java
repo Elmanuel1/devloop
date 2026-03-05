@@ -82,6 +82,6 @@ public class ExtractionPipelineRunner {
         log.debug("[ExtractionPipeline] callReducto invoked for extraction {} — not yet implemented (TOS-38)",
                 extraction.getId());
         throw new UnsupportedOperationException(
-                ApiErrorMessages.CALL_REDUCTO_NOT_IMPLEMENTED + " (extraction: " + extraction.getId() + ")");
+                ApiErrorMessages.NOT_IMPLEMENTED + " callReducto (TOS-38) — extraction: " + extraction.getId());
     }
 }
