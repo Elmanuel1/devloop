@@ -19,32 +19,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-/**
- * Detects conflicts across {@code extraction_fields} rows for a completed batch.
- *
- * <h3>When to call</h3>
- * <p>Call {@link #detectAndMarkConflicts(String)} exactly once, after all documents in a
- * tender batch have reached a terminal state (completed, failed, or skipped). Never call
- * it per-document or per-webhook — it is designed as a batch-level operation that runs
- * a single aggregation pass.
- *
- * <h3>Algorithm</h3>
- * <ol>
- *   <li>Load all {@code extraction_fields} rows for the extraction.</li>
- *   <li>Group by {@code field_name}.</li>
- *   <li>Within each group, compare normalised {@code proposed_value} strings.
- *       Normalisation ensures cosmetic differences (whitespace, date format) do not
- *       trigger false conflicts.</li>
- *   <li>If two or more rows have distinct normalised values, mark every row in the
- *       group with {@code has_conflict = true} and populate {@code competing_values}
- *       with a JSON array of {@code {field_id, value, confidence}} objects.</li>
- * </ol>
- *
- * <h3>Idempotency</h3>
- * <p>The underlying repository method uses a targeted UPDATE statement, so calling
- * this method twice for the same extraction is safe — the second call simply
- * re-writes the same flags.
- */
+/** Detects and marks conflicting extraction field values across documents in a batch. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -53,17 +28,6 @@ public class ConflictDetector {
     private final ExtractionFieldRepository extractionFieldRepository;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Runs conflict detection for all fields belonging to {@code extractionId}.
-     *
-     * <p>Groups all {@link ExtractionFieldsRecord}s by {@code field_name}. Within
-     * each group, if the normalised {@code proposed_value} strings are not all
-     * identical, all rows in that group are flagged as conflicting and the
-     * {@code competing_values} JSONB column is populated.
-     *
-     * @param extractionId the extraction to inspect
-     * @return the number of field rows that were marked as conflicted
-     */
     public int detectAndMarkConflicts(String extractionId) {
         log.debug("[ConflictDetector] Starting conflict detection for extraction {}", extractionId);
 
@@ -112,17 +76,6 @@ public class ConflictDetector {
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /**
-     * Normalises a JSONB value to a canonical string for conflict comparison.
-     *
-     * <p>Null JSONB is treated as the empty string so that two null-valued fields
-     * are not considered conflicting. Non-null values are re-serialised through
-     * Jackson (which sorts object keys in a consistent order on re-parse) to
-     * eliminate whitespace differences.
-     *
-     * @param jsonb the value to normalise
-     * @return a canonical, trimmed string representation
-     */
     String normalise(JSONB jsonb) {
         if (jsonb == null || jsonb.data() == null) {
             return "";
@@ -139,15 +92,6 @@ public class ConflictDetector {
         }
     }
 
-    /**
-     * Builds the {@code competing_values} JSONB array.
-     *
-     * <p>Each element has the shape:
-     * <pre>{@code {"field_id": "...", "value": <JsonNode>, "confidence": <decimal>}}</pre>
-     *
-     * @param rows the conflicting field rows
-     * @return a JSONB value containing the competing-values array
-     */
     private JSONB buildCompetingValuesJsonb(List<ExtractionFieldsRecord> rows) {
         try {
             ArrayNode array = objectMapper.createArrayNode();

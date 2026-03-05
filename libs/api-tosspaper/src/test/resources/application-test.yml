@@ -122,4 +122,4 @@ http:
 
 reducto:
   webhook:
-    svix-secret: "whsec_dGVzdC1zZWNyZXQtZm9yLXVuaXQtdGVzdHM="
+    svix-secret: "whsec_c3ZpeC10ZXN0LXBsYWNlaG9sZGVyLXNlY3JldC14eA=="
