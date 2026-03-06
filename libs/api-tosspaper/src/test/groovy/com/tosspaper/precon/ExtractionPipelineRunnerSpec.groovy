@@ -132,20 +132,19 @@ class ExtractionPipelineRunnerSpec extends Specification {
             1 * repository.markAsCompleted("ext-ok", _ as PipelineExtractionResult) >> 1
     }
 
-    def "TC-PR-11: executor is used for all extraction submissions — bounded concurrency is exercised"() {
+    def "TC-PR-11: executor is used for all document submissions — each document is its own task"() {
         given: "a tracking executor that records each submitted task"
             def submittedTasks = []
             Executor trackingExecutor = { Runnable r -> submittedTasks << r; r.run() }
             def e1 = buildExtractionWithDocs("ext-1", ["doc-X"])
-            def e2 = buildExtractionWithDocs("ext-2", ["doc-Y"])
-            def e3 = buildExtractionWithDocs("ext-3", ["doc-Z"])
+            def e2 = buildExtractionWithDocs("ext-2", ["doc-Y", "doc-Z"])
             def trackingRunner = new ExtractionPipelineRunner(repository, extractionWorker, trackingExecutor)
             extractionWorker.process(_, _) >> true
 
-        when: "run is called with three extractions"
-            trackingRunner.run([e1, e2, e3])
+        when: "run is called with two extractions containing three documents total"
+            trackingRunner.run([e1, e2])
 
-        then: "the executor received one task submission per extraction"
+        then: "the executor received one task per document — 3 total"
             submittedTasks.size() == 3
     }
 
