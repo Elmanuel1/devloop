@@ -59,7 +59,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String status = root.path("status").asText(null);
-            if (status == null || status.isBlank()) {
+            if (isBlank(status)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 taskId, "getTask", "status"));
@@ -75,7 +75,7 @@ public class HttpReductoClient implements ExtractionClient {
 
     /** Returns the existing fileId if already uploaded, otherwise uploads the file. */
     private String resolveFileId(ExtractionSubmitRequest request) {
-        if (request.externalFileId() != null && !request.externalFileId().isBlank()) {
+        if (!isBlank(request.externalFileId())) {
             log.debug("[ReductoClient] Document '{}' — reusing existing fileId='{}'",
                     request.documentId(), request.externalFileId());
             return request.externalFileId();
@@ -103,7 +103,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String fileId = root.path("file_id").asText(null);
-            if (fileId == null || fileId.isBlank()) {
+            if (isBlank(fileId)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 request.documentId(), request.extractionId(), "file_id"));
@@ -145,7 +145,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String taskId = root.path("task_id").asText(null);
-            if (taskId == null || taskId.isBlank()) {
+            if (isBlank(taskId)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 request.documentId(), request.extractionId(), "task_id"));
@@ -153,6 +153,11 @@ public class HttpReductoClient implements ExtractionClient {
             log.debug("[ReductoClient] Document '{}' extraction started — taskId='{}'", request.documentId(), taskId);
             return new ExtractionSubmitResponse(taskId, fileId);
         }
+    }
+
+    /** Returns {@code true} when {@code value} is null or blank. */
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     @SuppressWarnings("unused")
