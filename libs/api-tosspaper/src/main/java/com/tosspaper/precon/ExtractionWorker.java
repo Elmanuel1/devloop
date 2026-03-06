@@ -47,7 +47,9 @@ public class ExtractionWorker {
             return true;
         }
 
-        return submitToReducto(extractionId, documentId, document.getS3Key(), contentBytes, documentType);
+        String externalFileId = document.get("external_file_id", String.class);
+        return submitToReducto(extractionId, documentId, document.getS3Key(), contentBytes,
+                documentType, externalFileId);
     }
 
     private TenderDocumentsRecord lookupDocument(String extractionId, String documentId) {
@@ -61,7 +63,8 @@ public class ExtractionWorker {
     }
 
     private boolean submitToReducto(String extractionId, String documentId, String s3Key,
-                                    byte[] fileBytes, ConstructionDocumentType documentType) {
+                                    byte[] fileBytes, ConstructionDocumentType documentType,
+                                    String externalFileId) {
         try {
             ExtractionSubmitRequest request = new ExtractionSubmitRequest(
                     extractionId,
@@ -69,7 +72,8 @@ public class ExtractionWorker {
                     s3Key,
                     fileBytes,
                     reductoProperties.buildWebhookUrl(),
-                    documentType
+                    documentType,
+                    externalFileId
             );
             ExtractionSubmitResponse response = extractionClient.submit(request);
             log.info("[ExtractionWorker] Extraction '{}' document '{}' submitted — taskId='{}' fileId='{}'",

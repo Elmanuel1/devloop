@@ -32,7 +32,7 @@ class ExtractionWorkerSpec extends Specification {
         reductoProperties.setApiKey("test-key")
         reductoProperties.setWebhookBaseUrl("https://my-service.example.com")
         reductoProperties.setWebhookPath("/internal/reducto/webhook")
-        reductoProperties.setDocumentCap(20)
+        reductoProperties.setSvixChannel("precon-extraction")
         reductoProperties.setTaskTimeoutMinutes(15)
         reductoProperties.setTimeoutSeconds(30)
     }

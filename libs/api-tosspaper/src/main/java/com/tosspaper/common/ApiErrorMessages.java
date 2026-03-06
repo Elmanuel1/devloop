@@ -148,6 +148,10 @@ public final class ApiErrorMessages {
     // ── Reducto client ──
     public static final String REDUCTO_SUBMIT_FAILED_CODE    = "api.extraction.reductoSubmitFailed";
     public static final String REDUCTO_SUBMIT_FAILED         = "Failed to submit document '%s' to Reducto for extraction '%s'.";
+    public static final String REDUCTO_HTTP_ERROR_CODE       = "api.extraction.reductoHttpError";
+    public static final String REDUCTO_HTTP_ERROR            = "Reducto HTTP %d for document '%s' in extraction '%s': %s";
+    public static final String REDUCTO_MALFORMED_RESPONSE_CODE = "api.extraction.reductoMalformedResponse";
+    public static final String REDUCTO_MALFORMED_RESPONSE    = "Reducto returned an unexpected response for document '%s' in extraction '%s' — field '%s' missing.";
 
     // ── Document classifier ──
     public static final String DOCUMENT_TYPE_UNSUPPORTED_CODE = "api.extraction.documentTypeUnsupported";

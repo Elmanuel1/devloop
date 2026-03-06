@@ -1,6 +1,8 @@
 package com.tosspaper.precon
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.tosspaper.aiengine.loaders.JsonSchemaLoader
+import com.tosspaper.aiengine.loaders.PromptLoader
 import com.tosspaper.models.exception.ReductoClientException
 import com.tosspaper.models.precon.ConstructionDocumentType
 import okhttp3.Call
@@ -17,6 +19,8 @@ class HttpReductoClientSpec extends Specification {
     ReductoProperties props = new ReductoProperties()
     ObjectMapper mapper = new ObjectMapper()
     OkHttpClient httpClient = Mock()
+    JsonSchemaLoader schemaLoader = Mock()
+    PromptLoader promptLoader = Mock()
     Call uploadCall = Mock()
     Call extractCall = Mock()
 
@@ -32,11 +36,14 @@ class HttpReductoClientSpec extends Specification {
         props.setApiKey("test-api-key")
         props.setWebhookBaseUrl("https://my-service.example.com")
         props.setWebhookPath("/internal/reducto/webhook")
-        props.setDocumentCap(20)
+        props.setSvixChannel("precon-extraction")
         props.setTaskTimeoutMinutes(15)
         props.setTimeoutSeconds(30)
 
-        client = new HttpReductoClient(props, mapper, httpClient)
+        schemaLoader.loadSchema("extraction") >> '{"type":"object"}'
+        promptLoader.loadPrompt("extraction") >> "Extract construction document data."
+
+        client = new HttpReductoClient(props, mapper, httpClient, schemaLoader, promptLoader)
     }
 
     private static Response buildResponse(int code, String body, Request request) {
@@ -54,7 +61,17 @@ class HttpReductoClientSpec extends Specification {
                 "ext-1", "doc-1", "tenders/1/1/doc-1/file.pdf",
                 DUMMY_BYTES,
                 "https://my-service.example.com/internal/reducto/webhook",
-                ConstructionDocumentType.BILL_OF_QUANTITIES)
+                ConstructionDocumentType.BILL_OF_QUANTITIES,
+                null)
+    }
+
+    private ExtractionSubmitRequest buildRequestWithFileId(String fileId) {
+        return new ExtractionSubmitRequest(
+                "ext-1", "doc-1", "tenders/1/1/doc-1/file.pdf",
+                DUMMY_BYTES,
+                "https://my-service.example.com/internal/reducto/webhook",
+                ConstructionDocumentType.BILL_OF_QUANTITIES,
+                fileId)
     }
 
     // ── Success: two-step flow ────────────────────────────────────────────────
@@ -190,6 +207,25 @@ class HttpReductoClientSpec extends Specification {
 
         then:
             thrown(ReductoClientException)
+    }
+
+    // ── Skip upload when external_file_id already set ─────────────────────────
+
+    def "TC-RC-10: upload is skipped when externalFileId is non-blank"() {
+        given: "request with an existing fileId — no upload call should happen"
+            def extractReq = new Request.Builder().url("https://api.reducto.ai/extract").build()
+            httpClient.newCall(_) >> extractCall
+            extractCall.execute() >> buildResponse(200, """{"task_id": "$TASK_ID"}""", extractReq)
+
+        when:
+            def result = client.submit(buildRequestWithFileId(FILE_ID))
+
+        then: "upload endpoint is never called"
+            0 * uploadCall.execute()
+
+        and: "task ID is returned with the pre-existing file ID"
+            result.taskId() == TASK_ID
+            result.fileId() == FILE_ID
     }
 
     // ── Default properties ────────────────────────────────────────────────────

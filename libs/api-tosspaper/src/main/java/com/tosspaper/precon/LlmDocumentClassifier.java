@@ -13,12 +13,11 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
-/** Extracts text from the first 3 PDF pages and classifies it via gpt-4o-mini. */
+/** Extracts text from the first 3 PDF pages via PDFBox and classifies it via gpt-4o-mini. */
 @Slf4j
 @Component
-public class PdfBoxDocumentClassifier implements DocumentClassifier {
+public class LlmDocumentClassifier implements DocumentClassifier {
 
-    static final int MAX_TEXT_CHARS = 4000;
     static final int CLASSIFICATION_PAGES = 3;
 
     static final String VALID_TYPES = Arrays.stream(ConstructionDocumentType.values())
@@ -33,7 +32,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
 
     private final ChatClient chatClient;
 
-    public PdfBoxDocumentClassifier(@Qualifier("validationChatClient") ChatClient chatClient) {
+    public LlmDocumentClassifier(@Qualifier("validationChatClient") ChatClient chatClient) {
         this.chatClient = chatClient;
     }
 
@@ -72,26 +71,15 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
     }
 
     private ConstructionDocumentType classifyWithLlm(String documentId, String text) {
-        String truncated = text.length() > MAX_TEXT_CHARS ? text.substring(0, MAX_TEXT_CHARS) : text;
-        try {
-            String response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(truncated)
-                    .call()
-                    .content()
-                    .strip()
-                    .toUpperCase();
-            ConstructionDocumentType type = ConstructionDocumentType.valueOf(response);
-            log.debug("[DocumentClassifier] Document '{}' — LLM classified as {}", documentId, type);
-            return type;
-        } catch (IllegalArgumentException e) {
-            log.warn("[DocumentClassifier] Document '{}' — LLM returned unrecognised type, returning UNKNOWN",
-                    documentId);
-            return ConstructionDocumentType.UNKNOWN;
-        } catch (Exception e) {
-            log.error("[DocumentClassifier] Document '{}' — LLM classification failed: {}",
-                    documentId, e.getMessage(), e);
-            return ConstructionDocumentType.UNKNOWN;
-        }
+        String response = chatClient.prompt()
+                .system(SYSTEM_PROMPT)
+                .user(text)
+                .call()
+                .content()
+                .strip()
+                .toUpperCase();
+        ConstructionDocumentType type = ConstructionDocumentType.fromValue(response);
+        log.debug("[DocumentClassifier] Document '{}' — LLM classified as {}", documentId, type);
+        return type;
     }
 }

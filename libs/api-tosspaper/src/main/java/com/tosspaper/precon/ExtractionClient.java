@@ -4,4 +4,6 @@ package com.tosspaper.precon;
 public interface ExtractionClient {
 
     ExtractionSubmitResponse submit(ExtractionSubmitRequest request);
+
+    ExtractionTaskStatus getTask(String taskId);
 }

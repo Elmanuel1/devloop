@@ -24,8 +24,9 @@ public class ReductoProperties {
 
     private String webhookPath = "/internal/reducto/webhook";
 
-    @Positive
-    private int documentCap = 20;
+    /** Svix channel name for async webhook delivery — passed as the webhook channel in extract requests. */
+    @NotBlank
+    private String svixChannel;
 
     @Positive
     private int taskTimeoutMinutes = 15;

@@ -12,15 +12,15 @@ import spock.lang.Unroll
 
 import java.io.ByteArrayOutputStream
 
-/** Unit tests for {@link PdfBoxDocumentClassifier}. */
-class PdfBoxDocumentClassifierSpec extends Specification {
+/** Unit tests for {@link LlmDocumentClassifier}. */
+class LlmDocumentClassifierSpec extends Specification {
 
     ChatClient chatClient = Mock()
     ChatClient.ChatClientRequestSpec requestSpec = Mock()
     ChatClient.CallResponseSpec callSpec = Mock()
 
     @Subject
-    PdfBoxDocumentClassifier classifier = new PdfBoxDocumentClassifier(chatClient)
+    LlmDocumentClassifier classifier = new LlmDocumentClassifier(chatClient)
 
     def setup() {
         // Wire the fluent chain so intermediate stubs are always in place
@@ -106,7 +106,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
 
     // ── LLM returns unrecognised value → UNKNOWN ─────────────────────────────
 
-    def "TC-CL-07: LLM returns unrecognised enum value → UNKNOWN"() {
+    def "TC-CL-07: LLM returns unrecognised enum value → UNKNOWN via fromValue()"() {
         given:
             byte[] bytes = buildPdf("Some construction document text for classification.")
             callSpec.content() >> "INVOICE"
@@ -116,7 +116,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
             result == ConstructionDocumentType.UNKNOWN
     }
 
-    def "TC-CL-08: LLM returns empty string → UNKNOWN"() {
+    def "TC-CL-08: LLM returns empty string → UNKNOWN via fromValue()"() {
         given:
             byte[] bytes = buildPdf("Some construction document text for classification.")
             callSpec.content() >> ""
@@ -126,31 +126,28 @@ class PdfBoxDocumentClassifierSpec extends Specification {
             result == ConstructionDocumentType.UNKNOWN
     }
 
-    // ── LLM throws exception → UNKNOWN ───────────────────────────────────────
+    // ── LLM throws exception → propagates to caller ───────────────────────────
 
-    def "TC-CL-09: LLM call throws exception → UNKNOWN"() {
+    def "TC-CL-09: LLM call throws exception — propagates to caller"() {
         given:
             byte[] bytes = buildPdf("Some construction document text for classification.")
             callSpec.content() >> { throw new RuntimeException("OpenAI unavailable") }
         when:
-            def result = classifier.classify("doc-fail", bytes)
+            classifier.classify("doc-fail", bytes)
         then:
-            result == ConstructionDocumentType.UNKNOWN
+            thrown(RuntimeException)
     }
 
-    // ── Text truncation ───────────────────────────────────────────────────────
+    // ── Full text passed to LLM (no truncation) ───────────────────────────────
 
-    def "TC-CL-10: text longer than MAX_TEXT_CHARS is truncated before sending to LLM"() {
-        given: "a PDF whose text exceeds the char limit"
-            String longText = "x" * (PdfBoxDocumentClassifier.MAX_TEXT_CHARS + 500)
-            byte[] bytes = buildPdf(longText.take(200) as String)  // PDF page text capped at 200 in helper
-            def capturedUser = []
-            requestSpec.user(_ as String) >> { String u -> capturedUser << u; requestSpec }
+    def "TC-CL-10: full extracted text is passed to the LLM without truncation"() {
+        given: "a multi-page PDF with text on each page"
+            byte[] bytes = buildMultiPagePdf("Construction document content.", 3)
             callSpec.content() >> "SPECIFICATIONS"
         when:
-            classifier.classify("doc-long", bytes)
-        then:
-            capturedUser.every { it.length() <= PdfBoxDocumentClassifier.MAX_TEXT_CHARS }
+            classifier.classify("doc-full", bytes)
+        then: "LLM is called once — full text, no cap"
+            1 * requestSpec.user(_ as String) >> requestSpec
     }
 
     // ── LLM called exactly once per classify() invocation ────────────────────
@@ -158,11 +155,10 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     def "TC-CL-11: LLM is called exactly once per classify call"() {
         given:
             byte[] bytes = buildMultiPagePdf("Construction tender document content here.", 5)
-            callSpec.content() >> "TENDER_NOTICE"
         when:
             classifier.classify("doc-multi", bytes)
         then:
-            1 * callSpec.content()
+            1 * callSpec.content() >> "TENDER_NOTICE"
     }
 
     // ── System prompt contains all ConstructionDocumentType names ─────────────
@@ -170,7 +166,7 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     def "TC-CL-12: system prompt contains all ConstructionDocumentType names"() {
         expect: "VALID_TYPES string embeds every enum constant name"
             ConstructionDocumentType.values().every { type ->
-                PdfBoxDocumentClassifier.VALID_TYPES.contains(type.name())
+                LlmDocumentClassifier.VALID_TYPES.contains(type.name())
             }
     }
 

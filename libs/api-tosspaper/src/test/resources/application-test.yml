@@ -125,7 +125,7 @@ reducto:
   api-key: "dummy-reducto-api-key"
   webhook-base-url: "https://dummy-app.example.com"
   webhook-path: "/internal/reducto/webhook"
-  document-cap: 20
+  svix-channel: "precon-extraction-test"
   task-timeout-minutes: 15
   timeout-seconds: 30
   webhook:

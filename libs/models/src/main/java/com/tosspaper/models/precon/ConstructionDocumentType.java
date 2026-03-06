@@ -22,5 +22,15 @@ public enum ConstructionDocumentType implements TenderDocumentType {
     PRELIMINARIES,
 
     /** Fallback — no confident classification was possible. */
-    UNKNOWN
+    UNKNOWN;
+
+    /** Returns the matching type for the given string, or {@code UNKNOWN} for null or unrecognised values. */
+    public static ConstructionDocumentType fromValue(String value) {
+        if (value == null) return UNKNOWN;
+        try {
+            return valueOf(value.strip().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return UNKNOWN;
+        }
+    }
 }

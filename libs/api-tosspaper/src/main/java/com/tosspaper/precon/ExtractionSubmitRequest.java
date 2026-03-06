@@ -9,5 +9,6 @@ public record ExtractionSubmitRequest(
         String s3Key,
         byte[] fileBytes,
         String webhookUrl,
-        ConstructionDocumentType documentType
+        ConstructionDocumentType documentType,
+        String externalFileId
 ) {}
