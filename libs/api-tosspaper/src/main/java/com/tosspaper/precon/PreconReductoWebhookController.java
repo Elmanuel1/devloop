@@ -35,14 +35,8 @@ public class PreconReductoWebhookController {
     public PreconReductoWebhookController(ReductoWebhookProperties properties,
                                            ReductoWebhookHandlerService handlerService,
                                            ObjectMapper objectMapper) {
-        String secret = properties.getSvixSecret();
-        if (secret == null || secret.isBlank()) {
-            log.warn("[ReductoWebhook] svixSecret not configured — webhook signature verification DISABLED");
-            this.webhookVerifier = (body, headers) -> {};
-        } else {
-            Webhook svixWebhook = new Webhook(secret);
-            this.webhookVerifier = svixWebhook::verify;
-        }
+        Webhook svixWebhook = new Webhook(properties.getSvixSecret());
+        this.webhookVerifier = svixWebhook::verify;
         this.handlerService = handlerService;
         this.objectMapper = objectMapper;
     }

@@ -478,6 +478,10 @@ tender:
 ai:
   provider: ${AI_PROVIDER:reducto}
   api-key: ${REDUCTO_API_KEY:}
+
+reducto:
+  webhook:
+    svix-secret: ${REDUCTO_WEBHOOK_SVIX_SECRET:}
   base-url: ${AI_BASE_URL:https://platform.reducto.ai}
   http:
     connect-timeout-seconds: ${AI_HTTP_CONNECT_TIMEOUT:30}
