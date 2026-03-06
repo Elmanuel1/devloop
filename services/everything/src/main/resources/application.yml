@@ -479,6 +479,10 @@ ai:
   provider: ${AI_PROVIDER:reducto}
   api-key: ${REDUCTO_API_KEY:}
   base-url: ${AI_BASE_URL:https://platform.reducto.ai}
+
+reducto:
+  webhook:
+    svix-secret: ${REDUCTO_WEBHOOK_SVIX_SECRET:whsec_cGxhY2Vob2xkZXI=}
   http:
     connect-timeout-seconds: ${AI_HTTP_CONNECT_TIMEOUT:30}
     read-timeout-seconds: ${AI_HTTP_READ_TIMEOUT:60}
