@@ -14,31 +14,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Default {@link DocumentClassifier} that uses Apache PDFBox to extract text from a
- * PDF document and then applies per-type exclusive keyword matching to classify it as
- * a specific {@link ConstructionDocumentType}.
- *
- * <h3>Classification strategy</h3>
- * <p>Each {@link ConstructionDocumentType} owns a distinct, non-overlapping keyword set.
- * For each type, the classifier counts how many of that type's keywords appear in the
- * extracted text. The type with the highest hit count wins. Ties are broken by the
- * natural declaration order of {@link ConstructionDocumentType}. If no type scores at
- * least one hit, {@link ConstructionDocumentType#UNKNOWN} is returned.
- *
- * <h3>Non-PDF documents</h3>
- * <p>If PDFBox cannot load the stream (e.g. the document is a DOCX, a scanned image
- * with no text layer, or an encrypted PDF), {@link ConstructionDocumentType#UNKNOWN} is
- * returned and a warning is logged.
- */
+/** PDFBox-based document classifier using keyword matching per construction document type. */
 @Slf4j
 @Component
 public class PdfBoxDocumentClassifier implements DocumentClassifier {
 
-    /** Documents below this character count are likely scanned images with no OCR layer. */
+    /** Minimum extracted character count to attempt classification. */
     static final int MIN_TEXT_LENGTH = 50;
 
-    /** Exclusive keyword sets per {@link ConstructionDocumentType}; no keyword appears in two lists. */
+    /** Exclusive keyword sets per document type. */
     static final Map<ConstructionDocumentType, List<String>> TYPE_KEYWORDS;
 
     static {

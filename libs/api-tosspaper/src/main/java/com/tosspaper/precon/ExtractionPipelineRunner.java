@@ -9,10 +9,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-/**
- * Fans out a claimed batch of extractions across the virtual-thread executor,
- * delegating per-extraction logic to {@link ExtractionWorker}.
- */
+/** Fans out a claimed batch of extractions across the virtual-thread executor. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -24,7 +21,7 @@ public class ExtractionPipelineRunner {
     @Qualifier("extractionProcessingExecutor")
     private final Executor extractionProcessingExecutor;
 
-    /** Runs the pipeline for a claimed batch; failures in one extraction do not affect others. */
+    /** Runs the pipeline for a claimed batch. */
     public void run(List<ExtractionWithDocs> batch) {
         if (batch.isEmpty()) {
             return;

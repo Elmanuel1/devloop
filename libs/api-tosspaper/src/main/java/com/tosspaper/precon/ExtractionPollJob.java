@@ -7,11 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Scheduled job that claims {@code PENDING} extractions and hands batches to
- * {@link ExtractionPipelineRunner}. A separate reaper resets stuck {@code PROCESSING}
- * rows back to {@code PENDING} for retry.
- */
+/** Scheduled job that claims pending extractions and fans them out for processing. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -23,7 +19,7 @@ public class ExtractionPollJob {
 
     // ── Poll ──────────────────────────────────────────────────────────────────
 
-    /** Claims the next batch of pending extractions using SKIP LOCKED and submits to the pipeline. */
+    /** Claims the next batch of pending extractions and submits to the pipeline. */
     @Scheduled(initialDelay = 0, fixedDelay = 500)
     void poll() {
         int batchSize = processingProperties.getBatchSize();
@@ -42,7 +38,7 @@ public class ExtractionPollJob {
 
     // ── Reaper ────────────────────────────────────────────────────────────────
 
-    /** Resets stale {@code PROCESSING} rows older than the configured threshold back to {@code PENDING}. */
+    /** Resets stale processing extractions back to pending. */
     @Scheduled(fixedRate = 60_000)
     void reap() {
         int staleMinutes = processingProperties.getStaleMinutes();

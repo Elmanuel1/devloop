@@ -10,11 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.stereotype.Component;
 
-/**
- * Calls the Reducto REST API using the two-step upload → extract flow.
- * Step 1: upload document bytes to {@code /upload} to obtain a {@code file_id}.
- * Step 2: call {@code /extract} with the {@code file_id} to start async extraction and receive a {@code task_id}.
- */
+/** Calls the Reducto REST API to upload and start async extraction. */
 @Slf4j
 @Component
 @RequiredArgsConstructor

@@ -4,10 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.tosspaper.common.ApiErrorMessages;
 import org.springframework.stereotype.Component;
 
-/**
- * Validates Reducto payloads before field writes.
- * Schema-based validation will be added in a future PR once the Reducto field schema is finalised.
- */
+/** Validates Reducto payloads before field writes. */
 @Component
 public class ExtractionFieldValidator {
 
