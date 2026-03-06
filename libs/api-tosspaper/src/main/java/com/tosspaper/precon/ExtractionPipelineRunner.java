@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -38,9 +39,9 @@ public class ExtractionPipelineRunner {
     // ── Per-extraction pipeline chain ─────────────────────────────────────────
 
     private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
-        List<CompletableFuture<Void>> docFutures = extraction.documentIds().stream()
-                .map(docId -> CompletableFuture.runAsync(
-                        () -> extractionWorker.process(extraction, docId),
+        List<CompletableFuture<Void>> docFutures = extraction.documents().stream()
+                .map((TenderDocumentsRecord doc) -> CompletableFuture.runAsync(
+                        () -> extractionWorker.process(extraction, doc),
                         extractionProcessingExecutor))
                 .toList();
 

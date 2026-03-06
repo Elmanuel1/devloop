@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Orchestrates the classify → upload → extract pipeline for each document in an extraction. */
+/** Orchestrates the classify → upload → extract pipeline for a single document. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -23,13 +23,10 @@ public class ExtractionWorker {
     private final DocumentContentReader contentReader;
     private final ReductoProperties reductoProperties;
 
-    /** Processes a single document within an extraction — classify, upload, extract. */
-    public boolean process(ExtractionWithDocs extraction, String documentId) {
+    /** Processes one document within an extraction — classify, submit, record external IDs. */
+    public boolean process(ExtractionWithDocs extraction, TenderDocumentsRecord document) {
         String extractionId = extraction.getId();
-        TenderDocumentsRecord document = lookupDocument(extractionId, documentId);
-        if (document == null) {
-            return false;
-        }
+        String documentId = document.getId();
 
         byte[] contentBytes = contentReader.read(document.getS3Key());
 
@@ -40,29 +37,20 @@ public class ExtractionWorker {
             return true;
         }
 
+        return submitToReducto(extraction, document, contentBytes, documentType);
+    }
+
+    private boolean submitToReducto(ExtractionWithDocs extraction, TenderDocumentsRecord document,
+                                    byte[] fileBytes, ConstructionDocumentType documentType) {
+        String extractionId = extraction.getId();
+        String documentId = document.getId();
         String externalFileId = document.get("external_file_id", String.class);
-        return submitToReducto(extractionId, documentId, document.getS3Key(), contentBytes,
-                documentType, externalFileId);
-    }
 
-    private TenderDocumentsRecord lookupDocument(String extractionId, String documentId) {
-        try {
-            return documentRepository.findById(documentId);
-        } catch (Exception e) {
-            log.error("[ExtractionWorker] Extraction '{}' document '{}' — lookup failed: {}",
-                    extractionId, documentId, e.getMessage(), e);
-            return null;
-        }
-    }
-
-    private boolean submitToReducto(String extractionId, String documentId, String s3Key,
-                                    byte[] fileBytes, ConstructionDocumentType documentType,
-                                    String externalFileId) {
         try {
             ExtractionSubmitRequest request = new ExtractionSubmitRequest(
                     extractionId,
                     documentId,
-                    s3Key,
+                    document.getS3Key(),
                     fileBytes,
                     reductoProperties.buildWebhookUrl(),
                     documentType,

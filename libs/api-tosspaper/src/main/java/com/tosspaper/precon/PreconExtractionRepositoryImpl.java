@@ -3,6 +3,7 @@ package com.tosspaper.precon;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
+import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import com.tosspaper.precon.generated.model.ExtractionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -15,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.tosspaper.models.jooq.Tables.EXTRACTIONS;
 
@@ -28,6 +30,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
 
     private final DSLContext dsl;
     private final ObjectMapper objectMapper;
+    private final TenderDocumentRepository documentRepository;
 
     @Override
     public List<ExtractionWithDocs> claimNextBatch(int limit) {
@@ -42,17 +45,34 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                 .forUpdate().skipLocked();
 
         // Atomic UPDATE: transition claimed rows to PROCESSING and return full records.
-        return dsl.update(EXTRACTIONS)
+        List<ExtractionsRecord> claimed = dsl.update(EXTRACTIONS)
                 .set(EXTRACTIONS.STATUS, ExtractionStatus.PROCESSING.getValue())
                 .set(EXTRACTIONS.VERSION, EXTRACTIONS.VERSION.plus(1))
                 .set(EXTRACTIONS.UPDATED_AT, OffsetDateTime.now())
                 .where(EXTRACTIONS.ID.in(claimIds))
                 .returning()
-                .fetch()
-                .map(record -> {
-                    ExtractionsRecord extractionsRecord = record.into(ExtractionsRecord.class);
-                    return new ExtractionWithDocs(extractionsRecord, parseDocumentIds(extractionsRecord));
-                });
+                .fetchInto(ExtractionsRecord.class);
+
+        // Bulk-load all documents for the claimed extractions — one query, no per-doc round-trips.
+        List<String> allDocumentIds = claimed.stream()
+                .flatMap(r -> parseDocumentIds(r).stream())
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<String, TenderDocumentsRecord> docById = allDocumentIds.isEmpty()
+                ? Map.of()
+                : documentRepository.findByIds(allDocumentIds).stream()
+                        .collect(Collectors.toMap(TenderDocumentsRecord::getId, d -> d));
+
+        return claimed.stream()
+                .map(extractionsRecord -> {
+                    List<TenderDocumentsRecord> docs = parseDocumentIds(extractionsRecord).stream()
+                            .map(docById::get)
+                            .filter(d -> d != null)
+                            .collect(Collectors.toList());
+                    return new ExtractionWithDocs(extractionsRecord, docs);
+                })
+                .collect(Collectors.toList());
     }
 
     @Override

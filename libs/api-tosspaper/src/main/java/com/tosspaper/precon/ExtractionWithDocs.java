@@ -1,28 +1,25 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord;
+import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 
 import java.util.List;
 
 /**
- * Value object pairing a pending {@link ExtractionsRecord} with the parsed
- * list of document IDs stored in its {@code document_ids} JSONB column.
- *
- * <p>Built by {@link PreconExtractionRepositoryImpl#claimNextBatch(int)}
- * so that the poll job never needs a second DB round-trip to discover which
- * documents belong to an extraction.
- *
- * <p>The document list is defensively copied on construction.
+ * Value object pairing a pending {@link ExtractionsRecord} with its pre-loaded
+ * {@link TenderDocumentsRecord} list — built by
+ * {@link PreconExtractionRepositoryImpl#claimNextBatch(int)} so the worker
+ * never needs a second DB round-trip.
  *
  * @param extraction the raw extraction record
- * @param documentIds the ordered list of document IDs to process
+ * @param documents  the pre-loaded documents for this extraction
  */
 public record ExtractionWithDocs(
         ExtractionsRecord extraction,
-        List<String> documentIds
+        List<TenderDocumentsRecord> documents
 ) {
     public ExtractionWithDocs {
-        documentIds = List.copyOf(documentIds);
+        documents = List.copyOf(documents);
     }
 
     /** Convenience accessor for the extraction's primary key. */
