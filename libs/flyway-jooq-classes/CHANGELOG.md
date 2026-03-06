@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.9] - 2026-03-05
-### Changed
-- V3.12: drop extractions.external_task_id, add extractions.document_external_ids JSONB, add tender_documents.external_file_id TEXT
+### Added
+- V3.12: `extractions.document_external_ids` JSONB column — maps `documentId → externalTaskId` so the webhook handler can locate an extraction by Reducto task ID
+- V3.12: `tender_documents.external_file_id` TEXT column — stores the Reducto upload file ID for retry deduplication
+
+### Deferred
+- Drop of `extractions.external_task_id` column deferred to a future release pending jOOQ 0.1.9 publication; the column is retained in this release to keep jOOQ 0.1.8 generated classes compilable
 
 ## [0.1.8]
 
