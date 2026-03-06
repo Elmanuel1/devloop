@@ -14,11 +14,11 @@ import java.util.List;
  * @param extraction the raw extraction record
  * @param documents  the pre-loaded documents for this extraction
  */
-public record ExtractionWithDocs(
+public record ExtractionDocument(
         ExtractionsRecord extraction,
         List<TenderDocumentsRecord> documents
 ) {
-    public ExtractionWithDocs {
+    public ExtractionDocument {
         documents = List.copyOf(documents);
     }
 

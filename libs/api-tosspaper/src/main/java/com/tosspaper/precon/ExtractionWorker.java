@@ -24,7 +24,7 @@ public class ExtractionWorker {
     private final ReductoProperties reductoProperties;
 
     /** Processes one document within an extraction — classify, submit, record external IDs. */
-    public boolean process(ExtractionWithDocs extraction, TenderDocumentsRecord document) {
+    public boolean process(ExtractionDocument extraction, TenderDocumentsRecord document) {
         String extractionId = extraction.getId();
         String documentId = document.getId();
 
@@ -40,7 +40,7 @@ public class ExtractionWorker {
         return submitToReducto(extraction, document, contentBytes, documentType);
     }
 
-    private boolean submitToReducto(ExtractionWithDocs extraction, TenderDocumentsRecord document,
+    private boolean submitToReducto(ExtractionDocument extraction, TenderDocumentsRecord document,
                                     byte[] fileBytes, ConstructionDocumentType documentType) {
         String extractionId = extraction.getId();
         String documentId = document.getId();

@@ -61,7 +61,7 @@ class PreconExtractionRepositoryImplSpec extends BaseIntegrationTest {
         when: "claiming the next batch"
             def results = preconExtractionRepository.claimNextBatch(50)
 
-        then: "two ExtractionWithDocs are returned"
+        then: "two ExtractionDocument are returned"
             results.size() == 2
             results*.id.containsAll([pending1.id, pending2.id])
 

@@ -18,7 +18,7 @@ public interface PreconExtractionRepository {
      * @param limit maximum number of rows to claim (must be &gt; 0)
      * @return list of claimed extractions with their parsed document IDs
      */
-    List<ExtractionWithDocs> claimNextBatch(int limit);
+    List<ExtractionDocument> claimNextBatch(int limit);
 
     /**
      * Resets stuck {@code PROCESSING} rows older than {@code staleMinutes} back

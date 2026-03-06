@@ -33,7 +33,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
     private final TenderDocumentRepository documentRepository;
 
     @Override
-    public List<ExtractionWithDocs> claimNextBatch(int limit) {
+    public List<ExtractionDocument> claimNextBatch(int limit) {
         // Subquery: lock the oldest PENDING rows — SKIP LOCKED prevents concurrent
         // poll threads from claiming the same row.
         var claimIds = dsl.select(EXTRACTIONS.ID)
@@ -70,7 +70,7 @@ public class PreconExtractionRepositoryImpl implements PreconExtractionRepositor
                             .map(docById::get)
                             .filter(d -> d != null)
                             .collect(Collectors.toList());
-                    return new ExtractionWithDocs(extractionsRecord, docs);
+                    return new ExtractionDocument(extractionsRecord, docs);
                 })
                 .collect(Collectors.toList());
     }

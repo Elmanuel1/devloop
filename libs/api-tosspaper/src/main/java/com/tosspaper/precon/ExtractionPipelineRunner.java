@@ -23,7 +23,7 @@ public class ExtractionPipelineRunner {
     private final Executor extractionProcessingExecutor;
 
     /** Runs the pipeline for a claimed batch. */
-    public void run(List<ExtractionWithDocs> batch) {
+    public void run(List<ExtractionDocument> batch) {
         if (batch.isEmpty()) {
             return;
         }
@@ -38,7 +38,7 @@ public class ExtractionPipelineRunner {
 
     // ── Per-extraction pipeline chain ─────────────────────────────────────────
 
-    private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
+    private CompletableFuture<Void> processExtraction(ExtractionDocument extraction) {
         List<CompletableFuture<Void>> docFutures = extraction.documents().stream()
                 .map((TenderDocumentsRecord doc) -> CompletableFuture.runAsync(
                         () -> extractionWorker.process(extraction, doc),
@@ -51,7 +51,7 @@ public class ExtractionPipelineRunner {
                 .exceptionally(ex -> handleProcessingFailure(extraction, ex));
     }
 
-    private Void handleProcessingFailure(ExtractionWithDocs extraction, Throwable ex) {
+    private Void handleProcessingFailure(ExtractionDocument extraction, Throwable ex) {
         Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
         log.error("[ExtractionPipeline] Failed for extraction {}: {}",
                 extraction.getId(), cause.getMessage(), cause);

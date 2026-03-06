@@ -38,8 +38,8 @@ class ExtractionPollJobSpec extends Specification {
 
     def "TC-PJ-02: poll passes the entire claimed batch to pipelineRunner.run in one call"() {
         given:
-            def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
-            def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
+            def e1 = buildExtractionDocument("ext-id-1", ["doc-1"])
+            def e2 = buildExtractionDocument("ext-id-2", ["doc-2"])
             repository.claimNextBatch(20) >> [e1, e2]
 
         when:
@@ -82,7 +82,7 @@ class ExtractionPollJobSpec extends Specification {
 
     def "TC-PJ-06: poll passes a single-element list when only one extraction is claimed"() {
         given:
-            def e1 = buildExtractionWithDocs("ext-id-single", ["doc-1", "doc-2"])
+            def e1 = buildExtractionDocument("ext-id-single", ["doc-1", "doc-2"])
             repository.claimNextBatch(20) >> [e1]
 
         when:
@@ -150,7 +150,7 @@ class ExtractionPollJobSpec extends Specification {
 
     // ── Helper methods ────────────────────────────────────────────────────────
 
-    private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {
+    private static ExtractionDocument buildExtractionDocument(String id, List<String> docIds) {
         def record = new ExtractionsRecord()
         record.setId(id)
         record.setStatus("processing")
@@ -158,6 +158,6 @@ class ExtractionPollJobSpec extends Specification {
         record.setEntityType("tender")
         record.setEntityId("tender-1")
         record.setVersion(1)
-        return new ExtractionWithDocs(record, docIds)
+        return new ExtractionDocument(record, docIds)
     }
 }

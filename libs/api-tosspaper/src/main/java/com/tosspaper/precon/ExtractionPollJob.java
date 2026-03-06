@@ -23,7 +23,7 @@ public class ExtractionPollJob {
     @Scheduled(initialDelay = 0, fixedDelay = 500)
     void poll() {
         int batchSize = processingProperties.getBatchSize();
-        List<ExtractionWithDocs> claimed =
+        List<ExtractionDocument> claimed =
                 preconExtractionRepository.claimNextBatch(batchSize);
 
         if (claimed.isEmpty()) {
