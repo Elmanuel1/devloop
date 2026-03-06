@@ -1,6 +1,7 @@
 package com.tosspaper.precon;
 
 import com.tosspaper.models.precon.ConstructionDocumentType;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -9,7 +10,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
@@ -54,6 +54,7 @@ public class LlmDocumentClassifier implements DocumentClassifier {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    @SneakyThrows
     private String extractFirstPages(String documentId, byte[] contentBytes) {
         try (PDDocument document = PDDocument.load(new ByteArrayInputStream(contentBytes))) {
             PDFTextStripper stripper = new PDFTextStripper();
@@ -63,10 +64,6 @@ public class LlmDocumentClassifier implements DocumentClassifier {
             log.debug("[DocumentClassifier] Document '{}' — extracted {} chars from first {} page(s)",
                     documentId, text.length(), CLASSIFICATION_PAGES);
             return text;
-        } catch (IOException e) {
-            log.warn("[DocumentClassifier] Document '{}' — PDFBox could not extract text: {}",
-                    documentId, e.getMessage());
-            return null;
         }
     }
 
