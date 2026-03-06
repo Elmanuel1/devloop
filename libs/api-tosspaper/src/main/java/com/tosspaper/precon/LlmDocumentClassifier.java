@@ -1,5 +1,6 @@
 package com.tosspaper.precon;
 
+import com.tosspaper.common.utils.StringUtils;
 import com.tosspaper.models.precon.ConstructionDocumentType;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +46,7 @@ public class LlmDocumentClassifier implements DocumentClassifier {
         }
 
         String text = extractFirstPages(documentId, contentBytes);
-        if (text == null || text.isBlank()) {
+        if (StringUtils.isBlank(text)) {
             return ConstructionDocumentType.UNKNOWN;
         }
 
