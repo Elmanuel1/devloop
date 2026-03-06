@@ -8,25 +8,9 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Scheduled job that polls for {@code PENDING} extractions and hands each batch
- * to {@link ExtractionPipelineRunner} for processing.
- *
- * <h3>Responsibilities</h3>
- * <ul>
- *   <li>{@link #poll()} — claims up to
- *       {@link ExtractionProcessingProperties#getBatchSize()} {@code PENDING} rows
- *       using the SKIP LOCKED claim pattern and submits the batch to the pipeline
- *       runner. Runs at startup (initialDelay 0) and on a fixed delay thereafter.</li>
- *   <li>{@link #reap()} — resets {@code PROCESSING} rows older than
- *       {@link ExtractionProcessingProperties#getStaleMinutes()} minutes back to
- *       {@code PENDING} so the next poll cycle can retry them.
- *       Runs every 60 seconds.</li>
- * </ul>
- *
- * <p>Both thresholds are configured via {@link ExtractionProcessingProperties}
- * ({@code extraction.processing.batch-size}, {@code extraction.processing.stale-minutes}).
- * This class has no dependency on any extraction provider (Reducto or otherwise) —
- * it only knows about claiming work and handing it to the pipeline runner.
+ * Scheduled job that claims {@code PENDING} extractions and hands batches to
+ * {@link ExtractionPipelineRunner}. A separate reaper resets stuck {@code PROCESSING}
+ * rows back to {@code PENDING} for retry.
  */
 @Slf4j
 @Component
@@ -39,13 +23,7 @@ public class ExtractionPollJob {
 
     // ── Poll ──────────────────────────────────────────────────────────────────
 
-    /**
-     * Claims up to {@link ExtractionProcessingProperties#getBatchSize()} pending
-     * extractions and submits the entire batch to the pipeline runner in one call.
-     *
-     * <p>The SKIP LOCKED claim is atomic — concurrent scheduler threads never
-     * process the same row twice.
-     */
+    /** Claims the next batch of pending extractions using SKIP LOCKED and submits to the pipeline. */
     @Scheduled(initialDelay = 0, fixedDelay = 500)
     void poll() {
         int batchSize = processingProperties.getBatchSize();
@@ -64,11 +42,7 @@ public class ExtractionPollJob {
 
     // ── Reaper ────────────────────────────────────────────────────────────────
 
-    /**
-     * Resets stale {@code PROCESSING} rows back to {@code PENDING}.
-     * Delegates to {@link PreconExtractionRepository#reapStaleExtractions(int)}.
-     * Runs every 60 seconds.
-     */
+    /** Resets stale {@code PROCESSING} rows older than the configured threshold back to {@code PENDING}. */
     @Scheduled(fixedRate = 60_000)
     void reap() {
         int staleMinutes = processingProperties.getStaleMinutes();

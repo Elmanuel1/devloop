@@ -10,12 +10,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 /**
- * Processes a batch of claimed extractions by submitting each one to the
- * bounded virtual-thread executor and gathering results.
- *
- * <p>This class owns concurrency (fan-out via {@code CompletableFuture}, allOf join)
- * while {@link ExtractionWorker} owns per-extraction business logic
- * (classify → submit → validate).
+ * Fans out a claimed batch of extractions across the virtual-thread executor,
+ * delegating per-extraction logic to {@link ExtractionWorker}.
  */
 @Slf4j
 @Component
@@ -28,13 +24,7 @@ public class ExtractionPipelineRunner {
     @Qualifier("extractionProcessingExecutor")
     private final Executor extractionProcessingExecutor;
 
-    /**
-     * Runs the extraction pipeline for an entire claimed batch.
-     * All extractions are submitted in parallel; a failure in one does not
-     * affect others.
-     *
-     * @param batch the list of claimed extractions to process
-     */
+    /** Runs the pipeline for a claimed batch; failures in one extraction do not affect others. */
     public void run(List<ExtractionWithDocs> batch) {
         if (batch.isEmpty()) {
             return;
@@ -50,11 +40,6 @@ public class ExtractionPipelineRunner {
 
     // ── Per-extraction pipeline chain ─────────────────────────────────────────
 
-    /**
-     * Builds the async pipeline chain for a single extraction: calls
-     * {@link ExtractionWorker#process} directly, marks completed on success,
-     * marks failed on error.
-     */
     private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
         return CompletableFuture
                 .supplyAsync(() -> extractionWorker.process(extraction), extractionProcessingExecutor)

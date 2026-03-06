@@ -35,16 +35,10 @@ import java.util.Map;
 @Component
 public class PdfBoxDocumentClassifier implements DocumentClassifier {
 
-    /**
-     * Minimum number of extracted characters before keyword matching is attempted.
-     * Documents below this threshold are likely scanned images with no OCR layer.
-     */
+    /** Documents below this character count are likely scanned images with no OCR layer. */
     static final int MIN_TEXT_LENGTH = 50;
 
-    /**
-     * Exclusive keyword sets keyed by {@link ConstructionDocumentType}.
-     * No keyword appears in more than one type's list — they are mutually exclusive.
-     */
+    /** Exclusive keyword sets per {@link ConstructionDocumentType}; no keyword appears in two lists. */
     static final Map<ConstructionDocumentType, List<String>> TYPE_KEYWORDS;
 
     static {
@@ -195,11 +189,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Loads the stream with PDFBox and strips all text.
-     *
-     * @return extracted text, or {@code null} if PDFBox could not load the stream
-     */
+    /** Returns extracted text, or {@code null} if PDFBox cannot load the stream. */
     private String extractText(String documentId, InputStream contentStream) {
         try (PDDocument document = PDDocument.load(contentStream)) {
             PDFTextStripper stripper = new PDFTextStripper();

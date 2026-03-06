@@ -5,132 +5,107 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.exception.ReductoClientException;
 import lombok.RequiredArgsConstructor;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.*;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-
 /**
- * Default {@link ReductoClient} that calls the Reducto REST API over HTTP.
- *
- * <h3>One call per document</h3>
- * <p>Reducto has no batch endpoint. This client submits one document per call and
- * includes a {@code webhook_url} in the request body so Reducto can push the result
- * back asynchronously when extraction is complete.
- *
- * <h3>Error handling</h3>
- * <p>Any non-2xx response or I/O failure throws {@link ReductoClientException}.
- * The caller (ExtractionWorker) catches this and marks the document as failed.
+ * Calls the Reducto REST API using the two-step upload → extract flow.
+ * Step 1: upload document bytes to {@code /upload} to obtain a {@code file_id}.
+ * Step 2: call {@code /extract} with the {@code file_id} to start async extraction and receive a {@code task_id}.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class HttpReductoClient implements ReductoClient {
 
-    private static final String CONTENT_TYPE_JSON = "application/json";
+    private static final String UPLOAD_PATH = "/upload";
     private static final String EXTRACT_PATH = "/extract";
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final ReductoProperties props;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
 
     @Override
+    @SneakyThrows
     public ReductoSubmitResponse submit(ReductoSubmitRequest request) {
         log.debug("[ReductoClient] Submitting document '{}' for extraction '{}'",
                 request.documentId(), request.extractionId());
 
-        String body = buildRequestBody(request);
-        HttpRequest httpRequest = buildHttpRequest(body);
-
-        HttpResponse<String> response = executeRequest(request, httpRequest);
-        return parseResponse(request, response);
+        String fileId = uploadFile(request);
+        return startExtraction(request, fileId);
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
-
-    private String buildRequestBody(ReductoSubmitRequest request) {
-        try {
-            return objectMapper.writeValueAsString(new ReductoApiPayload(
-                    request.s3Key(),
-                    request.webhookUrl(),
-                    request.extractionId(),
-                    request.documentId(),
-                    request.documentType().name().toLowerCase(java.util.Locale.ROOT)
-            ));
-        } catch (IOException e) {
-            throw new ReductoClientException(
-                    ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
-                            request.documentId(), request.extractionId()),
-                    e);
-        }
-    }
-
-    private HttpRequest buildHttpRequest(String body) {
-        return HttpRequest.newBuilder()
-                .uri(URI.create(props.getBaseUrl() + EXTRACT_PATH))
-                .header("Content-Type", CONTENT_TYPE_JSON)
-                .header("Authorization", "Bearer " + props.getApiKey())
-                .timeout(Duration.ofSeconds(props.getTimeoutSeconds()))
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+    @SneakyThrows
+    private String uploadFile(ReductoSubmitRequest request) {
+        RequestBody body = RequestBody.create(request.fileBytes());
+        Request httpRequest = new Request.Builder()
+                .url(props.getBaseUrl() + UPLOAD_PATH)
+                .addHeader("Authorization", "Bearer " + props.getApiKey())
+                .post(body)
                 .build();
-    }
 
-    private HttpResponse<String> executeRequest(ReductoSubmitRequest request, HttpRequest httpRequest) {
-        try {
-            return httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        try (Response response = httpClient.newCall(httpRequest).execute()) {
+            if (!response.isSuccessful()) {
+                log.error("[ReductoClient] Upload failed {} for document '{}': {}",
+                        response.code(), request.documentId(), response.body() != null ? response.body().string() : "");
+                throw new ReductoClientException(
+                        ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
+                                request.documentId(), request.extractionId()));
             }
-            throw new ReductoClientException(
-                    ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
-                            request.documentId(), request.extractionId()),
-                    e);
+            JsonNode root = objectMapper.readTree(response.body().string());
+            String fileId = root.path("file_id").asText(null);
+            if (fileId == null || fileId.isBlank()) {
+                throw new ReductoClientException(
+                        ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
+                                request.documentId(), request.extractionId()));
+            }
+            log.debug("[ReductoClient] Document '{}' uploaded — fileId='{}'", request.documentId(), fileId);
+            return fileId;
         }
     }
 
-    private ReductoSubmitResponse parseResponse(ReductoSubmitRequest request,
-                                                 HttpResponse<String> response) {
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            log.error("[ReductoClient] Non-2xx response {} for document '{}': {}",
-                    status, request.documentId(), response.body());
-            throw new ReductoClientException(
-                    ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
-                            request.documentId(), request.extractionId()));
-        }
+    @SneakyThrows
+    private ReductoSubmitResponse startExtraction(ReductoSubmitRequest request, String fileId) {
+        String bodyJson = objectMapper.writeValueAsString(new ReductoExtractPayload(
+                fileId,
+                request.webhookUrl(),
+                request.extractionId(),
+                request.documentId(),
+                request.documentType().name().toLowerCase(java.util.Locale.ROOT)
+        ));
+        Request httpRequest = new Request.Builder()
+                .url(props.getBaseUrl() + EXTRACT_PATH)
+                .addHeader("Authorization", "Bearer " + props.getApiKey())
+                .addHeader("Content-Type", "application/json")
+                .post(RequestBody.create(bodyJson, JSON))
+                .build();
 
-        try {
-            JsonNode root = objectMapper.readTree(response.body());
+        try (Response response = httpClient.newCall(httpRequest).execute()) {
+            if (!response.isSuccessful()) {
+                log.error("[ReductoClient] Extract failed {} for document '{}': {}",
+                        response.code(), request.documentId(), response.body() != null ? response.body().string() : "");
+                throw new ReductoClientException(
+                        ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
+                                request.documentId(), request.extractionId()));
+            }
+            JsonNode root = objectMapper.readTree(response.body().string());
             String taskId = root.path("task_id").asText(null);
             if (taskId == null || taskId.isBlank()) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
                                 request.documentId(), request.extractionId()));
             }
-            // file_id is optional — Reducto may omit it depending on submission type
-            String fileId = root.path("file_id").asText(null);
-            log.debug("[ReductoClient] Document '{}' submitted — taskId='{}' fileId='{}'",
-                    request.documentId(), taskId, fileId);
+            log.debug("[ReductoClient] Document '{}' extraction started — taskId='{}'", request.documentId(), taskId);
             return new ReductoSubmitResponse(taskId, fileId);
-        } catch (IOException e) {
-            throw new ReductoClientException(
-                    ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
-                            request.documentId(), request.extractionId()),
-                    e);
         }
     }
 
-    // ── Internal DTO for serialisation only ───────────────────────────────────
-
-    @SuppressWarnings("unused")  // fields read by Jackson
-    private record ReductoApiPayload(
-            String s3_key,
+    @SuppressWarnings("unused")
+    private record ReductoExtractPayload(
+            String file_id,
             String webhook_url,
             String extraction_id,
             String document_id,

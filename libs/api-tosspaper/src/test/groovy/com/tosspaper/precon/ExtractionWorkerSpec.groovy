@@ -64,7 +64,7 @@ class ExtractionWorkerSpec extends Specification {
         given: "extraction with two documents"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-A", "doc-B"])
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById("doc-A") >> buildDocRecord("doc-A", "key/doc-A.pdf")
@@ -86,7 +86,7 @@ class ExtractionWorkerSpec extends Specification {
         given: "extraction with three documents"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["d1", "d2", "d3"])
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
@@ -106,7 +106,7 @@ class ExtractionWorkerSpec extends Specification {
             def docIds = (1..25).collect { "doc-$it" as String }
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
@@ -125,7 +125,7 @@ class ExtractionWorkerSpec extends Specification {
             def docIds = (1..10).collect { "doc-$it" as String }
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
@@ -144,7 +144,7 @@ class ExtractionWorkerSpec extends Specification {
         given: "classifier returns UNKNOWN"
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(DOCUMENT_ID, _) >> ConstructionDocumentType.UNKNOWN
 
@@ -161,7 +161,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-06: processDocument returns true for UNKNOWN type (not a failure)"() {
         given:
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> ConstructionDocumentType.UNKNOWN
 
@@ -176,9 +176,9 @@ class ExtractionWorkerSpec extends Specification {
     // ── S3 failure ────────────────────────────────────────────────────────────
 
     def "TC-EW-07: S3 download failure causes processDocument to return false"() {
-        given: "contentReader returns null — simulates S3 failure"
+        given: "contentReader throws — simulates S3 failure"
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> null
+            contentReader.read(_) >> { throw new RuntimeException("S3 unavailable") }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
 
         when:
@@ -203,7 +203,7 @@ class ExtractionWorkerSpec extends Specification {
 
         then:
             !result
-            0 * contentReader.read(_, _, _)
+            0 * contentReader.read(_)
     }
 
     // ── Reducto submission failure ────────────────────────────────────────────
@@ -211,7 +211,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-09: Reducto client exception causes processDocument to return false"() {
         given:
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
@@ -232,7 +232,7 @@ class ExtractionWorkerSpec extends Specification {
         given:
             def capturedRequests = []
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -260,7 +260,7 @@ class ExtractionWorkerSpec extends Specification {
         given: "classifier returns SPECIFICATIONS"
             def capturedTypes = []
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -284,7 +284,7 @@ class ExtractionWorkerSpec extends Specification {
             def docIds = ["fail-doc", "ok-doc-1", "ok-doc-2"]
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById("fail-doc") >> {
@@ -310,7 +310,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-16: taskId from Reducto response is stored in extraction document_external_ids map"() {
         given:
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> new HashMap<String, String>()
@@ -328,7 +328,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-17: fileId from Reducto response is stored in tender_documents.external_file_id when non-blank"() {
         given:
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
@@ -345,7 +345,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-18: null fileId from Reducto response does not call updateExternalFileId"() {
         given: "Reducto returns no file_id (null)"
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
@@ -365,7 +365,7 @@ class ExtractionWorkerSpec extends Specification {
         given: "existing external IDs with one entry"
             def original = new HashMap<String, String>([("other-doc"): "other-task"])
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> DUMMY_BYTES
+            contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> original
@@ -389,7 +389,7 @@ class ExtractionWorkerSpec extends Specification {
         given:
             def capturedKeys = []
             def worker = buildWorker()
-            contentReader.read(_, _, _) >> { String extId, String docId, String key ->
+            contentReader.read(_) >> { String key ->
                 capturedKeys << key
                 return DUMMY_BYTES
             }

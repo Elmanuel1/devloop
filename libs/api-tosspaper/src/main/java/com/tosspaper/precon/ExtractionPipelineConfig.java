@@ -1,48 +1,16 @@
 package com.tosspaper.precon;
 
+import okhttp3.OkHttpClient;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.net.http.HttpClient;
-import java.time.Duration;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-/**
- * Spring configuration for the extraction processing pipeline.
- *
- * <p>Exposes two beans:
- * <ol>
- *   <li>A bounded virtual-thread executor used by {@link ExtractionPipelineRunner} to
- *       fan out per-document Reducto calls.</li>
- *   <li>A {@link HttpClient} used by {@link HttpReductoClient} to submit documents
- *       to the Reducto REST API.</li>
- * </ol>
- *
- * <h3>Why bounded?</h3>
- * <p>Unbounded {@code supplyAsync} (no executor) would allow an unlimited number
- * of in-flight Reducto calls. The owner specified a configurable upper bound
- * (default 5) so that load on the external Reducto API is predictable and the
- * service degrades gracefully under volume spikes.
- *
- * <h3>Why virtual threads?</h3>
- * <p>Each slot is a virtual thread, so blocking I/O (Reducto HTTP calls)
- * does not pin an OS carrier thread. The bound controls Reducto concurrency,
- * not OS-thread usage.
- */
 @Configuration
 public class ExtractionPipelineConfig {
 
-    /**
-     * Returns a fixed-size pool of virtual threads for document extraction.
-     *
-     * <p>Pool size is read from {@link ExtractionProcessingProperties#getThreadPoolSize()},
-     * which defaults to {@code 5} and can be overridden via
-     * {@code extraction.processing.thread-pool-size} in {@code application.yml}.
-     *
-     * @param props configuration properties
-     * @return bounded virtual-thread executor
-     */
     @Bean
     public Executor extractionProcessingExecutor(ExtractionProcessingProperties props) {
         return Executors.newFixedThreadPool(
@@ -51,18 +19,12 @@ public class ExtractionPipelineConfig {
         );
     }
 
-    /**
-     * Returns a shared {@link HttpClient} for use by {@link HttpReductoClient}.
-     *
-     * <p>The client is shared across all Reducto calls to reuse the underlying
-     * connection pool and avoid the cost of creating a new client per request.
-     *
-     * @return configured HttpClient
-     */
     @Bean
-    public HttpClient reductoHttpClient() {
-        return HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+    public OkHttpClient reductoHttpClient(ReductoProperties props) {
+        return new OkHttpClient.Builder()
+                .connectTimeout(props.getTimeoutSeconds(), TimeUnit.SECONDS)
+                .readTimeout(props.getTimeoutSeconds(), TimeUnit.SECONDS)
+                .writeTimeout(props.getTimeoutSeconds(), TimeUnit.SECONDS)
                 .build();
     }
 }
