@@ -248,6 +248,109 @@ Other scripts in `.claude/hooks/`:
 
 ---
 
+## Precon Extraction Pipeline (TOS-37 / TOS-38 / TOS-39)
+
+The precon module implements a fully asynchronous document extraction pipeline that submits PDFs to the Reducto AI service and stores results back into the database.
+
+### End-to-End Data Flow
+
+```
+POST /v1/extractions  (TOS-37)
+        │
+        ▼
+ExtractionPollJob  (@Scheduled, SKIP LOCKED)
+        │  claims PENDING → PROCESSING via PreconExtractionRepository.claimNextBatch()
+        ▼
+ExtractionPipelineRunner  (fan-out via CompletableFuture, virtual-thread executor)
+        │  one future per extraction
+        ▼
+ExtractionWorker  (TOS-38 — per-extraction logic)
+        │
+        ├─ 1. Download bytes from S3   (readContentBytes → S3Client)
+        ├─ 2. Classify document        (PdfBoxDocumentClassifier → ConstructionDocumentType)
+        │     UNKNOWN → skip (not a failure)
+        ├─ 3. Submit to Reducto        (HttpReductoClient.submit → POST /extract)
+        ├─ 4. Store taskId             (PreconExtractionRepository.updateDocumentExternalIds)
+        │     extractions.document_external_ids JSONB  Map<documentId, externalTaskId>
+        └─ 5. Store fileId             (TenderDocumentRepository.updateExternalFileId)
+              tender_documents.external_file_id TEXT
+        │
+        ▼  (async — Reducto calls back via webhook)
+POST /internal/reducto/webhook  (TOS-39 — PreconReductoWebhookController)
+        │  signature verified via WebhookVerifier (Svix)
+        ▼
+ReductoWebhookHandlerService
+        │
+        ├─ Look up extraction by taskId  (PreconExtractionRepository.findByDocumentExternalTaskId)
+        ├─ Fetch result                  (ProcessingService.getExtractTask)
+        └─ TODO [TOS-38]: persist fields to extraction_fields via ExtractionFieldRepository
+        │
+        ▼
+ConflictDetector  (TOS-39 — field deduplication)
+        │  normalises nested JSONB (ORDER_MAP_ENTRIES_BY_KEYS, recursive)
+        └─ compares new field value against existing to detect conflicts
+```
+
+### Key Classes (all in `com.tosspaper.precon`)
+
+| Class | Role |
+|-------|------|
+| `ExtractionPollJob` | Scheduler — claims batches + reaper (uses `ExtractionProcessingProperties`) |
+| `ExtractionPipelineRunner` | Fan-out — one `CompletableFuture` per extraction |
+| `ExtractionWorker` | Per-extraction: classify → submit → persist IDs |
+| `PdfBoxDocumentClassifier` | PDF text extraction via PDFBox, keyword-score classification |
+| `DocumentClassifier` | Interface — accepts `byte[]` (already buffered from S3) |
+| `ConstructionDocumentType` | Enum implementing `TenderDocumentType`; 6 exclusive types + UNKNOWN |
+| `HttpReductoClient` | Java `HttpClient`, fire-and-forget with webhook callback |
+| `ReductoProperties` | `reducto.*` config — baseUrl, apiKey, webhookBaseUrl, batchSize, etc. |
+| `ExtractionProcessingProperties` | `extraction.processing.*` — provider-agnostic poll config |
+| `PreconReductoWebhookController` | Receives Reducto callbacks at `POST /internal/reducto/webhook` |
+| `ReductoWebhookHandlerService` | Business logic for webhook: look up extraction, fetch result |
+| `WebhookVerifier` | Svix signature verification (skips if `svixSecret` is blank) |
+| `ReductoWebhookProperties` | `reducto.webhook.*` — svixSecret |
+| `ConflictDetector` | Normalises JSONB and compares fields for conflict detection |
+| `PreconExtractionRepository` | Interface — claim, reap, mark, getDocumentExternalIds, updateDocumentExternalIds, findByDocumentExternalTaskId |
+| `TenderDocumentRepository` | Interface — includes `updateExternalFileId` |
+
+### Database Schema (post TOS-38 / TOS-39)
+
+```sql
+-- extractions table (V3.4 + V3.5 + V3.8 + V3.12)
+document_external_ids  JSONB  NOT NULL DEFAULT '{}'  -- Map<documentId, externalTaskId>
+external_task_id       VARCHAR(255)                  -- legacy column kept for jOOQ 0.1.8 compat;
+                                                     --  dropped in future migration with jOOQ 0.1.9
+
+-- tender_documents table (V3.1 + V3.12)
+external_file_id       TEXT                          -- Reducto file ID from upload response
+```
+
+### Configuration
+
+```yaml
+reducto:
+  base-url: "${REDUCTO_BASE_URL}"
+  api-key: "${REDUCTO_API_KEY}"
+  webhook-base-url: "${SERVICE_PUBLIC_URL}"
+  webhook-path: "/internal/reducto/webhook"
+  batch-size: 20
+  stale-minutes: 15
+  timeout-seconds: 30
+  webhook:
+    svix-secret: "${REDUCTO_WEBHOOK_SVIX_SECRET}"  # leave blank to skip verification
+
+extraction:
+  processing:
+    thread-pool-size: 5
+    batch-size: 20
+    stale-minutes: 15
+```
+
+### jOOQ Compatibility Note
+
+`flyway-jooq-classes` 0.1.8 was generated before V3.12. It includes `EXTERNAL_TASK_ID` but not `DOCUMENT_EXTERNAL_IDS`. `PreconExtractionRepositoryImpl` accesses `document_external_ids` via raw SQL to avoid the mismatch. Version 0.1.9 (not yet published) will be generated from the post-V3.12 schema.
+
+---
+
 ## Build Commands
 
 ```bash
