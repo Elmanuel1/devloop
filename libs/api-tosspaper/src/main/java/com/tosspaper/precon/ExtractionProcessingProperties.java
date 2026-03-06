@@ -1,13 +1,11 @@
 package com.tosspaper.precon;
 
 import jakarta.validation.constraints.Positive;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-@Getter
-@Setter
+@Data
 @ConfigurationProperties(prefix = "extraction.processing")
 @Validated
 public class ExtractionProcessingProperties {

@@ -7,17 +7,7 @@ import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord
 import com.tosspaper.models.precon.ConstructionDocumentType
 import spock.lang.Specification
 
-/**
- * Unit tests for {@link ExtractionWorker}.
- *
- * <p>{@link DocumentContentReader} is a plain mock — it isolates S3 I/O from
- * the worker's orchestration logic without any spy gymnastics.
- *
- * <p>Note: Spock evaluates stubs in the order they are registered (first match wins).
- * Tests that need to vary {@code contentReader} or {@code extractionRepository} behaviour
- * set stubs explicitly in their own {@code given:} block. No default stubs for those
- * collaborators are set in {@code setup()} to avoid hidden first-match conflicts.
- */
+/** Unit tests for {@link ExtractionWorker}. */
 class ExtractionWorkerSpec extends Specification {
 
     DocumentClassifier documentClassifier = Mock()
@@ -26,7 +16,6 @@ class ExtractionWorkerSpec extends Specification {
     PreconExtractionRepository extractionRepository = Mock()
     DocumentContentReader contentReader = Mock()
     ReductoProperties reductoProperties = new ReductoProperties()
-    ExtractionProcessingProperties processingProperties = new ExtractionProcessingProperties()
 
     static final byte[] DUMMY_BYTES = "dummy".bytes
 
@@ -46,96 +35,50 @@ class ExtractionWorkerSpec extends Specification {
         reductoProperties.setDocumentCap(20)
         reductoProperties.setTaskTimeoutMinutes(15)
         reductoProperties.setTimeoutSeconds(30)
-
-        processingProperties.setBatchSize(20)
-        processingProperties.setStaleMinutes(15)
     }
 
     private ExtractionWorker buildWorker() {
         return new ExtractionWorker(
                 documentClassifier, reductoClient,
                 documentRepository, extractionRepository,
-                contentReader, reductoProperties, processingProperties)
+                contentReader, reductoProperties)
     }
 
     // ── process: happy path ───────────────────────────────────────────────────
 
-    def "TC-EW-01: process submits all documents and returns pipeline result"() {
-        given: "extraction with two documents"
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["doc-A", "doc-B"])
+    def "TC-EW-01: process submits a document and returns true"() {
+        given: "one document in the extraction"
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            documentRepository.findById("doc-A") >> buildDocRecord("doc-A", "key/doc-A.pdf")
-            documentRepository.findById("doc-B") >> buildDocRecord("doc-B", "key/doc-B.pdf")
+            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
-            reductoClient.submit(_ as ReductoSubmitRequest) >>
-                    new ReductoSubmitResponse("task-A", FILE_ID) >>
-                    new ReductoSubmitResponse("task-B", FILE_ID)
+            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
 
         when:
-            def result = worker.process(extraction)
+            def result = worker.process(extraction, DOCUMENT_ID)
 
         then:
-            result != null
-            result.extractionId() == EXTRACTION_ID
+            result
     }
 
-    def "TC-EW-02: process calls reductoClient.submit once per document"() {
-        given: "extraction with three documents"
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, ["d1", "d2", "d3"])
+    def "TC-EW-02: process calls reductoClient.submit exactly once for one document"() {
+        given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
+            documentRepository.findById(_) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
 
         when:
-            worker.process(extraction)
+            worker.process(extraction, DOCUMENT_ID)
 
         then:
-            3 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
-    }
-
-    // ── Hard cap ──────────────────────────────────────────────────────────────
-
-    def "TC-EW-03: process caps at processingProperties.batchSize even if more documents are provided"() {
-        given: "extraction with 25 documents — exceeds the default 20-doc cap"
-            def docIds = (1..25).collect { "doc-$it" as String }
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
-            def worker = buildWorker()
-            contentReader.read(_) >> DUMMY_BYTES
-            extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
-            extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
-            documentClassifier.classify(_, _) >> BOQ
-
-        when:
-            worker.process(extraction)
-
-        then: "at most 20 documents submitted — no 21st call"
-            20 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
-    }
-
-    def "TC-EW-04: process respects processingProperties.batchSize as the cap — not a hardcoded constant"() {
-        given: "batch size configured to 5"
-            processingProperties.setBatchSize(5)
-            def docIds = (1..10).collect { "doc-$it" as String }
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
-            def worker = buildWorker()
-            contentReader.read(_) >> DUMMY_BYTES
-            extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
-            extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            documentRepository.findById(_) >> buildDocRecord("any", S3_KEY)
-            documentClassifier.classify(_, _) >> BOQ
-
-        when:
-            worker.process(extraction)
-
-        then: "only 5 documents submitted"
-            5 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+            1 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
     }
 
     // ── UNKNOWN document type → skip ─────────────────────────────────────────
@@ -149,40 +92,26 @@ class ExtractionWorkerSpec extends Specification {
             documentClassifier.classify(DOCUMENT_ID, _) >> ConstructionDocumentType.UNKNOWN
 
         when:
-            def result = worker.process(extraction)
+            def result = worker.process(extraction, DOCUMENT_ID)
 
         then: "Reducto is never called for UNKNOWN document"
             0 * reductoClient.submit(_)
 
-        and: "process returns a result (skip is not a failure)"
-            result != null
-    }
-
-    def "TC-EW-06: processDocument returns true for UNKNOWN type (not a failure)"() {
-        given:
-            def worker = buildWorker()
-            contentReader.read(_) >> DUMMY_BYTES
-            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
-            documentClassifier.classify(_, _) >> ConstructionDocumentType.UNKNOWN
-
-        when:
-            def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
-
-        then:
-            result  // skipped, not failed
-            0 * reductoClient.submit(_)
+        and: "skip is not a failure — returns true"
+            result
     }
 
     // ── S3 failure ────────────────────────────────────────────────────────────
 
-    def "TC-EW-07: S3 download failure causes processDocument to return false"() {
+    def "TC-EW-07: S3 download failure causes process to return false"() {
         given: "contentReader throws — simulates S3 failure"
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> { throw new RuntimeException("S3 unavailable") }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
 
         when:
-            def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            def result = worker.process(extraction, DOCUMENT_ID)
 
         then:
             !result
@@ -191,15 +120,16 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Document lookup failure ───────────────────────────────────────────────
 
-    def "TC-EW-08: document lookup failure causes processDocument to return false"() {
+    def "TC-EW-08: document lookup failure causes process to return false"() {
         given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             documentRepository.findById(DOCUMENT_ID) >> {
                 throw new NotFoundException("doc.notFound", "not found")
             }
 
         when:
-            def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            def result = worker.process(extraction, DOCUMENT_ID)
 
         then:
             !result
@@ -208,8 +138,9 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── Reducto submission failure ────────────────────────────────────────────
 
-    def "TC-EW-09: Reducto client exception causes processDocument to return false"() {
+    def "TC-EW-09: Reducto client exception causes process to return false"() {
         given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
@@ -220,7 +151,7 @@ class ExtractionWorkerSpec extends Specification {
             }
 
         when:
-            def result = worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            def result = worker.process(extraction, DOCUMENT_ID)
 
         then:
             !result
@@ -231,6 +162,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-10: submit request contains correct extraction ID, document ID, S3 key, webhook URL, and document type"() {
         given:
             def capturedRequests = []
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
@@ -243,7 +175,7 @@ class ExtractionWorkerSpec extends Specification {
             }
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then:
             capturedRequests.size() == 1
@@ -259,6 +191,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-10b: document type from classifier is forwarded verbatim to ReductoSubmitRequest"() {
         given: "classifier returns SPECIFICATIONS"
             def capturedTypes = []
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
@@ -271,44 +204,17 @@ class ExtractionWorkerSpec extends Specification {
             }
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then:
             capturedTypes == [ConstructionDocumentType.SPECIFICATIONS]
-    }
-
-    // ── One failure does not abort other documents ────────────────────────────
-
-    def "TC-EW-11: failure in one document does not prevent remaining documents from being processed"() {
-        given: "three documents — first fails lookup, rest succeed"
-            def docIds = ["fail-doc", "ok-doc-1", "ok-doc-2"]
-            def extraction = buildExtractionWithDocs(EXTRACTION_ID, docIds)
-            def worker = buildWorker()
-            contentReader.read(_) >> DUMMY_BYTES
-            extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
-            extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            documentRepository.findById("fail-doc") >> {
-                throw new NotFoundException("doc.notFound", "not found")
-            }
-            documentRepository.findById("ok-doc-1") >> buildDocRecord("ok-doc-1", "key/ok1.pdf")
-            documentRepository.findById("ok-doc-2") >> buildDocRecord("ok-doc-2", "key/ok2.pdf")
-            documentClassifier.classify(_, _) >> BOQ
-
-        when:
-            def result = worker.process(extraction)
-
-        then: "the two successful documents were submitted"
-            2 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
-
-        and: "result is still returned — batch is not aborted"
-            result != null
-            result.extractionId() == EXTRACTION_ID
     }
 
     // ── External ID storage ───────────────────────────────────────────────────
 
     def "TC-EW-16: taskId from Reducto response is stored in extraction document_external_ids map"() {
         given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -317,7 +223,7 @@ class ExtractionWorkerSpec extends Specification {
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then: "the taskId is stored in the external IDs map"
             1 * extractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
@@ -327,6 +233,7 @@ class ExtractionWorkerSpec extends Specification {
 
     def "TC-EW-17: fileId from Reducto response is stored in tender_documents.external_file_id when non-blank"() {
         given:
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -336,7 +243,7 @@ class ExtractionWorkerSpec extends Specification {
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then: "external file ID is persisted on the document record"
             1 * documentRepository.updateExternalFileId(DOCUMENT_ID, FILE_ID) >> 1
@@ -344,6 +251,7 @@ class ExtractionWorkerSpec extends Specification {
 
     def "TC-EW-18: null fileId from Reducto response does not call updateExternalFileId"() {
         given: "Reducto returns no file_id (null)"
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -353,7 +261,7 @@ class ExtractionWorkerSpec extends Specification {
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then: "updateExternalFileId is never called when fileId is null"
             0 * documentRepository.updateExternalFileId(_, _)
@@ -364,6 +272,7 @@ class ExtractionWorkerSpec extends Specification {
     def "TC-EW-19: submitToReducto does not mutate the map returned by getDocumentExternalIds"() {
         given: "existing external IDs with one entry"
             def original = new HashMap<String, String>([("other-doc"): "other-task"])
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> DUMMY_BYTES
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
@@ -372,7 +281,7 @@ class ExtractionWorkerSpec extends Specification {
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then: "the map passed to updateDocumentExternalIds contains both old and new entries"
             1 * extractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
@@ -385,9 +294,10 @@ class ExtractionWorkerSpec extends Specification {
 
     // ── S3 key forwarded correctly ────────────────────────────────────────────
 
-    def "TC-EW-15: processDocument passes the document s3Key from the DB record to contentReader"() {
+    def "TC-EW-15: process passes the document s3Key from the DB record to contentReader"() {
         given:
             def capturedKeys = []
+            def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
             contentReader.read(_) >> { String key ->
                 capturedKeys << key
@@ -400,7 +310,7 @@ class ExtractionWorkerSpec extends Specification {
             reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
 
         when:
-            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+            worker.process(extraction, DOCUMENT_ID)
 
         then:
             capturedKeys == [S3_KEY]

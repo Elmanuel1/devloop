@@ -39,9 +39,16 @@ public class ExtractionPipelineRunner {
 
     private CompletableFuture<Void> processExtraction(ExtractionWithDocs extraction) {
         return CompletableFuture
-                .supplyAsync(() -> extractionWorker.process(extraction), extractionProcessingExecutor)
+                .supplyAsync(() -> processAllDocuments(extraction), extractionProcessingExecutor)
                 .thenAccept(result -> preconExtractionRepository.markAsCompleted(extraction.getId(), result))
                 .exceptionally(ex -> handleProcessingFailure(extraction, ex));
+    }
+
+    private PipelineExtractionResult processAllDocuments(ExtractionWithDocs extraction) {
+        for (String documentId : extraction.documentIds()) {
+            extractionWorker.process(extraction, documentId);
+        }
+        return new PipelineExtractionResult(extraction.getId(), null);
     }
 
     private Void handleProcessingFailure(ExtractionWithDocs extraction, Throwable ex) {

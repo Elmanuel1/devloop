@@ -1,6 +1,5 @@
 package com.tosspaper.precon
 
-import com.fasterxml.jackson.databind.node.NullNode
 import com.tosspaper.models.jooq.tables.records.ExtractionsRecord
 import spock.lang.Specification
 import spock.lang.Subject
@@ -12,10 +11,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
     PreconExtractionRepository repository = Mock()
     ExtractionWorker extractionWorker = Mock()
 
-    /**
-     * Same-thread executor: runs tasks inline on the calling thread.
-     * Makes async operations deterministic in unit tests — no Thread.sleep needed.
-     */
+    /** Same-thread executor makes async operations deterministic in unit tests. */
     Executor sameThreadExecutor = { Runnable r -> r.run() }
 
     @Subject
@@ -23,19 +19,18 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     // ==================== run(List) — batch entry point ====================
 
-    def "TC-PR-01: run calls extractionWorker.process once per extraction in the batch"() {
-        given: "two extractions in the batch"
+    def "TC-PR-01: run calls extractionWorker.process once per document in each extraction"() {
+        given: "two extractions, each with one document"
             def e1 = buildExtractionWithDocs("ext-id-1", ["doc-1"])
             def e2 = buildExtractionWithDocs("ext-id-2", ["doc-2"])
-            extractionWorker.process(e1) >> emptyResult("ext-id-1")
-            extractionWorker.process(e2) >> emptyResult("ext-id-2")
+            extractionWorker.process(_, _) >> true
 
         when: "run is called with the full batch"
             runner.run([e1, e2])
 
-        then: "extractionWorker.process was called once per extraction"
-            1 * extractionWorker.process(e1) >> emptyResult("ext-id-1")
-            1 * extractionWorker.process(e2) >> emptyResult("ext-id-2")
+        then: "extractionWorker.process was called once per document"
+            1 * extractionWorker.process(e1, "doc-1") >> true
+            1 * extractionWorker.process(e2, "doc-2") >> true
     }
 
     def "TC-PR-12: run with empty batch is a no-op — extractionWorker.process is never called"() {
@@ -43,58 +38,61 @@ class ExtractionPipelineRunnerSpec extends Specification {
             runner.run([])
 
         then: "the worker is never invoked"
-            0 * extractionWorker.process(_)
+            0 * extractionWorker.process(_, _)
     }
 
     // ==================== process delegates to ExtractionWorker ====================
 
-    def "TC-PR-04: run delegates per-extraction work directly to extractionWorker.process"() {
-        given: "an extraction context"
-            def extraction = buildExtractionWithDocs("ext-1", ["doc-xyz"])
+    def "TC-PR-04: run calls extractionWorker.process for each document in the extraction"() {
+        given: "an extraction with two documents"
+            def extraction = buildExtractionWithDocs("ext-1", ["doc-A", "doc-B"])
+            extractionWorker.process(_, _) >> true
 
         when: "run is invoked"
             runner.run([extraction])
 
-        then: "extractionWorker.process was called with the extraction"
-            1 * extractionWorker.process(extraction) >> emptyResult("ext-1")
+        then: "extractionWorker.process was called for each document"
+            1 * extractionWorker.process(extraction, "doc-A") >> true
+            1 * extractionWorker.process(extraction, "doc-B") >> true
     }
 
-    def "TC-PR-04b: run passes the full extraction context to extractionWorker.process — not just an ID"() {
-        given: "an extraction with multiple documents"
+    def "TC-PR-04b: run passes the full extraction context to extractionWorker.process for each document"() {
+        given: "an extraction with two documents"
             def extraction = buildExtractionWithDocs("ext-ctx", ["doc-1", "doc-2"])
             def capturedContexts = []
-            extractionWorker.process(_) >> { ExtractionWithDocs ctx ->
+            extractionWorker.process(_, _) >> { ExtractionWithDocs ctx, String docId ->
                 capturedContexts << ctx
-                return emptyResult(ctx.getId())
+                return true
             }
 
         when: "run is called"
             runner.run([extraction])
 
-        then: "extractionWorker.process received the full extraction context, not just an ID"
-            capturedContexts.size() == 1
-            capturedContexts[0].is(extraction)
+        then: "extractionWorker.process received the full extraction context for each document"
+            capturedContexts.size() == 2
+            capturedContexts.every { it.is(extraction) }
     }
 
     // ==================== Success path ====================
 
-    def "TC-PR-05: successful process result is passed to markAsCompleted"() {
+    def "TC-PR-05: successful run calls markAsCompleted with a PipelineExtractionResult"() {
         given:
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
-            def expectedResult = emptyResult(extraction.getId())
-            extractionWorker.process(extraction) >> expectedResult
+            extractionWorker.process(_, _) >> true
 
         when: "run is called"
             runner.run([extraction])
 
-        then: "markAsCompleted is called with the extraction ID and the result"
-            1 * repository.markAsCompleted("ext-ok", expectedResult) >> 1
+        then: "markAsCompleted is called with the extraction ID and a result"
+            1 * repository.markAsCompleted("ext-ok", { PipelineExtractionResult r ->
+                r.extractionId() == "ext-ok"
+            }) >> 1
     }
 
     def "TC-PR-13: run completes normally when all extractions succeed"() {
         given:
             def extraction = buildExtractionWithDocs("ext-ok", ["doc-1"])
-            extractionWorker.process(_) >> emptyResult(extraction.getId())
+            extractionWorker.process(_, _) >> true
 
         when: "run is called"
             runner.run([extraction])
@@ -105,10 +103,10 @@ class ExtractionPipelineRunnerSpec extends Specification {
 
     // ==================== Error handling ====================
 
-    def "TC-PR-07: failure in extractionWorker.process marks extraction as FAILED with error reason"() {
+    def "TC-PR-07: uncaught exception in extractionWorker.process marks extraction as FAILED"() {
         given:
             def extraction = buildExtractionWithDocs("ext-fail", ["doc-1"])
-            extractionWorker.process(_) >> { throw new RuntimeException("network error — prepare failed") }
+            extractionWorker.process(_, _) >> { throw new RuntimeException("network error — prepare failed") }
 
         when: "run is called (synchronous via same-thread executor)"
             runner.run([extraction])
@@ -118,11 +116,11 @@ class ExtractionPipelineRunnerSpec extends Specification {
     }
 
     def "TC-PR-14: failure in one extraction does not prevent other batch members from completing"() {
-        given: "a batch of two extractions — one fails, one succeeds"
+        given: "a batch of two extractions — one throws, one succeeds"
             def failing  = buildExtractionWithDocs("ext-fail", ["doc-bad"])
             def succeeds = buildExtractionWithDocs("ext-ok",   ["doc-good"])
-            extractionWorker.process(failing)  >> { throw new RuntimeException("boom") }
-            extractionWorker.process(succeeds) >> emptyResult(succeeds.getId())
+            extractionWorker.process(failing, _)  >> { throw new RuntimeException("boom") }
+            extractionWorker.process(succeeds, _) >> true
 
         when: "run is called with the full batch"
             runner.run([failing, succeeds])
@@ -142,7 +140,7 @@ class ExtractionPipelineRunnerSpec extends Specification {
             def e2 = buildExtractionWithDocs("ext-2", ["doc-Y"])
             def e3 = buildExtractionWithDocs("ext-3", ["doc-Z"])
             def trackingRunner = new ExtractionPipelineRunner(repository, extractionWorker, trackingExecutor)
-            extractionWorker.process(_) >> { ExtractionWithDocs ctx -> emptyResult(ctx.getId()) }
+            extractionWorker.process(_, _) >> true
 
         when: "run is called with three extractions"
             trackingRunner.run([e1, e2, e3])
@@ -152,10 +150,6 @@ class ExtractionPipelineRunnerSpec extends Specification {
     }
 
     // ==================== Helper Methods ====================
-
-    private static PipelineExtractionResult emptyResult(String extractionId) {
-        return new PipelineExtractionResult(extractionId, NullNode.getInstance())
-    }
 
     private static ExtractionWithDocs buildExtractionWithDocs(String id, List<String> docIds) {
         def record = new ExtractionsRecord()

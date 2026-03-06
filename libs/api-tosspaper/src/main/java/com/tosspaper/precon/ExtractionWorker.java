@@ -7,9 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /** Orchestrates the classify → upload → extract pipeline for each document in an extraction. */
@@ -24,35 +22,10 @@ public class ExtractionWorker {
     private final PreconExtractionRepository extractionRepository;
     private final DocumentContentReader contentReader;
     private final ReductoProperties reductoProperties;
-    private final ExtractionProcessingProperties processingProperties;
 
-    public PipelineExtractionResult process(ExtractionWithDocs extraction) {
-        List<String> docIds = extraction.documentIds();
-        int batchSize = processingProperties.getBatchSize();
-        int cap = Math.min(docIds.size(), batchSize);
-
-        if (docIds.size() > batchSize) {
-            log.warn("[ExtractionWorker] Extraction '{}' has {} documents — capping at {}",
-                    extraction.getId(), docIds.size(), batchSize);
-        }
-
-        List<String> failedDocIds = new ArrayList<>();
-        for (int i = 0; i < cap; i++) {
-            String documentId = docIds.get(i);
-            if (!processDocument(extraction.getId(), documentId)) {
-                failedDocIds.add(documentId);
-            }
-        }
-
-        if (!failedDocIds.isEmpty()) {
-            log.warn("[ExtractionWorker] Extraction '{}' — {} document(s) failed: {}",
-                    extraction.getId(), failedDocIds.size(), failedDocIds);
-        }
-
-        return new PipelineExtractionResult(extraction.getId(), null);
-    }
-
-    boolean processDocument(String extractionId, String documentId) {
+    /** Processes a single document within an extraction — classify, upload, extract. */
+    public boolean process(ExtractionWithDocs extraction, String documentId) {
+        String extractionId = extraction.getId();
         TenderDocumentsRecord document = lookupDocument(extractionId, documentId);
         if (document == null) {
             return false;
