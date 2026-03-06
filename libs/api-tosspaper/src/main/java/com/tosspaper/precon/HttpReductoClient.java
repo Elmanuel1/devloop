@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tosspaper.aiengine.loaders.JsonSchemaLoader;
 import com.tosspaper.aiengine.loaders.PromptLoader;
 import com.tosspaper.common.ApiErrorMessages;
+import com.tosspaper.common.utils.StringUtils;
 import com.tosspaper.models.exception.ReductoClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
@@ -59,7 +60,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String status = root.path("status").asText(null);
-            if (isBlank(status)) {
+            if (StringUtils.isBlank(status)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 taskId, "getTask", "status"));
@@ -75,7 +76,7 @@ public class HttpReductoClient implements ExtractionClient {
 
     /** Returns the existing fileId if already uploaded, otherwise uploads the file. */
     private String resolveFileId(ExtractionSubmitRequest request) {
-        if (!isBlank(request.externalFileId())) {
+        if (!StringUtils.isBlank(request.externalFileId())) {
             log.debug("[ReductoClient] Document '{}' — reusing existing fileId='{}'",
                     request.documentId(), request.externalFileId());
             return request.externalFileId();
@@ -103,7 +104,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String fileId = root.path("file_id").asText(null);
-            if (isBlank(fileId)) {
+            if (StringUtils.isBlank(fileId)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 request.documentId(), request.extractionId(), "file_id"));
@@ -145,7 +146,7 @@ public class HttpReductoClient implements ExtractionClient {
             }
             JsonNode root = objectMapper.readTree(response.body().string());
             String taskId = root.path("task_id").asText(null);
-            if (isBlank(taskId)) {
+            if (StringUtils.isBlank(taskId)) {
                 throw new ReductoClientException(
                         ApiErrorMessages.REDUCTO_MALFORMED_RESPONSE.formatted(
                                 request.documentId(), request.extractionId(), "task_id"));
@@ -153,11 +154,6 @@ public class HttpReductoClient implements ExtractionClient {
             log.debug("[ReductoClient] Document '{}' extraction started — taskId='{}'", request.documentId(), taskId);
             return new ExtractionSubmitResponse(taskId, fileId);
         }
-    }
-
-    /** Returns {@code true} when {@code value} is null or blank. */
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 
     @SuppressWarnings("unused")
