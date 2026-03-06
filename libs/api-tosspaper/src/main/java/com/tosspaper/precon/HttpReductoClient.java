@@ -41,8 +41,8 @@ public class HttpReductoClient implements ExtractionClient {
 
     @Override
     @SneakyThrows
-    public ExtractionTaskStatus getTask(String taskId) {
-        log.debug("[ReductoClient] Fetching task status for taskId='{}'", taskId);
+    public ExtractionTaskResult getTask(String taskId) {
+        log.debug("[ReductoClient] Fetching task result for taskId='{}'", taskId);
 
         Request httpRequest = new Request.Builder()
                 .url(props.getBaseUrl() + JOB_PATH + taskId)
@@ -65,8 +65,9 @@ public class HttpReductoClient implements ExtractionClient {
                                 taskId, "getTask", "status"));
             }
             String reason = root.path("reason").asText(null);
+            JsonNode result = root.path("result");
             log.debug("[ReductoClient] Task '{}' status='{}'", taskId, status);
-            return new ExtractionTaskStatus(taskId, status, reason);
+            return new ExtractionTaskResult(taskId, status, reason, result.isMissingNode() ? null : result);
         }
     }
 

@@ -5,5 +5,5 @@ public interface ExtractionClient {
 
     ExtractionSubmitResponse submit(ExtractionSubmitRequest request);
 
-    ExtractionTaskStatus getTask(String taskId);
+    ExtractionTaskResult getTask(String taskId);
 }

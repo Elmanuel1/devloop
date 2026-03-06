@@ -228,6 +228,72 @@ class HttpReductoClientSpec extends Specification {
             result.fileId() == FILE_ID
     }
 
+    // ── getTask: fetch full extraction result ─────────────────────────────────
+
+    def "TC-RC-11: getTask returns full result payload when task is completed"() {
+        given:
+            def jobCall = Mock(Call)
+            def jobReq = new Request.Builder().url("https://api.reducto.ai/job/$TASK_ID").build()
+            def resultJson = '{"documentType":{"value":"bill_of_quantities"},"items":[]}'
+            def body = """{"status":"Completed","reason":null,"result":$resultJson}"""
+            httpClient.newCall(_) >> jobCall
+            jobCall.execute() >> buildResponse(200, body, jobReq)
+
+        when:
+            ExtractionTaskResult result = client.getTask(TASK_ID)
+
+        then:
+            result.taskId() == TASK_ID
+            result.status() == "Completed"
+            result.reason() == null
+            result.result() != null
+            result.result().path("documentType").path("value").asText() == "bill_of_quantities"
+    }
+
+    def "TC-RC-12: getTask returns null result when Reducto response has no result field"() {
+        given:
+            def jobCall = Mock(Call)
+            def jobReq = new Request.Builder().url("https://api.reducto.ai/job/$TASK_ID").build()
+            httpClient.newCall(_) >> jobCall
+            jobCall.execute() >> buildResponse(200, '{"status":"Pending"}', jobReq)
+
+        when:
+            ExtractionTaskResult result = client.getTask(TASK_ID)
+
+        then:
+            result.taskId() == TASK_ID
+            result.status() == "Pending"
+            result.result() == null
+    }
+
+    def "TC-RC-13: getTask throws ReductoClientException on non-2xx response"() {
+        given:
+            def jobCall = Mock(Call)
+            def jobReq = new Request.Builder().url("https://api.reducto.ai/job/$TASK_ID").build()
+            httpClient.newCall(_) >> jobCall
+            jobCall.execute() >> buildResponse(404, '{"error":"not found"}', jobReq)
+
+        when:
+            client.getTask(TASK_ID)
+
+        then:
+            thrown(ReductoClientException)
+    }
+
+    def "TC-RC-14: getTask throws ReductoClientException when status field is missing"() {
+        given:
+            def jobCall = Mock(Call)
+            def jobReq = new Request.Builder().url("https://api.reducto.ai/job/$TASK_ID").build()
+            httpClient.newCall(_) >> jobCall
+            jobCall.execute() >> buildResponse(200, '{"result":{}}', jobReq)
+
+        when:
+            client.getTask(TASK_ID)
+
+        then:
+            thrown(ReductoClientException)
+    }
+
     // ── Default properties ────────────────────────────────────────────────────
 
     def "TC-RC-09: default timeoutSeconds in ReductoProperties is 30"() {
