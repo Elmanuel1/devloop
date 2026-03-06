@@ -31,14 +31,7 @@ public class ExtractionWorker {
             return false;
         }
 
-        byte[] contentBytes;
-        try {
-            contentBytes = contentReader.read(document.getS3Key());
-        } catch (Exception e) {
-            log.error("[ExtractionWorker] Extraction '{}' document '{}' — S3 read failed: {}",
-                    extractionId, documentId, e.getMessage(), e);
-            return false;
-        }
+        byte[] contentBytes = contentReader.read(document.getS3Key());
 
         ConstructionDocumentType documentType = documentClassifier.classify(documentId, contentBytes);
         if (documentType == ConstructionDocumentType.UNKNOWN) {
