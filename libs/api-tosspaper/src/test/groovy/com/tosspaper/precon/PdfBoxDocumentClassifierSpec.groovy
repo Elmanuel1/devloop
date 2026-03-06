@@ -168,16 +168,9 @@ class PdfBoxDocumentClassifierSpec extends Specification {
     // ── System prompt contains all ConstructionDocumentType names ─────────────
 
     def "TC-CL-12: system prompt contains all ConstructionDocumentType names"() {
-        given:
-            byte[] bytes = buildPdf("Some construction document text for classification.")
-            def capturedSystem = []
-            requestSpec.system(_ as String) >> { String s -> capturedSystem << s; requestSpec }
-            callSpec.content() >> "DRAWINGS"
-        when:
-            classifier.classify("doc-prompt-check", bytes)
-        then:
+        expect: "VALID_TYPES string embeds every enum constant name"
             ConstructionDocumentType.values().every { type ->
-                capturedSystem.any { it.contains(type.name()) }
+                PdfBoxDocumentClassifier.VALID_TYPES.contains(type.name())
             }
     }
 

@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class HttpReductoClient implements ReductoClient {
+public class HttpReductoClient implements ExtractionClient {
 
     private static final String UPLOAD_PATH = "/upload";
     private static final String EXTRACT_PATH = "/extract";
@@ -26,7 +26,7 @@ public class HttpReductoClient implements ReductoClient {
 
     @Override
     @SneakyThrows
-    public ReductoSubmitResponse submit(ReductoSubmitRequest request) {
+    public ExtractionSubmitResponse submit(ExtractionSubmitRequest request) {
         log.debug("[ReductoClient] Submitting document '{}' for extraction '{}'",
                 request.documentId(), request.extractionId());
 
@@ -35,7 +35,7 @@ public class HttpReductoClient implements ReductoClient {
     }
 
     @SneakyThrows
-    private String uploadFile(ReductoSubmitRequest request) {
+    private String uploadFile(ExtractionSubmitRequest request) {
         RequestBody body = RequestBody.create(request.fileBytes());
         Request httpRequest = new Request.Builder()
                 .url(props.getBaseUrl() + UPLOAD_PATH)
@@ -64,7 +64,7 @@ public class HttpReductoClient implements ReductoClient {
     }
 
     @SneakyThrows
-    private ReductoSubmitResponse startExtraction(ReductoSubmitRequest request, String fileId) {
+    private ExtractionSubmitResponse startExtraction(ExtractionSubmitRequest request, String fileId) {
         String bodyJson = objectMapper.writeValueAsString(new ReductoExtractPayload(
                 fileId,
                 request.webhookUrl(),
@@ -95,7 +95,7 @@ public class HttpReductoClient implements ReductoClient {
                                 request.documentId(), request.extractionId()));
             }
             log.debug("[ReductoClient] Document '{}' extraction started — taskId='{}'", request.documentId(), taskId);
-            return new ReductoSubmitResponse(taskId, fileId);
+            return new ExtractionSubmitResponse(taskId, fileId);
         }
     }
 

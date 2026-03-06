@@ -17,7 +17,7 @@ import java.util.Map;
 public class ExtractionWorker {
 
     private final DocumentClassifier documentClassifier;
-    private final ReductoClient reductoClient;
+    private final ExtractionClient extractionClient;
     private final TenderDocumentRepository documentRepository;
     private final PreconExtractionRepository extractionRepository;
     private final DocumentContentReader contentReader;
@@ -63,7 +63,7 @@ public class ExtractionWorker {
     private boolean submitToReducto(String extractionId, String documentId, String s3Key,
                                     byte[] fileBytes, ConstructionDocumentType documentType) {
         try {
-            ReductoSubmitRequest request = new ReductoSubmitRequest(
+            ExtractionSubmitRequest request = new ExtractionSubmitRequest(
                     extractionId,
                     documentId,
                     s3Key,
@@ -71,7 +71,7 @@ public class ExtractionWorker {
                     reductoProperties.buildWebhookUrl(),
                     documentType
             );
-            ReductoSubmitResponse response = reductoClient.submit(request);
+            ExtractionSubmitResponse response = extractionClient.submit(request);
             log.info("[ExtractionWorker] Extraction '{}' document '{}' submitted — taskId='{}' fileId='{}'",
                     extractionId, documentId, response.taskId(), response.fileId());
 

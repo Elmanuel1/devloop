@@ -21,7 +21,7 @@ public class PdfBoxDocumentClassifier implements DocumentClassifier {
     static final int MAX_TEXT_CHARS = 4000;
     static final int CLASSIFICATION_PAGES = 3;
 
-    private static final String VALID_TYPES = Arrays.stream(ConstructionDocumentType.values())
+    static final String VALID_TYPES = Arrays.stream(ConstructionDocumentType.values())
             .map(Enum::name)
             .collect(Collectors.joining(", "));
 

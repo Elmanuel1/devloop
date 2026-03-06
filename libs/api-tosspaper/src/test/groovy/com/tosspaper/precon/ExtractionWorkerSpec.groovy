@@ -11,7 +11,7 @@ import spock.lang.Specification
 class ExtractionWorkerSpec extends Specification {
 
     DocumentClassifier documentClassifier = Mock()
-    ReductoClient reductoClient = Mock()
+    ExtractionClient extractionClient = Mock()
     TenderDocumentRepository documentRepository = Mock()
     PreconExtractionRepository extractionRepository = Mock()
     DocumentContentReader contentReader = Mock()
@@ -39,7 +39,7 @@ class ExtractionWorkerSpec extends Specification {
 
     private ExtractionWorker buildWorker() {
         return new ExtractionWorker(
-                documentClassifier, reductoClient,
+                documentClassifier, extractionClient,
                 documentRepository, extractionRepository,
                 contentReader, reductoProperties)
     }
@@ -55,7 +55,7 @@ class ExtractionWorkerSpec extends Specification {
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, FILE_ID)
 
         when:
             def result = worker.process(extraction, DOCUMENT_ID)
@@ -64,7 +64,7 @@ class ExtractionWorkerSpec extends Specification {
             result
     }
 
-    def "TC-EW-02: process calls reductoClient.submit exactly once for one document"() {
+    def "TC-EW-02: process calls extractionClient.submit exactly once for one document"() {
         given:
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
             def worker = buildWorker()
@@ -78,7 +78,7 @@ class ExtractionWorkerSpec extends Specification {
             worker.process(extraction, DOCUMENT_ID)
 
         then:
-            1 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+            1 * extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, FILE_ID)
     }
 
     // ── UNKNOWN document type → skip ─────────────────────────────────────────
@@ -95,7 +95,7 @@ class ExtractionWorkerSpec extends Specification {
             def result = worker.process(extraction, DOCUMENT_ID)
 
         then: "Reducto is never called for UNKNOWN document"
-            0 * reductoClient.submit(_)
+            0 * extractionClient.submit(_)
 
         and: "skip is not a failure — returns true"
             result
@@ -115,7 +115,7 @@ class ExtractionWorkerSpec extends Specification {
 
         then:
             !result
-            0 * reductoClient.submit(_)
+            0 * extractionClient.submit(_)
     }
 
     // ── Document lookup failure ───────────────────────────────────────────────
@@ -146,7 +146,7 @@ class ExtractionWorkerSpec extends Specification {
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
-            reductoClient.submit(_ as ReductoSubmitRequest) >> {
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> {
                 throw new ReductoClientException("HTTP 500")
             }
 
@@ -169,9 +169,9 @@ class ExtractionWorkerSpec extends Specification {
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> ConstructionDocumentType.DRAWINGS
-            reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> { ExtractionSubmitRequest req ->
                 capturedRequests << req
-                return new ReductoSubmitResponse(TASK_ID, FILE_ID)
+                return new ExtractionSubmitResponse(TASK_ID, FILE_ID)
             }
 
         when:
@@ -188,7 +188,7 @@ class ExtractionWorkerSpec extends Specification {
             }
     }
 
-    def "TC-EW-10b: document type from classifier is forwarded verbatim to ReductoSubmitRequest"() {
+    def "TC-EW-10b: document type from classifier is forwarded verbatim to ExtractionSubmitRequest"() {
         given: "classifier returns SPECIFICATIONS"
             def capturedTypes = []
             def extraction = buildExtractionWithDocs(EXTRACTION_ID, [DOCUMENT_ID])
@@ -198,9 +198,9 @@ class ExtractionWorkerSpec extends Specification {
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> ConstructionDocumentType.SPECIFICATIONS
-            reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> { ExtractionSubmitRequest req ->
                 capturedTypes << req.documentType()
-                return new ReductoSubmitResponse(TASK_ID, FILE_ID)
+                return new ExtractionSubmitResponse(TASK_ID, FILE_ID)
             }
 
         when:
@@ -220,7 +220,7 @@ class ExtractionWorkerSpec extends Specification {
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> new HashMap<String, String>()
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, null)
 
         when:
             worker.process(extraction, DOCUMENT_ID)
@@ -240,7 +240,7 @@ class ExtractionWorkerSpec extends Specification {
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, FILE_ID)
 
         when:
             worker.process(extraction, DOCUMENT_ID)
@@ -258,7 +258,7 @@ class ExtractionWorkerSpec extends Specification {
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, null)
 
         when:
             worker.process(extraction, DOCUMENT_ID)
@@ -278,7 +278,7 @@ class ExtractionWorkerSpec extends Specification {
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
             extractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> original
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, null)
 
         when:
             worker.process(extraction, DOCUMENT_ID)
@@ -307,7 +307,7 @@ class ExtractionWorkerSpec extends Specification {
             extractionRepository.updateDocumentExternalIds(_, _) >> 1
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+            extractionClient.submit(_ as ExtractionSubmitRequest) >> new ExtractionSubmitResponse(TASK_ID, FILE_ID)
 
         when:
             worker.process(extraction, DOCUMENT_ID)

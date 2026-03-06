@@ -71,6 +71,10 @@ dependencies {
 	// Apache PDFBox (document text extraction for classification)
 	implementation libs.pdfbox
 
+	// Spring AI — ChatClient for document classification
+	implementation platform("org.springframework.ai:spring-ai-bom:1.1.2")
+	implementation 'org.springframework.ai:spring-ai-client-chat'
+
 	// Mailgun SDK
 	implementation libs.mailgun
 

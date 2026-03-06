@@ -49,8 +49,8 @@ class HttpReductoClientSpec extends Specification {
                 .build()
     }
 
-    private ReductoSubmitRequest buildRequest() {
-        return new ReductoSubmitRequest(
+    private ExtractionSubmitRequest buildRequest() {
+        return new ExtractionSubmitRequest(
                 "ext-1", "doc-1", "tenders/1/1/doc-1/file.pdf",
                 DUMMY_BYTES,
                 "https://my-service.example.com/internal/reducto/webhook",
