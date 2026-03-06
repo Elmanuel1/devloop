@@ -117,7 +117,7 @@ public class HttpReductoClient implements ExtractionClient {
     @SneakyThrows
     private ExtractionSubmitResponse startExtraction(ExtractionSubmitRequest request, String fileId) {
         String schema = schemaLoader.loadSchema("extraction");
-        String systemPrompt = promptLoader.loadPrompt("extraction");
+        String systemPrompt = promptLoader.loadPrompt(request.documentType().name().toLowerCase(java.util.Locale.ROOT));
 
         String bodyJson = objectMapper.writeValueAsString(new ReductoExtractPayload(
                 fileId,

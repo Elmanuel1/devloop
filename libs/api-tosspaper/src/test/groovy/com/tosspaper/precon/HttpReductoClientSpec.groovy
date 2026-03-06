@@ -41,7 +41,7 @@ class HttpReductoClientSpec extends Specification {
         props.setTimeoutSeconds(30)
 
         schemaLoader.loadSchema("extraction") >> '{"type":"object"}'
-        promptLoader.loadPrompt("extraction") >> "Extract construction document data."
+        promptLoader.loadPrompt(_) >> "Extract construction document data."
 
         client = new HttpReductoClient(props, mapper, httpClient, schemaLoader, promptLoader)
     }
@@ -153,6 +153,59 @@ class HttpReductoClientSpec extends Specification {
             def buffer = new okio.Buffer()
             extractBodies[0].writeTo(buffer)
             buffer.readUtf8().contains(FILE_ID)
+    }
+
+    // ── Per-classification prompt selection ───────────────────────────────────
+
+    def "TC-RC-15: each document type loads its own prompt by type name [#documentType]"() {
+        given:
+            def uploadReq = new Request.Builder().url("https://api.reducto.ai/upload").build()
+            def extractReq = new Request.Builder().url("https://api.reducto.ai/extract").build()
+            httpClient.newCall(_) >> uploadCall >> extractCall
+            uploadCall.execute() >> buildResponse(200, """{"file_id": "$FILE_ID"}""", uploadReq)
+            extractCall.execute() >> buildResponse(200, """{"task_id": "$TASK_ID"}""", extractReq)
+            def request = new ExtractionSubmitRequest(
+                    "ext-1", "doc-1", "s3-key",
+                    DUMMY_BYTES,
+                    "https://my-service.example.com/internal/reducto/webhook",
+                    documentType,
+                    null)
+
+        when:
+            client.submit(request)
+
+        then: "prompt is loaded using the lowercase document type name"
+            1 * promptLoader.loadPrompt(expectedPromptName) >> "prompt for $expectedPromptName"
+
+        where:
+            documentType                                    | expectedPromptName
+            ConstructionDocumentType.BILL_OF_QUANTITIES     | "bill_of_quantities"
+            ConstructionDocumentType.DRAWINGS               | "drawings"
+            ConstructionDocumentType.SPECIFICATIONS         | "specifications"
+            ConstructionDocumentType.CONDITIONS_OF_CONTRACT | "conditions_of_contract"
+            ConstructionDocumentType.TENDER_NOTICE          | "tender_notice"
+            ConstructionDocumentType.PRELIMINARIES          | "preliminaries"
+    }
+
+    def "TC-RC-16: schema is always the single shared extraction schema regardless of document type"() {
+        given:
+            def uploadReq = new Request.Builder().url("https://api.reducto.ai/upload").build()
+            def extractReq = new Request.Builder().url("https://api.reducto.ai/extract").build()
+            httpClient.newCall(_) >> uploadCall >> extractCall
+            uploadCall.execute() >> buildResponse(200, """{"file_id": "$FILE_ID"}""", uploadReq)
+            extractCall.execute() >> buildResponse(200, """{"task_id": "$TASK_ID"}""", extractReq)
+            def request = new ExtractionSubmitRequest(
+                    "ext-1", "doc-1", "s3-key",
+                    DUMMY_BYTES,
+                    "https://my-service.example.com/internal/reducto/webhook",
+                    ConstructionDocumentType.DRAWINGS,
+                    null)
+
+        when:
+            client.submit(request)
+
+        then: "schema name is always 'extraction' regardless of document type"
+            1 * schemaLoader.loadSchema("extraction") >> '{"type":"object"}'
     }
 
     // ── Upload failures ───────────────────────────────────────────────────────
