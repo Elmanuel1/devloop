@@ -112,8 +112,11 @@ public class HttpReductoClient implements ReductoClient {
                         ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(
                                 request.documentId(), request.extractionId()));
             }
-            log.debug("[ReductoClient] Document '{}' submitted — taskId='{}'", request.documentId(), taskId);
-            return new ReductoSubmitResponse(taskId);
+            // file_id is optional — Reducto may omit it depending on submission type
+            String fileId = root.path("file_id").asText(null);
+            log.debug("[ReductoClient] Document '{}' submitted — taskId='{}' fileId='{}'",
+                    request.documentId(), taskId, fileId);
+            return new ReductoSubmitResponse(taskId, fileId);
         } catch (IOException e) {
             throw new ReductoClientException(
                     ApiErrorMessages.REDUCTO_SUBMIT_FAILED.formatted(

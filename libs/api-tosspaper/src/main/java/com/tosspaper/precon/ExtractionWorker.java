@@ -17,6 +17,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Orchestrates the per-document extraction pipeline for a single
@@ -57,6 +58,7 @@ public class ExtractionWorker {
     private final ReductoClient reductoClient;
     private final ExtractionFieldValidator fieldValidator;
     private final TenderDocumentRepository documentRepository;
+    private final PreconExtractionRepository extractionRepository;
     private final ReductoProperties reductoProperties;
     private final S3Client s3Client;
     private final TenderFileProperties fileProperties;
@@ -199,8 +201,20 @@ public class ExtractionWorker {
                     documentType
             );
             ReductoSubmitResponse response = reductoClient.submit(request);
-            log.info("[ExtractionWorker] Extraction '{}' document '{}' submitted — taskId='{}'",
-                    extractionId, documentId, response.taskId());
+            log.info("[ExtractionWorker] Extraction '{}' document '{}' submitted — taskId='{}' fileId='{}'",
+                    extractionId, documentId, response.taskId(), response.fileId());
+
+            // Persist the Reducto task ID into the document_external_ids JSONB map so that
+            // the webhook handler can look up the extraction by task ID when Reducto calls back.
+            Map<String, String> externalIds = extractionRepository.getDocumentExternalIds(extractionId);
+            externalIds.put(documentId, response.taskId());
+            extractionRepository.updateDocumentExternalIds(extractionId, externalIds);
+
+            // Persist the Reducto file ID on the tender_documents row for audit and re-use.
+            if (response.fileId() != null && !response.fileId().isBlank()) {
+                documentRepository.updateExternalFileId(documentId, response.fileId());
+            }
+
             return true;
         } catch (ReductoClientException e) {
             log.error("[ExtractionWorker] Extraction '{}' document '{}' — Reducto submission failed: {}",

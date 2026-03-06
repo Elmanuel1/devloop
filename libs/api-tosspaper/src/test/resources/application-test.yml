@@ -128,6 +128,8 @@ reducto:
   batch-size: 20
   stale-minutes: 15
   timeout-seconds: 30
+  webhook:
+    svix-secret: "whsec_c3ZpeC10ZXN0LXBsYWNlaG9sZGVyLXNlY3JldC14eA=="
 
 extraction:
   processing:

@@ -25,6 +25,7 @@ class ExtractionWorkerSpec extends Specification {
     ReductoClient reductoClient = Mock()
     ExtractionFieldValidator fieldValidator = Mock()
     TenderDocumentRepository documentRepository = Mock()
+    PreconExtractionRepository extractionRepository = Mock()
     ReductoProperties reductoProperties = new ReductoProperties()
     S3Client s3Client = Mock()
     TenderFileProperties fileProperties = Mock()
@@ -39,6 +40,7 @@ class ExtractionWorkerSpec extends Specification {
     static final String S3_KEY = "tenders/1/tender-1/doc-001/file.pdf"
     static final String BUCKET = "tosspaper-docs"
     static final String TASK_ID = "reducto-task-123"
+    static final String FILE_ID = "reducto-file-456"
     static final String WEBHOOK_URL = "https://my-service.example.com/internal/reducto/webhook"
     static final ConstructionDocumentType BOQ = ConstructionDocumentType.BILL_OF_QUANTITIES
 
@@ -52,6 +54,10 @@ class ExtractionWorkerSpec extends Specification {
         reductoProperties.setTimeoutSeconds(30)
 
         fileProperties.getUploadBucket() >> BUCKET
+
+        // Default stub: extraction has no external IDs yet — returns empty map
+        extractionRepository.getDocumentExternalIds(_) >> new HashMap<String, String>()
+        extractionRepository.updateDocumentExternalIds(_, _) >> 1
     }
 
     /**
@@ -61,7 +67,7 @@ class ExtractionWorkerSpec extends Specification {
     private ExtractionWorker spyWorker(byte[] defaultBytes = DUMMY_BYTES) {
         def spy = Spy(ExtractionWorker, constructorArgs: [
                 documentClassifier, reductoClient, fieldValidator,
-                documentRepository, reductoProperties, s3Client, fileProperties])
+                documentRepository, extractionRepository, reductoProperties, s3Client, fileProperties])
         spy.readContentBytes(_, _, _) >> defaultBytes
         return spy
     }
@@ -76,8 +82,8 @@ class ExtractionWorkerSpec extends Specification {
             documentRepository.findById("doc-B") >> buildDocRecord("doc-B", "key/doc-B.pdf")
             documentClassifier.classify(_, _) >> BOQ
             reductoClient.submit(_ as ReductoSubmitRequest) >>
-                    new ReductoSubmitResponse("task-A") >>
-                    new ReductoSubmitResponse("task-B")
+                    new ReductoSubmitResponse("task-A", FILE_ID) >>
+                    new ReductoSubmitResponse("task-B", FILE_ID)
 
         when:
             def result = worker.process(extraction)
@@ -98,7 +104,7 @@ class ExtractionWorkerSpec extends Specification {
             worker.process(extraction)
 
         then:
-            3 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
+            3 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
     }
 
     // ── Hard cap ──────────────────────────────────────────────────────────────
@@ -115,7 +121,7 @@ class ExtractionWorkerSpec extends Specification {
             worker.process(extraction)
 
         then: "at most 20 documents submitted — no 21st call"
-            20 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
+            20 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
     }
 
     def "TC-EW-04: process respects reductoProperties.batchSize as the cap — not a hardcoded constant"() {
@@ -131,7 +137,7 @@ class ExtractionWorkerSpec extends Specification {
             worker.process(extraction)
 
         then: "only 5 documents submitted"
-            5 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
+            5 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
     }
 
     // ── UNKNOWN document type → skip ─────────────────────────────────────────
@@ -227,7 +233,7 @@ class ExtractionWorkerSpec extends Specification {
             documentClassifier.classify(_, _) >> ConstructionDocumentType.DRAWINGS
             reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
                 capturedRequests << req
-                return new ReductoSubmitResponse(TASK_ID)
+                return new ReductoSubmitResponse(TASK_ID, FILE_ID)
             }
 
         when:
@@ -252,7 +258,7 @@ class ExtractionWorkerSpec extends Specification {
             documentClassifier.classify(_, _) >> ConstructionDocumentType.SPECIFICATIONS
             reductoClient.submit(_ as ReductoSubmitRequest) >> { ReductoSubmitRequest req ->
                 capturedTypes << req.documentType()
-                return new ReductoSubmitResponse(TASK_ID)
+                return new ReductoSubmitResponse(TASK_ID, FILE_ID)
             }
 
         when:
@@ -280,11 +286,59 @@ class ExtractionWorkerSpec extends Specification {
             def result = worker.process(extraction)
 
         then: "the two successful documents were submitted"
-            2 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
+            2 * reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
 
         and: "result is still returned — batch is not aborted"
             result != null
             result.extractionId() == EXTRACTION_ID
+    }
+
+    // ── External ID storage ───────────────────────────────────────────────────
+
+    def "TC-EW-16: taskId from Reducto response is stored in extraction document_external_ids map"() {
+        given:
+            def worker = spyWorker()
+            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
+            documentClassifier.classify(_, _) >> BOQ
+            def storedMap = [:]
+            extractionRepository.getDocumentExternalIds(EXTRACTION_ID) >> new HashMap<String, String>()
+            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
+
+        when:
+            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+
+        then: "the taskId is stored in the external IDs map"
+            1 * extractionRepository.updateDocumentExternalIds(EXTRACTION_ID, { Map<String, String> m ->
+                m.get(DOCUMENT_ID) == TASK_ID
+            }) >> 1
+    }
+
+    def "TC-EW-17: fileId from Reducto response is stored in tender_documents.external_file_id when non-blank"() {
+        given:
+            def worker = spyWorker()
+            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
+            documentClassifier.classify(_, _) >> BOQ
+            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
+
+        when:
+            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+
+        then: "external file ID is persisted on the document record"
+            1 * documentRepository.updateExternalFileId(DOCUMENT_ID, FILE_ID) >> 1
+    }
+
+    def "TC-EW-18: null fileId from Reducto response does not call updateExternalFileId"() {
+        given: "Reducto returns no file_id (null)"
+            def worker = spyWorker()
+            documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
+            documentClassifier.classify(_, _) >> BOQ
+            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, null)
+
+        when:
+            worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
+
+        then: "updateExternalFileId is never called when fileId is null"
+            0 * documentRepository.updateExternalFileId(_, _)
     }
 
     // ── validateAndWriteFields ────────────────────────────────────────────────
@@ -333,14 +387,14 @@ class ExtractionWorkerSpec extends Specification {
             def capturedKeys = []
             def worker = Spy(ExtractionWorker, constructorArgs: [
                     documentClassifier, reductoClient, fieldValidator,
-                    documentRepository, reductoProperties, s3Client, fileProperties])
+                    documentRepository, extractionRepository, reductoProperties, s3Client, fileProperties])
             worker.readContentBytes(_, _, _) >> { String extId, String docId, String key ->
                 capturedKeys << key
                 return DUMMY_BYTES
             }
             documentRepository.findById(DOCUMENT_ID) >> buildDocRecord(DOCUMENT_ID, S3_KEY)
             documentClassifier.classify(_, _) >> BOQ
-            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID)
+            reductoClient.submit(_ as ReductoSubmitRequest) >> new ReductoSubmitResponse(TASK_ID, FILE_ID)
 
         when:
             worker.processDocument(EXTRACTION_ID, DOCUMENT_ID)
