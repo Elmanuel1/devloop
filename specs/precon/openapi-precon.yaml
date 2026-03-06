@@ -1,0 +1,2504 @@
+openapi: 3.1.0
+servers:
+  - url: /
+    description: Default server
+info:
+  title: Precon API
+  version: v1
+  description: |
+    REST API for Tenders, TenderDocuments, and Extractions.
+
+    ## Architecture Overview
+
+    ### Domain Model
+    - **Tender** — a bid opportunity with metadata (name, dates, bonds, parties, etc.).
+      Created manually by users. AI-extracted fields are written to the tender via the
+      extraction pipeline.
+    - **TenderDocument** — files (PDF, PNG, JPEG, ZIP) uploaded to a tender via S3
+      presigned URLs. Documents are the source material for AI extraction.
+    - **Extraction** — a flat, self-contained processing job. Reads documents, extracts
+      fields, user reviews, then applies to the target entity. Each extraction is
+      independent. No singleton constraint — multiple extractions can exist for the
+      same tender (one active, others applied/cancelled).
+    - **ExtractionField** — a single extracted field (e.g., closing_date, bonds).
+      Has both proposed_value (AI's immutable original) and edited_value (user's edit, null
+      until modified). The apply logic uses `edited_value ?? proposed_value`.
+    - **Application** — audit record created when extraction fields are written to a
+      target entity. One extraction can produce multiple applications (one per target
+      entity). Contains old/new values per field for accountability. Includes a
+      staleness check: if the target entity was modified after the extraction was
+      created, apply returns 409.
+
+    ### Extraction Pipeline
+    1. **Upload** — user uploads documents to a tender via presigned URLs.
+    2. **Extract** — `POST /extractions` creates a new extraction job. The server
+       resolves entity_type from entity_id. Optionally scoped to specific document_ids
+       or field names. Returns the extraction ID for polling.
+    3. **Review** — user inspects extracted fields via `GET /extractions/{id}/fields`.
+       Each field has proposed_value (AI's proposal) and edited_value (null until user edits).
+       For conflicted fields (multiple documents disagree), competing_values shows all
+       candidates with their citations. User resolves by setting edited_value via
+       `PATCH /extractions/{id}/fields`.
+    4. **Apply** — `POST /extractions/{id}/applications` writes fields to the target
+       entity. Requires entity_id in the request body. For each field: uses edited_value if
+       set (user-edited), otherwise proposed_value (AI-extracted). Conflicted fields
+       MUST have edited_value set before apply. The server checks if the entity
+       was modified after extraction creation — returns 409 if so.
+
+    ### Sparse Re-extraction
+    When a user uploads new documents or wants to re-extract specific fields, they
+    create a new extraction job scoped to just those fields:
+    `POST /extractions { entity_id, document_ids: [...], fields: ["closing_date", "bonds"] }`
+    The previous extraction is already applied and closed. The new one is independent.
+    Apply writes only the fields this extraction produced.
+
+    ### Field Value Model
+    - `proposed_value` — the AI's original extraction. Immutable. Preserved for audit
+      and UI comparison (show what the AI suggested vs what the user chose).
+    - `edited_value` — the user's edited value. Null until the user modifies the field.
+      When non-null, takes priority over proposed_value during apply.
+    - Edit detection: `edited_value != null` means the field was user-edited. When null,
+      proposed_value is used as-is during apply.
+
+    ### Conflict Resolution
+    When multiple documents disagree on a field value:
+    - `has_conflict = true` on the ExtractionField
+    - `competing_values[]` contains each candidate with its citations
+    - `proposed_value` is set to the highest-confidence candidate
+    - User MUST set `edited_value` (via PATCH) to resolve before apply
+    - `has_conflict` remains true after resolution (audit trail)
+
+    ### Staleness Detection
+    At apply time, the server compares `tender.updated_at` against
+    `extraction.created_at`. If the tender was modified after the extraction
+    was created (direct edit or another extraction applied), apply returns
+    409 Conflict. No snapshot needed — both timestamps already exist.
+
+    ### Optimistic Concurrency
+    - Extraction has a `version` counter (monotonically increasing)
+    - `GET /extractions/{id}` returns ETag derived from version
+    - `PATCH /extractions/{id}/fields` requires If-Match header
+    - Version bumps on: field edits, status changes
+    - 412 Precondition Failed if ETag is stale (concurrent modification)
+    - Pass `*` as If-Match to skip the check (per RFC 9110 §13.1.1)
+    - Tender PATCH also uses ETag/If-Match for its own concurrency
+
+    ### Rate Limiting
+    All endpoints are subject to general rate limiting and may return 429 with a
+    Retry-After header. 429 is explicitly documented on AI/compute-bound endpoints
+    (POST /extractions, POST /applications) where stricter limits apply.
+
+    ### Cross-cutting Concerns
+    - **Multi-tenancy**: X-Context-Id header scopes all requests to a company
+    - **Idempotency**: POST endpoints accept Idempotency-Key header (UUID, 24h TTL)
+    - **Pagination**: cursor-based (opaque string), consistent with sort order
+    - **Soft deletes**: tenders and extractions are soft-deleted; S3 files are removed
+    - **Auth**: JWT bearer token on all endpoints
+  contact:
+    name: Tosspaper
+
+security:
+  - jwtAuth: []
+
+components:
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XContextIdHeader:
+      name: X-Context-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Company ID for scoping the request.
+
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Client-generated unique key (UUID recommended). If a request with the same key was already processed, the server returns the original response instead of creating a duplicate. Keys expire after 24 hours.
+
+    IfMatchHeader:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+      description: >
+        ETag value from a previous GET. The server rejects the request with 412
+        Precondition Failed if the resource has been modified since. Prevents
+        lost updates when multiple users edit concurrently. Pass * to skip the
+        check and force the update (per RFC 9110 §13.1.1).
+
+  schemas:
+    # ──────────────────── Enums ────────────────────
+
+    TenderStatus:
+      type: string
+      description: >
+        Lifecycle status of a tender. pending — initial state, active and accepting bids;
+        submitted — bid has been submitted; won/lost — outcome; cancelled — withdrawn.
+      enum:
+        - pending
+        - submitted
+        - won
+        - lost
+        - cancelled
+
+    TenderDocumentStatus:
+      type: string
+      description: >
+        Processing status of an uploaded tender document. uploading — file upload in progress;
+        processing — server-side validation/extraction running; ready — available for use;
+        failed — processing error (see error_reason).
+      enum:
+        - uploading
+        - processing
+        - ready
+        - failed
+
+    ContentType:
+      type: string
+      enum:
+        - application/pdf
+        - image/png
+        - image/jpeg
+        - application/zip
+
+    Currency:
+      type: string
+      enum:
+        - CAD
+        - USD
+
+    DeliveryMethod:
+      type: string
+      description: >
+        Contract delivery method. lump_sum — fixed total price; unit_price — per-unit pricing;
+        stipulated_price — fixed price with defined scope; design_build — single entity for design and construction;
+        construction_management — CM acts as advisor or at-risk; cost_plus — actual costs plus fee;
+        time_and_materials — hourly/daily rates plus materials; mixed — combination of methods.
+      enum:
+        - lump_sum
+        - unit_price
+        - stipulated_price
+        - design_build
+        - construction_management
+        - cost_plus
+        - time_and_materials
+        - mixed
+
+    BondType:
+      type: string
+      enum:
+        - bid
+        - performance
+        - labour_and_materials
+
+    ConditionType:
+      type: string
+      enum:
+        - insurance
+        - certification
+        - compliance
+        - participation
+        - prequalification
+        - scheduling
+        - safety
+        - other
+
+    EventType:
+      type: string
+      description: >
+        Type of tender event. site_visit — physical visit to project site;
+        tender_meeting — formal pre-bid or tender meeting.
+      enum:
+        - site_visit
+        - tender_meeting
+
+    SortField:
+      type: string
+      enum:
+        - closing_date
+        - created_at
+
+    SortDirection:
+      type: string
+      enum:
+        - asc
+        - desc
+
+    EntityType:
+      type: string
+      description: >
+        Type of business entity that extraction targets. Currently only tender is supported.
+        New values are added as entity types are onboarded.
+      enum:
+        - tender
+
+    ExtractionStatus:
+      type: string
+      description: >
+        Lifecycle status of an extraction job. pending — created, not yet processing;
+        processing — extraction in progress; completed — all documents processed
+        successfully, ready for review; partial_success — some documents processed,
+        some failed, fields from successful documents available for review;
+        failed — extraction failed entirely; cancelled — user cancelled.
+      enum:
+        - pending
+        - processing
+        - completed
+        - partial_success
+        - failed
+        - cancelled
+
+    TenderFieldName:
+      type: string
+      description: >
+        Extractable field names for tenders. Used for server-side validation when entity_type is tender.
+        Includes name — AI proposes a project name from documents for user review; the user decides
+        whether to accept or keep their original. Does not include system-managed fields
+        (id, status, created_at, updated_at, created_by, metadata, platform).
+      enum:
+        - name
+        - reference_number
+        - location
+        - scope_of_work
+        - delivery_method
+        - currency
+        - closing_date
+        - events
+        - start_date
+        - completion_date
+        - inquiry_deadline
+        - submission_method
+        - submission_url
+        - bonds
+        - conditions
+        - parties
+        - liquidated_damages
+
+    FieldType:
+      type: string
+      description: >
+        JSON type hint for proposed_value. Enables codegen to produce typed
+        SDK helpers and lets clients branch on a wire value instead of
+        maintaining a hardcoded field_name → type lookup table.
+      enum:
+        - string
+        - date
+        - date_time
+        - number
+        - boolean
+        - enum
+        - object
+        - array
+
+    # ──────────────────── Shared Schemas ────────────────────
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: "api.validation.error"
+        message:
+          type: string
+          example: "An error occurred while processing your request"
+
+    Pagination:
+      type: object
+      required:
+        - cursor
+      properties:
+        cursor:
+          type:
+            - string
+            - 'null'
+          description: Cursor for next page. Null if no more results.
+
+    # ──────────────────── Embedded Objects ────────────────────
+
+    Address:
+      type: object
+      required:
+        - address
+      properties:
+        address:
+          type: string
+          description: Street address
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+        city:
+          type:
+            - string
+            - 'null'
+        state_or_province:
+          type:
+            - string
+            - 'null'
+        postal_code:
+          type:
+            - string
+            - 'null'
+        country:
+          type:
+            - string
+            - 'null'
+
+    Party:
+      type: object
+      required:
+        - role
+        - name
+      properties:
+        role:
+          type: string
+          maxLength: 100
+          description: Party role in the tender. Freeform — suggested values are owner, engineer, architect, purchasing_agent, general_contractor, surety, quantity_surveyor.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+        name:
+          type: string
+          description: Legal or operational name
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+        address:
+          oneOf:
+            - $ref: '#/components/schemas/Address'
+            - type: 'null'
+        phone:
+          type:
+            - string
+            - 'null'
+        email:
+          type:
+            - string
+            - 'null'
+          format: email
+          x-field-extra-annotation: "@jakarta.validation.constraints.Email"
+
+    Bond:
+      type: object
+      description: >
+        Bond requirement. Exactly one of percentage, fixed_amount, or description
+        must be provided. The server infers the expression from which field is populated
+        and returns 400 if zero or more than one are set.
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/BondType'
+        percentage:
+          type:
+            - number
+            - 'null'
+          minimum: 0
+          maximum: 100
+          description: Bond as percentage of total tendered price.
+        fixed_amount:
+          type:
+            - number
+            - 'null'
+          minimum: 0
+          description: Bond as fixed dollar amount. Currency inherited from tender currency.
+        description:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+          description: Freeform text for non-standard expressions.
+
+    Condition:
+      type: object
+      required:
+        - type
+        - description
+      properties:
+        type:
+          $ref: '#/components/schemas/ConditionType'
+        description:
+          type: string
+          maxLength: 500
+          description: Condition text.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+
+    TenderEvent:
+      type: object
+      description: >
+        A scheduled tender event — either a physical site visit or a formal pre-bid meeting.
+        Discriminated by type.
+      required:
+        - type
+        - mandatory
+      properties:
+        type:
+          $ref: '#/components/schemas/EventType'
+        date:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Event date and time
+        mandatory:
+          type: boolean
+          description: Whether attendance is mandatory
+        location:
+          type:
+            - string
+            - 'null'
+          description: Event location or address
+        details:
+          type:
+            - string
+            - 'null'
+          maxLength: 1000
+          description: Additional instructions, agenda, contact info
+
+    # ──────────────────── Tender ────────────────────
+
+    Tender:
+      type: object
+      required:
+        - id
+        - status
+        - created_at
+        - updated_at
+        - created_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Tender ID
+        name:
+          type:
+            - string
+            - 'null'
+          description: Tender name. Null if not yet assigned.
+        platform:
+          type:
+            - string
+            - 'null'
+          description: Tendering platform (e.g., "bidsandtenders.ca", "MERX", "bonfire")
+        status:
+          $ref: '#/components/schemas/TenderStatus'
+        currency:
+          oneOf:
+            - $ref: '#/components/schemas/Currency'
+            - type: 'null'
+          description: Currency for all monetary values on this tender.
+        reference_number:
+          type:
+            - string
+            - 'null'
+          description: Contract/reference number (AI-extracted)
+        location:
+          oneOf:
+            - $ref: '#/components/schemas/Address'
+            - type: 'null'
+          description: Project location (AI-extracted)
+        scope_of_work:
+          type:
+            - string
+            - 'null'
+          description: What the project involves (AI-extracted)
+        delivery_method:
+          oneOf:
+            - $ref: '#/components/schemas/DeliveryMethod'
+            - type: 'null'
+        closing_date:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Bid submission deadline (AI-extracted)
+        events:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/TenderEvent'
+          description: Site visits and tender meetings (AI-extracted)
+        start_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Proposed project start date (AI-extracted)
+        completion_date:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Project completion date (AI-extracted)
+        inquiry_deadline:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Last day to ask questions (AI-extracted)
+        submission_method:
+          type:
+            - string
+            - 'null'
+          description: How to submit bids (AI-extracted)
+        submission_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+          description: URL for electronic submission (AI-extracted)
+        bonds:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Bond'
+          description: Bond requirements (AI-extracted)
+        conditions:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Condition'
+          description: Tender conditions and requirements (AI-extracted)
+        liquidated_damages:
+          type:
+            - string
+            - 'null'
+          description: Penalty for late completion (AI-extracted)
+        parties:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Party'
+          description: Extracted parties
+        metadata:
+          type:
+            - object
+            - 'null'
+          description: JSONB for additional AI-extracted fields
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        created_by:
+          type: string
+          format: uuid
+          description: User ID who created the tender
+
+    TenderDocument:
+      type: object
+      required:
+        - id
+        - tender_id
+        - file_name
+        - content_type
+        - file_size
+        - s3_key
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Document ID
+        tender_id:
+          type: string
+          format: uuid
+          description: Parent tender ID
+        file_name:
+          type: string
+          description: Original file name
+        content_type:
+          $ref: '#/components/schemas/ContentType'
+        file_size:
+          type: integer
+          description: Declared file size in bytes
+        s3_key:
+          type: string
+          description: S3 object key
+        status:
+          $ref: '#/components/schemas/TenderDocumentStatus'
+        error_reason:
+          type:
+            - string
+            - 'null'
+          description: Reason for failure (null if not failed)
+        metadata:
+          type:
+            - object
+            - 'null'
+          description: JSONB — ZIP entry info, document-level metadata, etc.
+        parent_document_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: If extracted from a ZIP, the ID of the original ZIP document
+        uploaded_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the file upload to S3 completed. Null while uploading.
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601
+
+    # ──────────────────── Request / Response Schemas ────────────────────
+
+    TenderCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+          description: >
+            Tender name. Optional — if omitted, the name will be populated later.
+            The tender is created with status pending regardless.
+        platform:
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+          description: Tendering platform
+        currency:
+          oneOf:
+            - $ref: '#/components/schemas/Currency'
+            - type: 'null'
+          description: Currency for monetary values on this tender.
+        closing_date:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Bid submission deadline
+          x-field-extra-annotation: "@jakarta.validation.constraints.FutureOrPresent"
+        delivery_method:
+          oneOf:
+            - $ref: '#/components/schemas/DeliveryMethod'
+            - type: 'null'
+          description: Contract delivery method
+
+    TenderUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >
+        Partial update — same fields as Tender. See Tender schema for field descriptions.
+        At least one field must be provided.
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+        platform:
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+        status:
+          $ref: '#/components/schemas/TenderStatus'
+        currency:
+          oneOf:
+            - $ref: '#/components/schemas/Currency'
+            - type: 'null'
+        reference_number:
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+        location:
+          oneOf:
+            - $ref: '#/components/schemas/Address'
+            - type: 'null'
+        scope_of_work:
+          type:
+            - string
+            - 'null'
+        delivery_method:
+          oneOf:
+            - $ref: '#/components/schemas/DeliveryMethod'
+            - type: 'null'
+        closing_date:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          x-field-extra-annotation: "@jakarta.validation.constraints.FutureOrPresent"
+        events:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/TenderEvent'
+        start_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        completion_date:
+          type:
+            - string
+            - 'null'
+          format: date
+        inquiry_deadline:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        submission_method:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+        submission_url:
+          type:
+            - string
+            - 'null'
+          format: uri
+        bonds:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Bond'
+        conditions:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Condition'
+        liquidated_damages:
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+        parties:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/Party'
+        metadata:
+          type:
+            - object
+            - 'null'
+
+    TenderCreateResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the created tender
+
+    PresignedUrlRequest:
+      type: object
+      additionalProperties: false
+      x-class-extra-annotation: "@com.tosspaper.common.validator.ValidPresignedUpload"
+      required:
+        - file_name
+        - content_type
+        - file_size
+      properties:
+        file_name:
+          type: string
+          maxLength: 255
+          description: File name with extension. The backend sanitizes for the S3 key.
+          x-field-extra-annotation: "@jakarta.validation.constraints.NotBlank"
+        content_type:
+          $ref: '#/components/schemas/ContentType'
+        file_size:
+          type: integer
+          minimum: 1
+          maximum: 209715200
+          description: Expected file size in bytes. Max 209715200 (200MB).
+
+    PresignedUrlResponse:
+      type: object
+      required:
+        - presigned_url
+        - document_id
+        - expiration
+      properties:
+        presigned_url:
+          type: string
+          format: uri
+          description: S3 presigned PUT URL
+        document_id:
+          type: string
+          format: uuid
+          description: ID of the created document record
+        expiration:
+          type: string
+          format: date-time
+          description: When the presigned URL expires (5 minutes from creation)
+
+    DownloadUrlResponse:
+      type: object
+      required:
+        - url
+        - expiration
+      properties:
+        url:
+          type: string
+          format: uri
+          description: S3 presigned GET URL
+        expiration:
+          type: string
+          format: date-time
+          description: When the URL expires (2 minutes from creation)
+
+    # ──────────────────── List Response Wrappers ────────────────────
+
+    TenderListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tender'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    TenderDocumentListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenderDocument'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    TenderMetricsResponse:
+      type: object
+      required:
+        - active_tenders
+        - tenders_won_ytd
+        - tenders_lost_ytd
+        - bond_exposure
+      properties:
+        active_tenders:
+          type: integer
+          minimum: 0
+          description: Count of tenders in pending or submitted status.
+        tenders_won_ytd:
+          type: integer
+          minimum: 0
+          description: Count of tenders that moved to won status since Jan 1 of the current year (UTC).
+        tenders_lost_ytd:
+          type: integer
+          minimum: 0
+          description: Count of tenders that moved to lost status since Jan 1 of the current year (UTC).
+        bond_exposure:
+          type: string
+          format: decimal
+          description: >
+            Always "0.00" in this version. Will be implemented as SUM(tender_value * 0.10)
+            for PENDING tenders once tender_value is added to the schema in a future ticket.
+
+    # ──────────────────── Extraction Schemas ────────────────────
+
+    BoundingBox:
+      type: object
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: number
+          minimum: 0
+          description: Horizontal offset from the left edge of the page, in points (1/72 inch). For images, in pixels.
+        y:
+          type: number
+          minimum: 0
+          description: Vertical offset from the top edge of the page, in points. For images, in pixels.
+        width:
+          type: number
+          minimum: 0
+          description: Width of the bounding box, in points. For images, in pixels.
+        height:
+          type: number
+          minimum: 0
+          description: Height of the bounding box, in points. For images, in pixels.
+
+    Citation:
+      type: object
+      required:
+        - document_id
+      properties:
+        document_id:
+          type: string
+          format: uuid
+          description: Source document (TenderDocument.id)
+        page_number:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          description: Page in document (1-indexed). Null for single-page images.
+        text_snippet:
+          type:
+            - string
+            - 'null'
+          description: Raw text the value was derived from
+        bounding_box:
+          oneOf:
+            - $ref: '#/components/schemas/BoundingBox'
+            - type: 'null'
+
+    CompetingValue:
+      type: object
+      required:
+        - value
+        - citations
+      properties:
+        value:
+          description: >
+            The proposed value. JSON type matches the field_name's expected type.
+            Intentionally unconstrained at schema level — interpret using field_name.
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+
+    ExtractionError:
+      type: object
+      required:
+        - document_id
+        - code
+        - message
+      properties:
+        document_id:
+          type: string
+          format: uuid
+          description: TenderDocument.id that failed
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable description
+
+    Extraction:
+      type: object
+      description: >
+        A flat, self-contained extraction job. Reads documents, extracts fields,
+        and produces results for user review. Multiple extractions can exist for the
+        same entity — no singleton constraint.
+      required:
+        - id
+        - entity_type
+        - entity_id
+        - status
+        - version
+        - document_ids
+        - errors
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique extraction ID
+        entity_type:
+          $ref: '#/components/schemas/EntityType'
+        entity_id:
+          type: string
+          format: uuid
+          description: Source entity (e.g., Tender.id). Globally unique — no entity_type disambiguation needed.
+        status:
+          $ref: '#/components/schemas/ExtractionStatus'
+        version:
+          type: integer
+          description: >
+            Monotonically increasing counter. Incremented on every field mutation
+            (edit, conflict resolution) and status change. Used as the ETag value
+            for optimistic concurrency on PATCH /fields.
+          readOnly: true
+        document_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Document IDs (TenderDocument.id) resolved at creation. Snapshot — not updated if documents are later deleted.
+        requested_fields:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: Field names requested for this extraction (null = all). Values from entity-specific field name enum.
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionError'
+          description: >
+            Per-document errors. Empty array for fully successful extractions.
+            Required so clients always have a predictable shape without null checks.
+        created_at:
+          type: string
+          format: date-time
+          description: When the extraction was created
+        started_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When processing began
+        completed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When processing finished
+
+    ExtractionField:
+      type: object
+      required:
+        - id
+        - extraction_id
+        - entity_type
+        - entity_id
+        - field_name
+        - field_type
+        - proposed_value
+        - edited_value
+        - confidence
+        - citations
+        - has_conflict
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique field ID
+        extraction_id:
+          type: string
+          format: uuid
+          description: Parent extraction (Extraction.id)
+        entity_type:
+          $ref: '#/components/schemas/EntityType'
+          description: Type of entity this field targets. Allows frontend to group fields by section.
+        entity_id:
+          type: string
+          format: uuid
+          description: Target entity this field will be applied to
+        field_name:
+          type: string
+          description: >
+            Canonical field name, validated against entity-specific enum (e.g., TenderFieldName).
+        field_type:
+          $ref: '#/components/schemas/FieldType'
+          description: >
+            JSON type hint for proposed_value. Enables typed deserialization in
+            generated SDKs — e.g. field_type=date_time → parse as ISO 8601,
+            field_type=array → parse as JSON array. Redundant with field_name
+            (closing_date is always date_time) but present on the wire so codegen
+            produces typed values instead of any/unknown.
+        proposed_value:
+          description: >
+            The AI-extracted value (immutable). This is what the AI proposed from
+            the source documents. Preserved for audit and comparison. Use field_type
+            to determine the JSON type for deserialization. Intentionally unconstrained
+            at the schema level (any JSON value).
+          readOnly: true
+        edited_value:
+          description: >
+            The user's override. Null until the user modifies the field. When
+            non-null, this value takes priority over proposed_value during apply.
+            When null, proposed_value is applied as-is. Any JSON value — validated
+            at runtime against entity-specific schemas during application.
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 0.0–1.0 confidence score from the extraction. Informational for the review UI.
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        has_conflict:
+          type: boolean
+          description: >
+            True when multiple documents disagree on this field. Remains true after
+            the user sets edited_value to resolve — indicates the field had a conflict.
+        competing_values:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/CompetingValue'
+          description: >
+            Present when has_conflict is true. Each entry contains a competing value
+            with its citations. Always has at least 2 entries when present. Null when
+            has_conflict is false.
+        created_at:
+          type: string
+          format: date-time
+          description: When field was extracted
+        updated_at:
+          type: string
+          format: date-time
+          description: Last edit
+
+    AppliedField:
+      type: object
+      required:
+        - field_id
+        - field_name
+        - old_value
+        - new_value
+      properties:
+        field_id:
+          type: string
+          format: uuid
+          description: ExtractionField.id
+        field_name:
+          type: string
+          description: Canonical field name
+        old_value:
+          description: >
+            Previous entity value (for audit). Always present in the response —
+            null when the field was previously empty. Any JSON value.
+        new_value:
+          description: >
+            Value written to entity. Any JSON value.
+
+    Application:
+      type: object
+      required:
+        - id
+        - extraction_id
+        - entity_id
+        - fields_applied
+        - applied_at
+        - applied_by
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique application ID
+        extraction_id:
+          type: string
+          format: uuid
+          description: Extraction.id that was applied
+        entity_id:
+          type: string
+          format: uuid
+          description: Target entity that received the values
+        fields_applied:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedField'
+        applied_at:
+          type: string
+          format: date-time
+          description: When the application occurred
+        applied_by:
+          type: string
+          format: uuid
+          description: User ID who applied
+
+    # ──────────────────── Extraction Request / Response Schemas ────────────────────
+
+    ExtractionCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - entity_type
+        - entity_id
+      description: >
+        Start an extraction job. Each POST creates a new, independent extraction.
+        The caller must supply entity_type explicitly. document_ids optionally
+        scopes the job to a subset of documents on the entity.
+      properties:
+        entity_type:
+          $ref: '#/components/schemas/EntityType'
+        entity_id:
+          type: string
+          format: uuid
+          description: Entity to extract from (e.g., Tender.id).
+        document_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: >
+            Optional subset of documents to extract from (TenderDocument.id).
+            All must belong to the specified entity_id. If omitted, extracts
+            from all ready documents on the entity.
+        fields:
+          type: array
+          items:
+            type: string
+          description: >
+            Optional list of field names to extract. Validated server-side
+            against the entity-specific enum (TenderFieldName for tenders).
+            Defaults to all fields if omitted.
+
+    ExtractionCreateResponse:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the created extraction. Use for polling status.
+
+    ExtractionFieldUpdateItem:
+      type: object
+      additionalProperties: false
+      description: >
+        A single field update. Sets ExtractionField.edited_value — the user's chosen
+        value that takes priority over proposed_value during apply. Covers
+        manual edits and conflict resolution. proposed_value (AI's original)
+        remains unchanged for audit and comparison.
+      required:
+        - field_id
+        - edited_value
+      properties:
+        field_id:
+          type: string
+          format: uuid
+          description: ExtractionField.id to update
+        edited_value:
+          description: >
+            Sets ExtractionField.edited_value. During apply, the server uses
+            `edited_value ?? proposed_value` — so setting this overrides the AI's
+            proposal. For conflict resolution, set this to the chosen value
+            from competing_values (or a freeform correction). Any JSON value —
+            type must match field_name's expected type, validated at runtime.
+
+    ExtractionFieldBulkUpdateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - updates
+      properties:
+        updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionFieldUpdateItem'
+          minItems: 1
+          maxItems: 100
+          description: >
+            Array of field updates to apply atomically. All updates succeed or all fail.
+            Max 100 per request.
+
+    ApplicationCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - entity_id
+      description: >
+        Apply extraction fields to a target entity. One extraction can produce
+        multiple applications, each targeting a different entity. At apply time,
+        the server checks if the entity was modified after extraction creation
+        (entity.updated_at > extraction.created_at) — returns 409 if so.
+      properties:
+        entity_id:
+          type: string
+          format: uuid
+          description: >
+            Target entity to write fields to. For v1, this is the same as
+            extraction.entity_id (the tender). Future entity types (vendor
+            groups, scope items) will allow applying to different targets.
+
+    ExtractionListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Extraction'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ExtractionFieldListResponse:
+      type: object
+      required:
+        - data
+        - pagination
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionField'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ExtractionFieldBulkUpdateResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExtractionField'
+          description: Updated fields in the same order as the request updates array.
+
+paths:
+  # ──────────────────── Tenders ────────────────────
+
+  /v1/tenders:
+    post:
+      operationId: createTender
+      summary: Create Tender
+      description: >
+        Create a new tender. Tender name must be unique per company among non-deleted
+        tenders (case-insensitive). Returns 409 on conflict.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenderCreateRequest'
+      responses:
+        '201':
+          description: Tender created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URI of the created tender (/v1/tenders/{id})
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderCreateResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — duplicate tender name or idempotency key mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      operationId: listTenders
+      summary: List Tenders
+      description: >
+        List tenders with cursor-based pagination, search, sort, and status filter.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 255
+          description: >
+            Case-insensitive partial match (ILIKE) across name and reference_number.
+            Does not search location (Address object) or other structured fields.
+        - name: sort
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SortField'
+          description: Sort field. Default closing_date (soonest due first). Ignored when cursor is provided.
+        - name: direction
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+          description: Sort direction. Ignored when cursor is provided.
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TenderStatus'
+          description: Filter by status.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/metrics:
+    get:
+      operationId: getTenderMetrics
+      summary: Get Tender Metrics
+      description: >
+        Returns aggregated metrics for the calling company's tenders.
+        active_tenders counts pending + submitted. tenders_won_ytd and
+        tenders_lost_ytd count outcomes from Jan 1 of the current year (UTC).
+        bond_exposure is always "0.00" in this version.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderMetricsResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}:
+    get:
+      operationId: getTender
+      summary: Get Tender
+      description: Retrieve a single tender by ID.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for optimistic concurrency. Pass as If-Match on PATCH.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tender'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: updateTender
+      summary: Update Tender
+      description: >
+        Partial update — all fields optional. Status transitions are validated:
+        draft → pending; pending → submitted, cancelled; submitted → won, lost;
+        cancelled → draft. Any other transition returns 400.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IfMatchHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenderUpdateRequest'
+      responses:
+        '200':
+          description: OK — updated Tender
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Updated ETag after successful PATCH.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tender'
+        '400':
+          description: Bad Request — invalid input or invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — duplicate tender name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '412':
+          description: Precondition Failed — ETag mismatch, resource was modified since last GET
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: deleteTender
+      summary: Delete Tender
+      description: >
+        Only tenders in draft or pending status can be deleted. Soft-deletes
+        the tender and cascades to all associated documents (removed from S3),
+        extractions (soft-deleted), and extraction fields (removed).
+        Application audit records are preserved.
+      tags:
+        - Tenders
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+      responses:
+        '204':
+          description: No Content
+        '400':
+          description: Bad Request — tender not in deletable status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────── Tender Documents ────────────────────
+
+  /v1/tenders/{tenderId}/documents/presigned-urls:
+    post:
+      operationId: getUploadPresignedUrl
+      summary: Get Upload Presigned URL
+      description: >
+        Generate an S3 presigned PUT URL for uploading a document to a tender.
+        Also creates the document record in uploading status.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignedUrlRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedUrlResponse'
+        '400':
+          description: Bad Request — validation error or file size exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — tender does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents:
+    get:
+      operationId: listTenderDocuments
+      summary: List Tender Documents
+      description: List documents for a tender with cursor-based pagination and optional status filter.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TenderDocumentStatus'
+          description: Filter by document status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenderDocumentListResponse'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — tender does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents/{documentId}:
+    delete:
+      operationId: deleteTenderDocument
+      summary: Delete Tender Document
+      description: >
+        Deletes the document record and the file from S3. Any extraction fields
+        that cited only this document are removed. Fields with remaining citations
+        from other documents are preserved.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Document ID
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tenders/{tenderId}/documents/{documentId}/presigned-urls:
+    get:
+      operationId: getDownloadPresignedUrl
+      summary: Get Download Presigned URL
+      description: Generate an S3 presigned GET URL for downloading a tender document.
+      tags:
+        - TenderDocuments
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: tenderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Tender ID
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Document ID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ──────────────────── Extractions ────────────────────
+
+  /v1/extractions:
+    post:
+      operationId: createExtraction
+      summary: Start Extraction
+      description: >
+        Create a new extraction job. Each POST creates an independent extraction.
+        The server resolves entity_type from the entity_id. Optionally provide
+        document_ids to scope extraction to a subset of documents, and/or fields
+        to extract only specific field names.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractionCreateRequest'
+      responses:
+        '202':
+          description: Extraction accepted — job is processing asynchronously
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionCreateResponse'
+        '400':
+          description: >
+            Bad Request — document_ids contains IDs not belonging to entity_id,
+            documents not in ready status, invalid field names, or no ready documents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — user lacks write permission on entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — entity or document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict — idempotency key reused with different payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests — extraction rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      operationId: listExtractions
+      summary: List Extractions
+      description: >
+        List extractions filtered by entity. Entity IDs are globally unique UUIDs,
+        so entity_type is not required for disambiguation.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: entity_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Filter by entity ID
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ExtractionStatus'
+          description: Filter by extraction status
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionListResponse'
+        '400':
+          description: Bad Request — missing entity_id or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/extractions/{extractionId}:
+    get:
+      operationId: getExtraction
+      summary: Get Extraction
+      description: Fetch extraction status, version, and metadata.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Extraction ID
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: >
+                Entity tag derived from version. Incremented when any field on
+                this extraction is modified. Pass as If-Match on PATCH /fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Extraction'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      operationId: cancelExtraction
+      summary: Cancel Extraction
+      description: >
+        Cancel an extraction. Sets status to cancelled and removes all un-applied
+        fields. Already-applied entity values are never rolled back. Application
+        audit records are preserved. Returns 204 if already cancelled (idempotent).
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Extraction ID
+      responses:
+        '204':
+          description: No Content
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — user lacks write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/extractions/{extractionId}/fields:
+    get:
+      operationId: listExtractionFields
+      summary: List Extraction Fields
+      description: >
+        Fetch the field set for an extraction. Supports filtering and cursor-based pagination.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Extraction ID
+        - name: field_name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by field name
+        - name: document_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Only fields citing a specific document
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Max items to return
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Cursor from previous response
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionFieldListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      operationId: bulkUpdateExtractionFields
+      summary: Bulk Review Extraction Fields
+      description: >
+        Set edited_value on one or more extracted fields in a single request. Covers
+        manual edits and conflict resolution. proposed_value (AI's original)
+        remains unchanged. All updates are applied atomically — if any update
+        fails, none are persisted. If-Match should carry the ETag from
+        GET /extractions/{extractionId}.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IfMatchHeader'
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Extraction ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractionFieldBulkUpdateRequest'
+      responses:
+        '200':
+          description: OK — all updated fields
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Updated ETag after successful bulk update.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtractionFieldBulkUpdateResponse'
+        '400':
+          description: Bad Request — duplicate field_id, field not found in extraction, or invalid update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — user lacks write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '412':
+          description: Precondition Failed — ETag mismatch, fields were modified since last GET
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/extractions/{extractionId}/applications:
+    post:
+      operationId: applyExtraction
+      summary: Apply Extraction
+      description: >
+        Apply extraction fields to a target entity. Requires entity_id in the
+        request body — one extraction can produce multiple applications, each
+        targeting a different entity.
+
+        For each field targeting the specified entity: uses edited_value if set
+        (user-edited), otherwise proposed_value (AI-extracted). All conflicted
+        fields targeting this entity must have edited_value set before apply.
+
+        Staleness check: at apply time, the server compares
+        tender.updated_at against extraction.created_at. If the tender was
+        modified after the extraction was created (someone edited it directly,
+        or another extraction was applied), returns 409 Conflict.
+      tags:
+        - Extractions
+      parameters:
+        - $ref: '#/components/parameters/XContextIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+        - name: extractionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Extraction ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationCreateRequest'
+      responses:
+        '201':
+          description: Application created — returns full audit record
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URI of the application (/v1/extractions/{id}/applications/{id})
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          description: >
+            Bad Request — unresolved conflicts (api.application.unresolvedConflicts),
+            no fields targeting the specified entity, or field validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden — user lacks write permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Not Found — extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >
+            Conflict — target entity was modified since extraction was created
+            (api.application.entityStale). entity.updated_at > extraction.created_at.
+            The user should review the current entity state and decide whether to
+            proceed with a new extraction or edit the entity directly.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too Many Requests — application rate limit exceeded
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
