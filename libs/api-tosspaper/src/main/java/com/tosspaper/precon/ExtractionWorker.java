@@ -44,7 +44,7 @@ public class ExtractionWorker {
                                     byte[] fileBytes, ConstructionDocumentType documentType) {
         String extractionId = extraction.getId();
         String documentId = document.getId();
-        String externalFileId = document.get("external_file_id", String.class);
+        String externalFileId = document.getExternalFileId();
 
         try {
             ExtractionSubmitRequest request = new ExtractionSubmitRequest(
