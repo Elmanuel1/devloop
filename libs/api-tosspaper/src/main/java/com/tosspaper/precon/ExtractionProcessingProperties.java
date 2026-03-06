@@ -1,6 +1,8 @@
 package com.tosspaper.precon;
 
 import jakarta.validation.constraints.Positive;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -19,6 +21,8 @@ import org.springframework.validation.annotation.Validated;
  *     stale-minutes: 15
  * </pre>
  */
+@Getter
+@Setter
 @ConfigurationProperties(prefix = "extraction.processing")
 @Validated
 public class ExtractionProcessingProperties {
@@ -31,7 +35,7 @@ public class ExtractionProcessingProperties {
     private int threadPoolSize = 5;
 
     /**
-     * Maximum number of {@code PENDING} extractions claimed per poll cycle.
+     * Maximum number of documents processed per extraction run.
      * Defaults to {@code 20}.
      */
     @Positive
@@ -43,28 +47,4 @@ public class ExtractionProcessingProperties {
      */
     @Positive
     private int staleMinutes = 15;
-
-    public int getThreadPoolSize() {
-        return threadPoolSize;
-    }
-
-    public void setThreadPoolSize(int threadPoolSize) {
-        this.threadPoolSize = threadPoolSize;
-    }
-
-    public int getBatchSize() {
-        return batchSize;
-    }
-
-    public void setBatchSize(int batchSize) {
-        this.batchSize = batchSize;
-    }
-
-    public int getStaleMinutes() {
-        return staleMinutes;
-    }
-
-    public void setStaleMinutes(int staleMinutes) {
-        this.staleMinutes = staleMinutes;
-    }
 }

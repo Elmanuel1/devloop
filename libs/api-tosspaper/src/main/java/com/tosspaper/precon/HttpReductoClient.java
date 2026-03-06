@@ -33,6 +33,7 @@ import java.time.Duration;
 public class HttpReductoClient implements ReductoClient {
 
     private static final String CONTENT_TYPE_JSON = "application/json";
+    private static final String EXTRACT_PATH = "/extract";
 
     private final ReductoProperties props;
     private final ObjectMapper objectMapper;
@@ -71,7 +72,7 @@ public class HttpReductoClient implements ReductoClient {
 
     private HttpRequest buildHttpRequest(String body) {
         return HttpRequest.newBuilder()
-                .uri(URI.create(props.getBaseUrl() + "/extract"))
+                .uri(URI.create(props.getBaseUrl() + EXTRACT_PATH))
                 .header("Content-Type", CONTENT_TYPE_JSON)
                 .header("Authorization", "Bearer " + props.getApiKey())
                 .timeout(Duration.ofSeconds(props.getTimeoutSeconds()))

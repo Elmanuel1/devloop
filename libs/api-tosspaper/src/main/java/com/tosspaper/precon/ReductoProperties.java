@@ -21,8 +21,8 @@ import org.springframework.validation.annotation.Validated;
  *   api-key: "${REDUCTO_API_KEY}"
  *   webhook-base-url: "https://my-service.example.com"
  *   webhook-path: "/internal/reducto/webhook"
- *   batch-size: 20
- *   stale-minutes: 15
+ *   document-cap: 20
+ *   task-timeout-minutes: 15
  *   timeout-seconds: 30
  * </pre>
  */
@@ -54,20 +54,20 @@ public class ReductoProperties {
     private String webhookPath = "/internal/reducto/webhook";
 
     /**
-     * Maximum number of documents claimed from the DB in a single seeder cycle.
+     * Maximum number of documents that may be submitted to Reducto per extraction.
      * Hard cap aligned with the 20-document-per-extraction limit enforced at creation.
      * Defaults to {@code 20}.
      */
     @Positive
-    private int batchSize = 20;
+    private int documentCap = 20;
 
     /**
-     * Age threshold (in minutes) for the reaper.
+     * Age threshold (in minutes) after which a Reducto task is considered timed out.
      * Extractions stuck in {@code PROCESSING} longer than this are reset to {@code PENDING}.
      * Defaults to {@code 15}.
      */
     @Positive
-    private int staleMinutes = 15;
+    private int taskTimeoutMinutes = 15;
 
     /**
      * HTTP request timeout in seconds for each Reducto API call.

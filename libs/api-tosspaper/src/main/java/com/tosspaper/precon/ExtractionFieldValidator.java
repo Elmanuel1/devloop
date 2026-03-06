@@ -69,4 +69,27 @@ public class ExtractionFieldValidator {
     public String rejectionMessage(String documentId) {
         return ApiErrorMessages.EXTRACTION_FIELD_INVALID_PAYLOAD.formatted(documentId);
     }
+
+    /**
+     * Validates a Reducto payload and signals whether fields may be written.
+     *
+     * <p>Called by the webhook handler once Reducto delivers the result.
+     * Validation must pass before any {@code extraction_fields} rows are written.
+     *
+     * @param extractionId the extraction ID (used for log context only)
+     * @param documentId   the document ID this payload belongs to
+     * @param payload      the JSONB result from Reducto
+     * @return {@code true} if validation passed; {@code false} if the payload was rejected
+     */
+    public boolean validateAndWriteFields(String extractionId, String documentId, JsonNode payload) {
+        if (!isValid(documentId, payload)) {
+            log.warn("[ExtractionFieldValidator] Extraction '{}' document '{}' — {}",
+                    extractionId, documentId,
+                    ApiErrorMessages.EXTRACTION_FIELD_INVALID_PAYLOAD.formatted(documentId));
+            return false;
+        }
+        log.debug("[ExtractionFieldValidator] Extraction '{}' document '{}' — payload valid, ready for field write",
+                extractionId, documentId);
+        return true;
+    }
 }

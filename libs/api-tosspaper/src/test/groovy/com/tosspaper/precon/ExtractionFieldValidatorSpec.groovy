@@ -119,4 +119,36 @@ class ExtractionFieldValidatorSpec extends Specification {
         where:
             docId << ["doc-1", "a", "00000000-0000-0000-0000-000000000000", ""]
     }
+
+    // ── validateAndWriteFields ────────────────────────────────────────────────
+
+    def "TC-FV-12: validateAndWriteFields returns true when payload is valid"() {
+        given:
+            def payload = mapper.readTree('{"tender_title": "Bridge Contract"}')
+
+        when:
+            def result = validator.validateAndWriteFields("ext-1", "doc-1", payload)
+
+        then:
+            result
+    }
+
+    def "TC-FV-13: validateAndWriteFields returns false when payload is a JSON null node"() {
+        when:
+            def result = validator.validateAndWriteFields("ext-1", "doc-1", com.fasterxml.jackson.databind.node.NullNode.instance)
+
+        then:
+            !result
+    }
+
+    def "TC-FV-14: validateAndWriteFields returns false when payload is an empty JSON object"() {
+        given:
+            def payload = mapper.readTree("{}")
+
+        when:
+            def result = validator.validateAndWriteFields("ext-1", "doc-1", payload)
+
+        then:
+            !result
+    }
 }

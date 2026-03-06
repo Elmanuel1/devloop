@@ -125,8 +125,8 @@ reducto:
   api-key: "dummy-reducto-api-key"
   webhook-base-url: "https://dummy-app.example.com"
   webhook-path: "/internal/reducto/webhook"
-  batch-size: 20
-  stale-minutes: 15
+  document-cap: 20
+  task-timeout-minutes: 15
   timeout-seconds: 30
   webhook:
     svix-secret: "whsec_c3ZpeC10ZXN0LXBsYWNlaG9sZGVyLXNlY3JldC14eA=="
@@ -134,3 +134,5 @@ reducto:
 extraction:
   processing:
     thread-pool-size: 2
+    batch-size: 20
+    stale-minutes: 15

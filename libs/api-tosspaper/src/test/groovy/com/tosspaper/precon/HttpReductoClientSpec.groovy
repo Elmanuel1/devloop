@@ -25,8 +25,8 @@ class HttpReductoClientSpec extends Specification {
         props.setApiKey("test-api-key")
         props.setWebhookBaseUrl("https://my-service.example.com")
         props.setWebhookPath("/internal/reducto/webhook")
-        props.setBatchSize(20)
-        props.setStaleMinutes(15)
+        props.setDocumentCap(20)
+        props.setTaskTimeoutMinutes(15)
         props.setTimeoutSeconds(30)
 
         client = new HttpReductoClient(props, mapper, httpClient)

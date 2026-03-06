@@ -1,21 +1,14 @@
 package com.tosspaper.precon;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.tosspaper.common.ApiErrorMessages;
 import com.tosspaper.models.exception.ReductoClientException;
 import com.tosspaper.models.jooq.tables.records.TenderDocumentsRecord;
 import com.tosspaper.models.precon.ConstructionDocumentType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.core.exception.SdkException;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,7 +18,8 @@ import java.util.Map;
  *
  * <h3>Per-document steps</h3>
  * <ol>
- *   <li><b>Classify</b> — stream the full document from S3 and pass to
+ *   <li><b>Classify</b> — download the full document from S3 via
+ *       {@link DocumentContentReader#read} and pass the bytes to
  *       {@link DocumentClassifier#classify}. The default implementation
  *       ({@link PdfBoxDocumentClassifier}) extracts PDF text via Apache PDFBox
  *       and returns a {@link com.tosspaper.models.precon.ConstructionDocumentType}.
@@ -37,7 +31,7 @@ import java.util.Map;
  *
  * <h3>Hard cap</h3>
  * <p>The number of documents processed per extraction is capped at
- * {@link ReductoProperties#getBatchSize()} (default 20).
+ * {@link ExtractionProcessingProperties#getBatchSize()} (default 20).
  *
  * <h3>Idempotency</h3>
  * <p>The worker is safe to call multiple times for the same extraction. Step 1 (classify)
@@ -56,12 +50,11 @@ public class ExtractionWorker {
 
     private final DocumentClassifier documentClassifier;
     private final ReductoClient reductoClient;
-    private final ExtractionFieldValidator fieldValidator;
     private final TenderDocumentRepository documentRepository;
     private final PreconExtractionRepository extractionRepository;
+    private final DocumentContentReader contentReader;
     private final ReductoProperties reductoProperties;
-    private final S3Client s3Client;
-    private final TenderFileProperties fileProperties;
+    private final ExtractionProcessingProperties processingProperties;
 
     /**
      * Processes all documents in the given extraction, returning a
@@ -75,7 +68,7 @@ public class ExtractionWorker {
      */
     public PipelineExtractionResult process(ExtractionWithDocs extraction) {
         List<String> docIds = extraction.documentIds();
-        int batchSize = reductoProperties.getBatchSize();
+        int batchSize = processingProperties.getBatchSize();
         int cap = Math.min(docIds.size(), batchSize);
 
         if (docIds.size() > batchSize) {
@@ -101,30 +94,6 @@ public class ExtractionWorker {
         return new PipelineExtractionResult(extraction.getId(), null);
     }
 
-    /**
-     * Validates a Reducto payload and signals whether fields may be written.
-     *
-     * <p>Called externally by the webhook handler once Reducto delivers the result.
-     * Validation must pass before any {@code extraction_fields} rows are written via
-     * {@link ExtractionFieldService}.
-     *
-     * @param extractionId the extraction ID
-     * @param documentId   the document ID this payload belongs to
-     * @param payload      the JSONB result from Reducto
-     * @return {@code true} if validation passed; {@code false} if the payload was rejected
-     */
-    public boolean validateAndWriteFields(String extractionId, String documentId, JsonNode payload) {
-        if (!fieldValidator.isValid(documentId, payload)) {
-            log.warn("[ExtractionWorker] Extraction '{}' document '{}' — {}",
-                    extractionId, documentId,
-                    ApiErrorMessages.EXTRACTION_FIELD_INVALID_PAYLOAD.formatted(documentId));
-            return false;
-        }
-        log.debug("[ExtractionWorker] Extraction '{}' document '{}' — payload valid, ready for field write",
-                extractionId, documentId);
-        return true;
-    }
-
     // ── Per-document pipeline ─────────────────────────────────────────────────
 
     /**
@@ -139,7 +108,7 @@ public class ExtractionWorker {
         }
 
         // Step 1: classify — download full document content from S3 and pass to classifier
-        byte[] contentBytes = readContentBytes(extractionId, documentId, document.getS3Key());
+        byte[] contentBytes = contentReader.read(extractionId, documentId, document.getS3Key());
         if (contentBytes == null) {
             return false;
         }
@@ -166,30 +135,6 @@ public class ExtractionWorker {
         }
     }
 
-    /**
-     * Reads all bytes for a document stored in S3.
-     *
-     * <p>Package-private to allow spy-based unit test overrides without mocking
-     * the non-mockable {@link ResponseInputStream} class from the AWS SDK.
-     *
-     * @return the document bytes, or {@code null} on any failure
-     */
-    byte[] readContentBytes(String extractionId, String documentId, String s3Key) {
-        try {
-            GetObjectRequest request = GetObjectRequest.builder()
-                    .bucket(fileProperties.getUploadBucket())
-                    .key(s3Key)
-                    .build();
-            try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(request)) {
-                return stream.readAllBytes();
-            }
-        } catch (IOException | SdkException e) {
-            log.error("[ExtractionWorker] Extraction '{}' document '{}' — S3 content download failed: {}",
-                    extractionId, documentId, e.getMessage(), e);
-            return null;
-        }
-    }
-
     private boolean submitToReducto(String extractionId, String documentId, String s3Key,
                                     ConstructionDocumentType documentType) {
         try {
@@ -206,7 +151,7 @@ public class ExtractionWorker {
 
             // Persist the Reducto task ID into the document_external_ids JSONB map so that
             // the webhook handler can look up the extraction by task ID when Reducto calls back.
-            Map<String, String> externalIds = extractionRepository.getDocumentExternalIds(extractionId);
+            Map<String, String> externalIds = new HashMap<>(extractionRepository.getDocumentExternalIds(extractionId));
             externalIds.put(documentId, response.taskId());
             extractionRepository.updateDocumentExternalIds(extractionId, externalIds);
 
