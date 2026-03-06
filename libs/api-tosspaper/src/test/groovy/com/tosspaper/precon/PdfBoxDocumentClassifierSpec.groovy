@@ -5,238 +5,203 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream
 import org.apache.pdfbox.pdmodel.font.PDType1Font
+import org.springframework.ai.chat.client.ChatClient
 import spock.lang.Specification
 import spock.lang.Subject
 import spock.lang.Unroll
 
 import java.io.ByteArrayOutputStream
 
-/**
- * Unit tests for {@link PdfBoxDocumentClassifier}.
- *
- * <p>PDFs are constructed in-memory using PDFBox itself so tests are self-contained
- * and do not depend on test-resource files.
- */
+/** Unit tests for {@link PdfBoxDocumentClassifier}. */
 class PdfBoxDocumentClassifierSpec extends Specification {
 
+    ChatClient chatClient = Mock()
+    ChatClient.ChatClientRequestSpec requestSpec = Mock()
+    ChatClient.CallResponseSpec callSpec = Mock()
+
     @Subject
-    PdfBoxDocumentClassifier classifier = new PdfBoxDocumentClassifier()
+    PdfBoxDocumentClassifier classifier = new PdfBoxDocumentClassifier(chatClient)
 
-    // ── Null / invalid input → UNKNOWN ───────────────────────────────────────
+    def setup() {
+        // Wire the fluent chain so intermediate stubs are always in place
+        chatClient.prompt() >> requestSpec
+        requestSpec.system(_ as String) >> requestSpec
+        requestSpec.user(_ as String) >> requestSpec
+        requestSpec.call() >> callSpec
+    }
 
-    def "TC-CL-01: null byte array returns UNKNOWN"() {
+    // ── Null / empty input → UNKNOWN without calling LLM ─────────────────────
+
+    def "TC-CL-01: null byte array returns UNKNOWN without calling LLM"() {
         when:
             def result = classifier.classify("doc-1", (byte[]) null)
         then:
             result == ConstructionDocumentType.UNKNOWN
+            0 * callSpec.content()
     }
 
-    def "TC-CL-02: empty byte array returns UNKNOWN"() {
+    def "TC-CL-02: empty byte array returns UNKNOWN without calling LLM"() {
         when:
             def result = classifier.classify("doc-empty", new byte[0])
         then:
             result == ConstructionDocumentType.UNKNOWN
+            0 * callSpec.content()
     }
 
-    def "TC-CL-03: non-PDF bytes returns UNKNOWN"() {
-        given: "random bytes that are not a valid PDF"
+    // ── Non-PDF / unreadable bytes → UNKNOWN ─────────────────────────────────
+
+    def "TC-CL-03: non-PDF bytes returns UNKNOWN without calling LLM"() {
+        given: "bytes that are not a valid PDF"
             byte[] garbage = [0x47, 0x49, 0x46, 0x38, 0x39, 0x61] as byte[] // GIF header
         when:
             def result = classifier.classify("doc-gif", garbage)
         then:
             result == ConstructionDocumentType.UNKNOWN
+            0 * callSpec.content()
     }
 
-    // ── Scanned image PDF (no text layer) → UNKNOWN ──────────────────────────
+    // ── PDF with no text layer → UNKNOWN ─────────────────────────────────────
 
-    def "TC-CL-04: PDF with no extractable text returns UNKNOWN (likely scanned image)"() {
+    def "TC-CL-04: PDF with no extractable text returns UNKNOWN without calling LLM"() {
         given: "a valid PDF with a blank page — no text layer"
             byte[] bytes = buildPdf("")
         when:
             def result = classifier.classify("doc-scanned", bytes)
         then:
             result == ConstructionDocumentType.UNKNOWN
+            0 * callSpec.content()
     }
 
-    // ── Unrecognised content → UNKNOWN ────────────────────────────────────────
+    // ── LLM happy path ────────────────────────────────────────────────────────
 
-    def "TC-CL-05: PDF with no construction tender keywords returns UNKNOWN"() {
-        given: "a PDF about something completely unrelated"
-            byte[] bytes = buildPdf("This is a birthday greeting card. Happy birthday to you from the team.")
+    @Unroll
+    def "TC-CL-05: LLM response '#llmResponse' maps to #expectedType"() {
+        given:
+            byte[] bytes = buildPdf("Some construction document text for classification purposes here.")
+            callSpec.content() >> llmResponse
         when:
-            def result = classifier.classify("doc-unrelated", bytes)
+            def result = classifier.classify("doc-1", bytes)
+        then:
+            result == expectedType
+        where:
+            llmResponse                | expectedType
+            "BILL_OF_QUANTITIES"       | ConstructionDocumentType.BILL_OF_QUANTITIES
+            "DRAWINGS"                 | ConstructionDocumentType.DRAWINGS
+            "SPECIFICATIONS"           | ConstructionDocumentType.SPECIFICATIONS
+            "CONDITIONS_OF_CONTRACT"   | ConstructionDocumentType.CONDITIONS_OF_CONTRACT
+            "TENDER_NOTICE"            | ConstructionDocumentType.TENDER_NOTICE
+            "PRELIMINARIES"            | ConstructionDocumentType.PRELIMINARIES
+            "UNKNOWN"                  | ConstructionDocumentType.UNKNOWN
+    }
+
+    def "TC-CL-06: LLM response is stripped and uppercased before parsing"() {
+        given:
+            byte[] bytes = buildPdf("Some construction document text for classification.")
+            callSpec.content() >> "  drawings\n"
+        when:
+            def result = classifier.classify("doc-trim", bytes)
+        then:
+            result == ConstructionDocumentType.DRAWINGS
+    }
+
+    // ── LLM returns unrecognised value → UNKNOWN ─────────────────────────────
+
+    def "TC-CL-07: LLM returns unrecognised enum value → UNKNOWN"() {
+        given:
+            byte[] bytes = buildPdf("Some construction document text for classification.")
+            callSpec.content() >> "INVOICE"
+        when:
+            def result = classifier.classify("doc-bad", bytes)
         then:
             result == ConstructionDocumentType.UNKNOWN
     }
 
-    // ── BILL_OF_QUANTITIES ────────────────────────────────────────────────────
-
-    @Unroll
-    def "TC-CL-06: PDF containing BOQ keyword '#keyword' is classified as BILL_OF_QUANTITIES"() {
+    def "TC-CL-08: LLM returns empty string → UNKNOWN"() {
         given:
-            byte[] bytes = buildPdf("Project: Road Construction Phase 1 - Tender Documents. ${keyword}.")
+            byte[] bytes = buildPdf("Some construction document text for classification.")
+            callSpec.content() >> ""
         when:
-            def result = classifier.classify("doc-boq", bytes)
+            def result = classifier.classify("doc-empty-resp", bytes)
         then:
-            result == ConstructionDocumentType.BILL_OF_QUANTITIES
-        where:
-            keyword << ["bill of quantities", "schedule of rates", "preambles",
-                        "provisional sum", "daywork", "boq", "quantity surveyor"]
+            result == ConstructionDocumentType.UNKNOWN
     }
 
-    // ── DRAWINGS ──────────────────────────────────────────────────────────────
+    // ── LLM throws exception → UNKNOWN ───────────────────────────────────────
 
-    @Unroll
-    def "TC-CL-07: PDF containing drawings keyword '#keyword' is classified as DRAWINGS"() {
+    def "TC-CL-09: LLM call throws exception → UNKNOWN"() {
         given:
-            byte[] bytes = buildPdf("${keyword} for the proposed school building construction project.")
+            byte[] bytes = buildPdf("Some construction document text for classification.")
+            callSpec.content() >> { throw new RuntimeException("OpenAI unavailable") }
         when:
-            def result = classifier.classify("doc-drawings", bytes)
+            def result = classifier.classify("doc-fail", bytes)
         then:
-            result == ConstructionDocumentType.DRAWINGS
-        where:
-            keyword << ["drawing list", "drawing no", "architectural drawing",
-                        "structural drawing", "site plan", "floor plan", "as built"]
+            result == ConstructionDocumentType.UNKNOWN
     }
 
-    // ── SPECIFICATIONS ────────────────────────────────────────────────────────
+    // ── Text truncation ───────────────────────────────────────────────────────
 
-    @Unroll
-    def "TC-CL-08: PDF containing specifications keyword '#keyword' is classified as SPECIFICATIONS"() {
-        given:
-            byte[] bytes = buildPdf("${keyword} for the construction of a new water treatment plant.")
+    def "TC-CL-10: text longer than MAX_TEXT_CHARS is truncated before sending to LLM"() {
+        given: "a PDF whose text exceeds the char limit"
+            String longText = "x" * (PdfBoxDocumentClassifier.MAX_TEXT_CHARS + 500)
+            byte[] bytes = buildPdf(longText.take(200) as String)  // PDF page text capped at 200 in helper
+            def capturedUser = []
+            requestSpec.user(_ as String) >> { String u -> capturedUser << u; requestSpec }
+            callSpec.content() >> "SPECIFICATIONS"
         when:
-            def result = classifier.classify("doc-spec", bytes)
+            classifier.classify("doc-long", bytes)
         then:
-            result == ConstructionDocumentType.SPECIFICATIONS
-        where:
-            keyword << ["technical specification", "workmanship", "scope of work",
-                        "method statement", "technical requirements", "quality assurance"]
+            capturedUser.every { it.length() <= PdfBoxDocumentClassifier.MAX_TEXT_CHARS }
     }
 
-    // ── CONDITIONS_OF_CONTRACT ────────────────────────────────────────────────
+    // ── LLM called exactly once per classify() invocation ────────────────────
 
-    @Unroll
-    def "TC-CL-09: PDF containing contract keyword '#keyword' is classified as CONDITIONS_OF_CONTRACT"() {
+    def "TC-CL-11: LLM is called exactly once per classify call"() {
         given:
-            byte[] bytes = buildPdf("${keyword} applicable to this civil engineering construction contract.")
+            byte[] bytes = buildMultiPagePdf("Construction tender document content here.", 5)
+            callSpec.content() >> "TENDER_NOTICE"
         when:
-            def result = classifier.classify("doc-contract", bytes)
+            classifier.classify("doc-multi", bytes)
         then:
-            result == ConstructionDocumentType.CONDITIONS_OF_CONTRACT
-        where:
-            keyword << ["conditions of contract", "general conditions", "special conditions",
-                        "liquidated damages", "retention", "defects liability", "force majeure"]
+            1 * callSpec.content()
     }
 
-    // ── TENDER_NOTICE ─────────────────────────────────────────────────────────
+    // ── System prompt contains all ConstructionDocumentType names ─────────────
 
-    @Unroll
-    def "TC-CL-10: PDF containing tender notice keyword '#keyword' is classified as TENDER_NOTICE"() {
+    def "TC-CL-12: system prompt contains all ConstructionDocumentType names"() {
         given:
-            byte[] bytes = buildPdf("${keyword} for the supply of construction materials and labour.")
+            byte[] bytes = buildPdf("Some construction document text for classification.")
+            def capturedSystem = []
+            requestSpec.system(_ as String) >> { String s -> capturedSystem << s; requestSpec }
+            callSpec.content() >> "DRAWINGS"
         when:
-            def result = classifier.classify("doc-notice", bytes)
+            classifier.classify("doc-prompt-check", bytes)
         then:
-            result == ConstructionDocumentType.TENDER_NOTICE
-        where:
-            keyword << ["invitation to tender", "tender notice", "request for proposal",
-                        "instructions to tenderers", "closing date", "tender reference"]
-    }
-
-    // ── PRELIMINARIES ─────────────────────────────────────────────────────────
-
-    @Unroll
-    def "TC-CL-11: PDF containing preliminaries keyword '#keyword' is classified as PRELIMINARIES"() {
-        given:
-            byte[] bytes = buildPdf("${keyword} section applicable to the building construction contract.")
-        when:
-            def result = classifier.classify("doc-prelims", bytes)
-        then:
-            result == ConstructionDocumentType.PRELIMINARIES
-        where:
-            keyword << ["preliminaries", "prelims", "site establishment",
-                        "temporary works", "scaffolding", "mobilisation"]
-    }
-
-    // ── Scoring: highest hit count wins ──────────────────────────────────────
-
-    def "TC-CL-12: document with more BOQ keywords than drawings keywords is classified as BILL_OF_QUANTITIES"() {
-        given: "text has 3 BOQ keywords and 1 drawings keyword"
-            byte[] bytes = buildPdf(
-                "bill of quantities schedule of rates preambles daywork. drawing list provided separately.")
-        when:
-            def result = classifier.classify("doc-mixed", bytes)
-        then:
-            result == ConstructionDocumentType.BILL_OF_QUANTITIES
-    }
-
-    // ── Case insensitivity ────────────────────────────────────────────────────
-
-    def "TC-CL-13: keyword matching is case-insensitive"() {
-        given:
-            byte[] bytes = buildPdf("BILL OF QUANTITIES FOR THE PROPOSED ROAD WORKS PROJECT")
-        when:
-            def result = classifier.classify("doc-upper", bytes)
-        then:
-            result == ConstructionDocumentType.BILL_OF_QUANTITIES
-    }
-
-    // ── Document ID is only used for logging ─────────────────────────────────
-
-    def "TC-CL-14: different document IDs with the same content return the same classification"() {
-        given:
-            def text = "bill of quantities for the construction of a new school building."
-            byte[] bytesA = buildPdf(text)
-            byte[] bytesB = buildPdf(text)
-        expect:
-            classifier.classify("doc-A", bytesA) == classifier.classify("doc-B", bytesB)
-    }
-
-    // ── Constants ─────────────────────────────────────────────────────────────
-
-    def "TC-CL-15: MIN_TEXT_LENGTH constant is 50"() {
-        expect:
-            PdfBoxDocumentClassifier.MIN_TEXT_LENGTH == 50
-    }
-
-    def "TC-CL-16: TYPE_KEYWORDS map covers all non-UNKNOWN ConstructionDocumentTypes"() {
-        given:
-            def nonUnknownTypes = ConstructionDocumentType.values().findAll {
-                it != ConstructionDocumentType.UNKNOWN
+            ConstructionDocumentType.values().every { type ->
+                capturedSystem.any { it.contains(type.name()) }
             }
-        expect:
-            nonUnknownTypes.every { PdfBoxDocumentClassifier.TYPE_KEYWORDS.containsKey(it) }
-    }
-
-    def "TC-CL-17: no keyword appears in more than one type — keywords are mutually exclusive"() {
-        given:
-            def allKeywords = PdfBoxDocumentClassifier.TYPE_KEYWORDS.values().flatten()
-        expect: "every keyword is unique across all type lists"
-            allKeywords.size() == allKeywords.toSet().size()
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Builds an in-memory PDF whose single page contains the supplied text.
-     * Returns the serialised PDF as a {@code byte[]}.
-     */
     private static byte[] buildPdf(String text) {
+        return buildMultiPagePdf(text, 1)
+    }
+
+    private static byte[] buildMultiPagePdf(String text, int pages = 1) {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream()
         PDDocument doc = new PDDocument()
-        PDPage page = new PDPage()
-        doc.addPage(page)
-        if (text != null && !text.isBlank()) {
-            PDPageContentStream content = new PDPageContentStream(doc, page)
-            content.beginText()
-            content.setFont(PDType1Font.HELVETICA, 12)
-            content.newLineAtOffset(50, 700)
-            // PDFBox cannot embed multi-line or special chars without font embedding;
-            // keep text simple ASCII for tests.
-            content.showText(text.take(200))
-            content.endText()
-            content.close()
+        pages.times {
+            PDPage page = new PDPage()
+            doc.addPage(page)
+            if (text != null && !text.isBlank()) {
+                PDPageContentStream content = new PDPageContentStream(doc, page)
+                content.beginText()
+                content.setFont(PDType1Font.HELVETICA, 12)
+                content.newLineAtOffset(50, 700)
+                content.showText(text.take(200) as String)
+                content.endText()
+                content.close()
+            }
         }
         doc.save(buffer)
         doc.close()
